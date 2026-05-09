@@ -145,7 +145,6 @@ policy_lint_collect_default_files() {
     policy_lint_add_file_if_present "$root/AGENTS.md"
     policy_lint_add_file_if_present "$root/acfs/AGENTS.md"
     policy_lint_add_file_if_present "$root/README.md"
-    policy_lint_add_file_if_present "$root/apps/web/README.md"
     policy_lint_add_file_if_present "$root/tests/README.md"
 
     for dir in "$root/docs" "$root/acfs/onboard/lessons" "$root/acfs/templates" "$root/scripts/templates"; do

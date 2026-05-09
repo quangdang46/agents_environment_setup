@@ -19,7 +19,6 @@ LANDING_COMMIT_MESSAGE="${ACFS_LAND_COMMIT_MESSAGE:-close out session work}"
 LANDING_CHANGED_FILES=()
 LANDING_SHELL_FILES=()
 LANDING_ZSH_FILES=()
-LANDING_WEB_FILES=()
 LANDING_RUST_FILES=()
 LANDING_BEADS_DB_DIRTY=false
 LANDING_BEADS_JSONL_DIRTY=false
@@ -240,16 +239,6 @@ landing_classify_changed_file() {
     esac
 
     case "$path" in
-        apps/web/*)
-            case "$path" in
-                *.ts|*.tsx|*.js|*.jsx|*.json|*.css|*.md|*.mdx|apps/web/bun.lock)
-                    LANDING_WEB_FILES+=("$path")
-                    ;;
-            esac
-            ;;
-    esac
-
-    case "$path" in
         *.rs|Cargo.toml|Cargo.lock|*/Cargo.toml|*/Cargo.lock)
             LANDING_RUST_FILES+=("$path")
             ;;
@@ -409,11 +398,6 @@ landing_set_statuses_and_commands() {
     if [[ ${#LANDING_ZSH_FILES[@]} -gt 0 ]]; then
         quoted="$(landing_quote_args "${LANDING_ZSH_FILES[@]}")"
         landing_add_command "zsh -n $quoted"
-    fi
-
-    if [[ ${#LANDING_WEB_FILES[@]} -gt 0 ]]; then
-        landing_add_command "cd apps/web && bun run type-check && bun run lint"
-        landing_add_command "cd apps/web && bun run build"
     fi
 
     if [[ ${#LANDING_RUST_FILES[@]} -gt 0 ]]; then

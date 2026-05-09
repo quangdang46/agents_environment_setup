@@ -274,28 +274,14 @@ BASH
     '
 }
 
-test_web_check_gating() {
-    TEST_WEB_STATUS="fail"
-    run_release_doctor --network=check
-    [[ "$LAST_STATUS" -eq 0 ]] || return 1
-    assert_jq '(.checks[] | select(.id == "web_checks").status) == "skip"' || return 1
-
-    TEST_WEB_STATUS="pass"
-    TEST_CHANGED_FILES="apps/web/app/page.tsx"
-    run_release_doctor --network=check
-    [[ "$LAST_STATUS" -eq 0 ]] || return 1
-    assert_jq '(.checks[] | select(.id == "web_checks").status) == "pass"'
-}
-
 test_help_mentions_release_workflow() {
     run_release_doctor --help
     [[ "$LAST_STATUS" -eq 0 ]] || return 1
-    [[ "$LAST_OUTPUT" == *"--network=skip|check"* ]] || return 1
-    [[ "$LAST_OUTPUT" == *"--web=auto|always|never"* ]]
+    [[ "$LAST_OUTPUT" == *"--network=skip|check"* ]]
 }
 
 test_human_output_reports_governance_checks() {
-    run_release_doctor_human --network=skip --web=never
+    run_release_doctor_human --network=skip
     [[ "$LAST_STATUS" -eq 0 ]] || return 1
     [[ "$LAST_OUTPUT" == *"ACFS release doctor"* ]] || return 1
     [[ "$LAST_OUTPUT" == *"[PASS] Branch policy"* ]] || return 1

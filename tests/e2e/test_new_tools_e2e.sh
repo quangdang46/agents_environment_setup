@@ -633,30 +633,6 @@ test_integration() {
         fail "br_primary" "br binary not found"
     fi
 
-    # Test 3: flywheel.ts contains the core tool entries used by the page
-    log "INFO" "flywheel_ts" "Testing flywheel.ts tool entries..."
-    local flywheel_file="${ACFS_REPO:-$HOME/agentic_coding_flywheel_setup}/apps/web/lib/flywheel.ts"
-    if [[ ! -f "$flywheel_file" ]]; then
-        flywheel_file="/data/projects/agentic_coding_flywheel_setup/apps/web/lib/flywheel.ts"
-    fi
-
-    if [[ -f "$flywheel_file" ]]; then
-        local missing_tools=()
-        for tool in br ms rch wa brenner dcg ru tru rust_proxy rano xf mdwb pt aadc s2p caut; do
-            if ! command grep -qE "id:\s*[\"']${tool}[\"']" "$flywheel_file"; then
-                missing_tools+=("$tool")
-            fi
-        done
-
-        if [[ ${#missing_tools[@]} -eq 0 ]]; then
-            pass "flywheel_ts_tools" "All expected core flywheel.ts tool entries are present"
-        else
-            fail "flywheel_ts_tools" "Missing tools in flywheel.ts: ${missing_tools[*]}"
-        fi
-    else
-        skip "flywheel_ts_tools" "flywheel.ts not found at expected locations"
-    fi
-
     # Test 4: bv (beads_viewer) works
     log "INFO" "bv" "Testing beads_viewer (bv)..."
     if command -v bv >/dev/null 2>&1; then

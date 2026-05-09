@@ -43,7 +43,6 @@ const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = resolve(dirname(SCRIPT_FILE), '../../..');
 const MANIFEST_PATH = join(PROJECT_ROOT, 'acfs.manifest.yaml');
 const OUTPUT_DIR = join(PROJECT_ROOT, 'scripts/generated');
-const WEB_OUTPUT_DIR = join(PROJECT_ROOT, 'apps/web/lib/generated');
 const CHECKSUMS_PATH = join(PROJECT_ROOT, 'checksums.yaml');
 const DEFAULT_PLUGIN_REGISTRY_PATH = join(PROJECT_ROOT, 'acfs.plugins.json');
 
@@ -2113,465 +2112,6 @@ function generateMasterInstaller(manifest: Manifest): string {
   return lines.join('\n');
 }
 
-// ============================================================
-// Web Data Generators
-// ============================================================
-
-const TS_HEADER = `// ============================================================
-// AUTO-GENERATED FROM acfs.manifest.yaml — DO NOT EDIT
-// Regenerate: bun run generate (from packages/manifest)
-// ============================================================
-`;
-
-const WEB_SELECTION_PROFILES = [
-  {
-    id: 'full',
-    label: 'Full',
-    onlyModules: [],
-    onlyPhases: [],
-  },
-  {
-    id: 'safe',
-    label: 'Safe',
-    mode: 'safe',
-    onlyModules: [],
-    onlyPhases: [],
-  },
-  {
-    id: 'vibe',
-    label: 'Vibe',
-    mode: 'vibe',
-    onlyModules: [],
-    onlyPhases: [],
-  },
-  {
-    id: 'minimal',
-    label: 'Minimal',
-    onlyModules: [
-      'shell.omz',
-      'cli.modern',
-      'lang.bun',
-      'lang.uv',
-      'agents.claude',
-      'agents.codex',
-      'agents.gemini',
-      'stack.ntm',
-      'stack.mcp_agent_mail',
-      'stack.ultimate_bug_scanner',
-      'stack.beads_rust',
-      'stack.beads_viewer',
-      'stack.cass',
-      'stack.cm',
-      'stack.dcg',
-      'stack.ru',
-      'stack.rch',
-      'acfs.workspace',
-      'acfs.onboard',
-      'acfs.update',
-      'acfs.doctor',
-    ],
-    onlyPhases: [],
-  },
-  {
-    id: 'agents-only',
-    label: 'Agents only',
-    onlyModules: [],
-    onlyPhases: ['agents'],
-  },
-  {
-    id: 'cloud-only',
-    label: 'Cloud only',
-    onlyModules: ['cloud.wrangler', 'cloud.supabase', 'cloud.vercel'],
-    onlyPhases: [],
-  },
-  {
-    id: 'stack-only',
-    label: 'Stack only',
-    onlyModules: [],
-    onlyPhases: ['stack'],
-  },
-] as const;
-
-/**
- * Escape a string for use inside a TypeScript string literal (double-quoted).
- */
-function escapeTs(str: string): string {
-  return str
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t');
-}
-
-/**
- * Format a string array as a TypeScript literal, one item per line.
- */
-function formatTsArray(items: string[], indent: number): string {
-  if (items.length === 0) return '[]';
-  const pad = ' '.repeat(indent);
-  const inner = items.map((item) => `${pad}  "${escapeTs(item)}",`).join('\n');
-  return `[\n${inner}\n${pad}]`;
-}
-
-/**
- * Get all web-visible modules, sorted by ID for deterministic output.
- */
-function getWebVisibleModules(manifest: Manifest): Module[] {
-  return manifest.modules
-    .filter((m) => m.web && m.web.visible !== false)
-    .sort((a, b) => a.id.localeCompare(b.id));
-}
-
-/**
- * Generate manifest-modules.ts — full module metadata for web-side planning.
- */
-function generateWebModules(manifest: Manifest): string {
-  const modules = sortModulesByPhaseAndDependency(manifest);
-  const acfsVersion = readProjectVersion();
-  const manifestSha256 = computeManifestSha256();
-  const checksumsYamlSha256 = computeChecksumsYamlSha256();
-  const lines: string[] = [TS_HEADER];
-
-  lines.push('export interface ManifestModuleMetadata {');
-  lines.push('  id: string;');
-  lines.push('  description: string;');
-  lines.push('  category: string;');
-  lines.push('  phase: number;');
-  lines.push('  dependencies: string[];');
-  lines.push('  tags: string[];');
-  lines.push('  enabledByDefault: boolean;');
-  lines.push('  optional: boolean;');
-  lines.push('}');
-  lines.push('');
-
-  const profileIds = WEB_SELECTION_PROFILES.map((profile) => `"${profile.id}"`).join(' | ');
-  lines.push(`export type ManifestSelectionProfileId = ${profileIds};`);
-  lines.push('');
-  lines.push('export interface ManifestSelectionProfile {');
-  lines.push('  id: ManifestSelectionProfileId;');
-  lines.push('  label: string;');
-  lines.push('  mode?: "safe" | "vibe";');
-  lines.push('  onlyModules: string[];');
-  lines.push('  onlyPhases: string[];');
-  lines.push('}');
-  lines.push('');
-
-  lines.push('export interface ManifestProvenanceMetadata {');
-  lines.push('  acfsVersion: string;');
-  lines.push('  manifestSha256: string;');
-  lines.push('  checksumsYamlSha256: string;');
-  lines.push('}');
-  lines.push('');
-
-  lines.push('export const manifestProvenance = {');
-  lines.push(`  acfsVersion: "${escapeTs(acfsVersion)}",`);
-  lines.push(`  manifestSha256: "${manifestSha256}",`);
-  lines.push(`  checksumsYamlSha256: "${checksumsYamlSha256}",`);
-  lines.push('} as const satisfies ManifestProvenanceMetadata;');
-  lines.push('');
-
-  lines.push('export const manifestModules: ManifestModuleMetadata[] = [');
-  for (const module of modules) {
-    lines.push('  {');
-    lines.push(`    id: "${escapeTs(module.id)}",`);
-    lines.push(`    description: "${escapeTs(module.description)}",`);
-    lines.push(`    category: "${escapeTs(resolveModuleCategory(module))}",`);
-    lines.push(`    phase: ${getModulePhase(module)},`);
-    lines.push(`    dependencies: ${formatTsArray(module.dependencies ?? [], 4)},`);
-    lines.push(`    tags: ${formatTsArray(module.tags ?? [], 4)},`);
-    lines.push(`    enabledByDefault: ${module.enabled_by_default ? 'true' : 'false'},`);
-    lines.push(`    optional: ${module.optional ? 'true' : 'false'},`);
-    lines.push('  },');
-  }
-  lines.push('];');
-  lines.push('');
-
-  lines.push('export const manifestSelectionProfiles: ManifestSelectionProfile[] = [');
-  for (const profile of WEB_SELECTION_PROFILES) {
-    lines.push('  {');
-    lines.push(`    id: "${escapeTs(profile.id)}",`);
-    lines.push(`    label: "${escapeTs(profile.label)}",`);
-    if ('mode' in profile) {
-      lines.push(`    mode: "${profile.mode}",`);
-    }
-    lines.push(`    onlyModules: ${formatTsArray([...profile.onlyModules], 4)},`);
-    lines.push(`    onlyPhases: ${formatTsArray([...profile.onlyPhases], 4)},`);
-    lines.push('  },');
-  }
-  lines.push('];');
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-/**
- * Generate manifest-tools.ts — web tool data from manifest web metadata.
- * Pure data file, no React imports, tree-shakable.
- */
-function generateWebTools(manifest: Manifest): string {
-  const modules = getWebVisibleModules(manifest);
-  const lines: string[] = [TS_HEADER];
-
-  // Type definition
-  lines.push('export interface ManifestWebTool {');
-  lines.push('  id: string;');
-  lines.push('  moduleId: string;');
-  lines.push('  displayName: string;');
-  lines.push('  shortName: string;');
-  lines.push('  tagline: string;');
-  lines.push('  shortDesc: string;');
-  lines.push('  icon: string;');
-  lines.push('  color: string;');
-  lines.push('  categoryLabel?: string;');
-  lines.push('  href?: string;');
-  lines.push('  features: string[];');
-  lines.push('  techStack: string[];');
-  lines.push('  useCases: string[];');
-  lines.push('  language?: string;');
-  lines.push('  stars?: number;');
-  lines.push('  cliName?: string;');
-  lines.push('  cliAliases: string[];');
-  lines.push('  commandExample?: string;');
-  lines.push('  lessonSlug?: string;');
-  lines.push('  tldrSnippet?: string;');
-  lines.push('}');
-  lines.push('');
-
-  lines.push('export const manifestTools: ManifestWebTool[] = [');
-
-  for (const module of modules) {
-    const web = module.web!;
-    lines.push('  {');
-    lines.push(`    id: "${escapeTs(module.id.replace(/\./g, '-'))}",`);
-    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
-    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
-    lines.push(`    shortName: "${escapeTs(web.short_name ?? module.id.split('.').pop() ?? module.id)}",`);
-    lines.push(`    tagline: "${escapeTs(web.tagline ?? module.description)}",`);
-    lines.push(`    shortDesc: "${escapeTs(web.short_desc ?? module.description)}",`);
-    lines.push(`    icon: "${escapeTs(web.icon ?? 'box')}",`);
-    lines.push(`    color: "${escapeTs(web.color ?? '#6B7280')}",`);
-    if (web.category_label) {
-      lines.push(`    categoryLabel: "${escapeTs(web.category_label)}",`);
-    }
-    if (web.href) {
-      lines.push(`    href: "${escapeTs(web.href)}",`);
-    }
-    lines.push(`    features: ${formatTsArray(web.features ?? [], 4)},`);
-    lines.push(`    techStack: ${formatTsArray(web.tech_stack ?? [], 4)},`);
-    lines.push(`    useCases: ${formatTsArray(web.use_cases ?? [], 4)},`);
-    if (web.language) {
-      lines.push(`    language: "${escapeTs(web.language)}",`);
-    }
-    if (web.stars !== undefined) {
-      lines.push(`    stars: ${web.stars},`);
-    }
-    if (web.cli_name) {
-      lines.push(`    cliName: "${escapeTs(web.cli_name)}",`);
-    }
-    lines.push(`    cliAliases: ${formatTsArray(web.cli_aliases ?? [], 4)},`);
-    if (web.command_example) {
-      lines.push(`    commandExample: "${escapeTs(web.command_example)}",`);
-    }
-    if (web.lesson_slug) {
-      lines.push(`    lessonSlug: "${escapeTs(web.lesson_slug)}",`);
-    }
-    if (web.tldr_snippet) {
-      lines.push(`    tldrSnippet: "${escapeTs(web.tldr_snippet)}",`);
-    }
-    lines.push('  },');
-  }
-
-  lines.push('];');
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-/**
- * Generate manifest-commands.ts — CLI command references from manifest web metadata.
- */
-function generateWebCommands(manifest: Manifest): string {
-  const modules = manifest.modules
-    .filter((m) => m.web && m.web.visible !== false && m.web.cli_name)
-    .sort((a, b) => a.id.localeCompare(b.id));
-
-  const lines: string[] = [TS_HEADER];
-
-  lines.push('export interface ManifestCommand {');
-  lines.push('  moduleId: string;');
-  lines.push('  displayName: string;');
-  lines.push('  moduleCategory: string;');
-  lines.push('  cliName: string;');
-  lines.push('  cliAliases: string[];');
-  lines.push('  description: string;');
-  lines.push('  commandExample?: string;');
-  lines.push('  docsUrl?: string;');
-  lines.push('}');
-  lines.push('');
-
-  lines.push('export const manifestCommands: ManifestCommand[] = [');
-
-  for (const module of modules) {
-    const web = module.web!;
-    const moduleCategory = resolveModuleCategory(module);
-    lines.push('  {');
-    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
-    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
-    lines.push(`    moduleCategory: "${escapeTs(moduleCategory)}",`);
-    lines.push(`    cliName: "${escapeTs(web.cli_name!)}",`);
-    lines.push(`    cliAliases: ${formatTsArray(web.cli_aliases ?? [], 4)},`);
-    lines.push(`    description: "${escapeTs(web.short_desc ?? module.description)}",`);
-    if (web.command_example) {
-      lines.push(`    commandExample: "${escapeTs(web.command_example)}",`);
-    }
-    if (web.href ?? module.docs_url) {
-      lines.push(`    docsUrl: "${escapeTs(web.href ?? module.docs_url ?? '')}",`);
-    }
-    lines.push('  },');
-  }
-
-  lines.push('];');
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-/**
- * Generate manifest-tldr.ts — TL;DR card data from manifest web metadata.
- * Focused subset for the TL;DR summary page.
- */
-function generateWebTldr(manifest: Manifest): string {
-  const modules = getWebVisibleModules(manifest);
-  const lines: string[] = [TS_HEADER];
-
-  // Type definition
-  lines.push('export interface ManifestTldrTool {');
-  lines.push('  id: string;');
-  lines.push('  moduleId: string;');
-  lines.push('  displayName: string;');
-  lines.push('  shortName: string;');
-  lines.push('  tagline: string;');
-  lines.push('  tldrSnippet: string;');
-  lines.push('  icon: string;');
-  lines.push('  color: string;');
-  lines.push('  href?: string;');
-  lines.push('  features: string[];');
-  lines.push('  techStack: string[];');
-  lines.push('  useCases: string[];');
-  lines.push('  language?: string;');
-  lines.push('  stars?: number;');
-  lines.push('}');
-  lines.push('');
-
-  lines.push('export const manifestTldrTools: ManifestTldrTool[] = [');
-
-  for (const module of modules) {
-    const web = module.web!;
-    // Only include modules that have a tldr_snippet or tagline (enough content for a TL;DR card)
-    const snippet = web.tldr_snippet ?? web.tagline ?? '';
-    if (!snippet && !web.tagline) continue;
-
-    lines.push('  {');
-    lines.push(`    id: "${escapeTs(module.id.replace(/\./g, '-'))}",`);
-    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
-    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
-    lines.push(`    shortName: "${escapeTs(web.short_name ?? module.id.split('.').pop() ?? module.id)}",`);
-    lines.push(`    tagline: "${escapeTs(web.tagline ?? module.description)}",`);
-    lines.push(`    tldrSnippet: "${escapeTs(web.tldr_snippet ?? web.short_desc ?? module.description)}",`);
-    lines.push(`    icon: "${escapeTs(web.icon ?? 'box')}",`);
-    lines.push(`    color: "${escapeTs(web.color ?? '#6B7280')}",`);
-    if (web.href) {
-      lines.push(`    href: "${escapeTs(web.href)}",`);
-    }
-    lines.push(`    features: ${formatTsArray(web.features ?? [], 4)},`);
-    lines.push(`    techStack: ${formatTsArray(web.tech_stack ?? [], 4)},`);
-    lines.push(`    useCases: ${formatTsArray(web.use_cases ?? [], 4)},`);
-    if (web.language) {
-      lines.push(`    language: "${escapeTs(web.language)}",`);
-    }
-    if (web.stars !== undefined) {
-      lines.push(`    stars: ${web.stars},`);
-    }
-    lines.push('  },');
-  }
-
-  lines.push('];');
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-/**
- * Generate manifest-lessons-index.ts — mapping from module IDs to lesson slugs.
- * Used to link module detail pages to onboarding lessons.
- */
-function generateWebLessonsIndex(manifest: Manifest): string {
-  const modules = manifest.modules
-    .filter((m) => m.web && m.web.visible !== false && m.web.lesson_slug)
-    .sort((a, b) => a.id.localeCompare(b.id));
-
-  const lines: string[] = [TS_HEADER];
-
-  // Type definition
-  lines.push('export interface ManifestLessonLink {');
-  lines.push('  moduleId: string;');
-  lines.push('  lessonSlug: string;');
-  lines.push('  displayName: string;');
-  lines.push('}');
-  lines.push('');
-
-  lines.push('export const manifestLessonLinks: ManifestLessonLink[] = [');
-
-  for (const module of modules) {
-    const web = module.web!;
-    lines.push('  {');
-    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
-    lines.push(`    lessonSlug: "${escapeTs(web.lesson_slug!)}",`);
-    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
-    lines.push('  },');
-  }
-
-  lines.push('];');
-  lines.push('');
-
-  // Convenience lookup map
-  lines.push('/** Lookup lesson slug by module ID */');
-  lines.push('export const lessonSlugByModuleId: Record<string, string> = {');
-  for (const module of modules) {
-    const web = module.web!;
-    lines.push(`  "${escapeTs(module.id)}": "${escapeTs(web.lesson_slug!)}",`);
-  }
-  lines.push('};');
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-/**
- * Generate manifest-web-index.ts — barrel re-export for all web generated data.
- */
-function generateWebIndex(): string {
-  const lines: string[] = [TS_HEADER];
-
-  lines.push("export { manifestModules, manifestSelectionProfiles, manifestProvenance } from './manifest-modules';");
-  lines.push("export type { ManifestModuleMetadata, ManifestSelectionProfile, ManifestSelectionProfileId, ManifestProvenanceMetadata } from './manifest-modules';");
-  lines.push('');
-  lines.push("export { manifestTools } from './manifest-tools';");
-  lines.push("export type { ManifestWebTool } from './manifest-tools';");
-  lines.push('');
-  lines.push("export { manifestTldrTools } from './manifest-tldr';");
-  lines.push("export type { ManifestTldrTool } from './manifest-tldr';");
-  lines.push('');
-  lines.push("export { manifestCommands } from './manifest-commands';");
-  lines.push("export type { ManifestCommand } from './manifest-commands';");
-  lines.push('');
-  lines.push("export { manifestLessonLinks, lessonSlugByModuleId } from './manifest-lessons-index';");
-  lines.push("export type { ManifestLessonLink } from './manifest-lessons-index';");
-  lines.push('');
-
-  return lines.join('\n');
-}
 
 // ============================================================
 // Main
@@ -2749,27 +2289,6 @@ async function main(): Promise<void> {
     filesToGenerate.set(filepath, { content, mode: 0o644 });
   }
 
-  // Web data: TypeScript modules for apps/web
-  {
-    const modulesPath = join(WEB_OUTPUT_DIR, 'manifest-modules.ts');
-    filesToGenerate.set(modulesPath, { content: generateWebModules(manifest), mode: 0o644 });
-
-    const toolsPath = join(WEB_OUTPUT_DIR, 'manifest-tools.ts');
-    filesToGenerate.set(toolsPath, { content: generateWebTools(manifest), mode: 0o644 });
-
-    const commandsPath = join(WEB_OUTPUT_DIR, 'manifest-commands.ts');
-    filesToGenerate.set(commandsPath, { content: generateWebCommands(manifest), mode: 0o644 });
-
-    const tldrPath = join(WEB_OUTPUT_DIR, 'manifest-tldr.ts');
-    filesToGenerate.set(tldrPath, { content: generateWebTldr(manifest), mode: 0o644 });
-
-    const lessonsPath = join(WEB_OUTPUT_DIR, 'manifest-lessons-index.ts');
-    filesToGenerate.set(lessonsPath, { content: generateWebLessonsIndex(manifest), mode: 0o644 });
-
-    const indexPath = join(WEB_OUTPUT_DIR, 'manifest-web-index.ts');
-    filesToGenerate.set(indexPath, { content: generateWebIndex(), mode: 0o644 });
-  }
-
   // --diff mode: compare against existing files
   if (diffMode) {
     let hasDiff = false;
@@ -2777,9 +2296,7 @@ async function main(): Promise<void> {
     console.log('');
 
     for (const [filepath, { content }] of filesToGenerate) {
-      const filename = filepath.startsWith(WEB_OUTPUT_DIR)
-        ? 'web/' + filepath.replace(WEB_OUTPUT_DIR + '/', '')
-        : filepath.replace(OUTPUT_DIR + '/', '');
+      const filename = filepath.replace(OUTPUT_DIR + '/', '');
       if (existsSync(filepath)) {
         const existing = readFileSync(filepath, 'utf-8');
         if (existing !== content) {
@@ -2813,9 +2330,7 @@ async function main(): Promise<void> {
   // --dry-run mode: just show what would be generated
   if (dryRun) {
     for (const [filepath, { content }] of filesToGenerate) {
-      const filename = filepath.startsWith(WEB_OUTPUT_DIR)
-        ? 'web/' + filepath.replace(WEB_OUTPUT_DIR + '/', '')
-        : filepath.replace(OUTPUT_DIR + '/', '');
+      const filename = filepath.replace(OUTPUT_DIR + '/', '');
       console.log(`[DRY-RUN] Would generate: ${filename}`);
       if (verbose) {
         console.log('---');
@@ -2830,20 +2345,17 @@ async function main(): Promise<void> {
 
   // Normal generation mode: write all files
   mkdirSync(OUTPUT_DIR, { recursive: true });
-  mkdirSync(WEB_OUTPUT_DIR, { recursive: true });
 
   const generatedFiles: string[] = [];
   for (const [filepath, { content, mode }] of filesToGenerate) {
     writeFileSync(filepath, content, { mode });
-    const filename = filepath.startsWith(WEB_OUTPUT_DIR)
-      ? 'web/' + filepath.replace(WEB_OUTPUT_DIR + '/', '')
-      : filepath.replace(OUTPUT_DIR + '/', '');
+    const filename = filepath.replace(OUTPUT_DIR + '/', '');
     console.log(`Generated: ${filename}`);
     generatedFiles.push(filepath);
   }
 
   console.log('');
-  console.log(`Generated ${generatedFiles.length} files (${OUTPUT_DIR} + ${WEB_OUTPUT_DIR})`);
+  console.log(`Generated ${generatedFiles.length} files (${OUTPUT_DIR})`);
 }
 
 function isDirectInvocation(): boolean {
