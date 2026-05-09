@@ -2138,7 +2138,7 @@ acfs_checkbox_module_is_critical() {
 
 acfs_checkbox_module_label() {
     local module="$1"
-    local desc="${ACFS_MODULE_DESCRIPTION["$module"]:-$module}"
+    local desc="${ACFS_MODULE_DESC[$module]:-$module}"
     if [[ ${#desc} -gt 60 ]]; then
         desc="${desc:0:57}..."
     fi
