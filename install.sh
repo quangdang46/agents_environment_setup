@@ -35,6 +35,7 @@
 #   --no-deps             Disable automatic dependency closure (expert/debug)
 #   --checkbox            Force interactive checkbox UI for module selection
 #   --no-checkbox         Skip interactive checkbox UI (use manifest defaults)
+#   --checkbox-theme <t>  Picker color theme: green (default), mono, default
 #   --checksums-ref <ref> Fetch checksums.yaml from this ref (default: main for pinned tags/SHAs)
 #   --offline-pack <dir>  Use an extracted acfs-offline-pack/ and refuse live fallback
 #   --ref <ref>          Git ref to install (branch, tag, or SHA). Equivalent to
@@ -236,6 +237,8 @@ NO_DEPS=false
 # Interactive module selection (checkbox UI)
 # Modes: "auto" (show on TTY when no --only/--yes), "always", "never"
 CHECKBOX_MODE="auto"
+# Picker color theme: "green" (default), "mono" (black/white), "default" (whiptail default)
+CHECKBOX_THEME="green"
 
 # Resume/reinstall options (used by state.sh confirm_resume)
 export ACFS_FORCE_RESUME=false
@@ -1647,6 +1650,24 @@ parse_args() {
                 CHECKBOX_MODE="never"
                 shift
                 ;;
+            --checkbox-theme|--checkbox-theme=*)
+                # Picker color theme: green (default), mono, default
+                local _theme_arg=""
+                if [[ "$1" == --checkbox-theme=* ]]; then
+                    _theme_arg="${1#*=}"
+                    shift
+                else
+                    if [[ -z "${2:-}" ]]; then
+                        log_fatal "--checkbox-theme requires a value: green, mono, or default"
+                    fi
+                    _theme_arg="$2"
+                    shift 2
+                fi
+                case "$_theme_arg" in
+                    green|mono|default) CHECKBOX_THEME="$_theme_arg" ;;
+                    *) log_fatal "Unknown --checkbox-theme value: $_theme_arg (expected green, mono, or default)" ;;
+                esac
+                ;;
             --webhook|--webhook=*)
                 # Webhook URL for install completion notification (bd-2zqr)
                 if [[ "$1" == "--webhook" ]]; then
@@ -2151,6 +2172,72 @@ acfs_checkbox_module_label() {
     printf '%s' "$desc"
 }
 
+# Apply CHECKBOX_THEME to the whiptail/dialog picker by exporting NEWT_COLORS.
+# Honors a user-supplied NEWT_COLORS (set in the env before invocation) and
+# does nothing for theme="default" (whiptail's built-in red/blue).
+acfs_checkbox_apply_theme() {
+    [[ -n "${NEWT_COLORS:-}" ]] && return 0
+    case "$CHECKBOX_THEME" in
+        green)
+            export NEWT_COLORS='
+root=,black
+border=brightgreen,black
+window=white,black
+shadow=,black
+title=brightgreen,black
+button=black,brightgreen
+actbutton=white,green
+checkbox=brightgreen,black
+actcheckbox=black,brightgreen
+entry=white,black
+label=brightgreen,black
+listbox=white,black
+actlistbox=black,green
+textbox=white,black
+acttextbox=black,green
+helpline=brightgreen,black
+roottext=brightgreen,black
+emptyscale=,gray
+fullscale=,green
+disentry=gray,black
+compactbutton=brightgreen,black
+actsellistbox=black,brightgreen
+sellistbox=brightgreen,black
+'
+            ;;
+        mono)
+            export NEWT_COLORS='
+root=,black
+border=brightwhite,black
+window=white,black
+shadow=,black
+title=brightwhite,black
+button=black,white
+actbutton=black,brightwhite
+checkbox=brightwhite,black
+actcheckbox=black,brightwhite
+entry=white,black
+label=brightwhite,black
+listbox=white,black
+actlistbox=black,white
+textbox=white,black
+acttextbox=black,white
+helpline=brightwhite,black
+roottext=brightwhite,black
+emptyscale=,gray
+fullscale=,white
+disentry=gray,black
+compactbutton=brightwhite,black
+actsellistbox=black,brightwhite
+sellistbox=brightwhite,black
+'
+            ;;
+        default|*)
+            : # use whiptail's built-in palette
+            ;;
+    esac
+}
+
 acfs_run_interactive_checkbox() {
     if ! acfs_checkbox_should_show; then
         local rc=$?
@@ -2196,6 +2283,7 @@ acfs_run_interactive_checkbox() {
     local selected=()
     case "$picker" in
         whiptail|dialog)
+            acfs_checkbox_apply_theme
             # Dynamic dialog sizing: adapt to actual terminal so long labels
             # don't overflow the frame.
             local term_cols term_rows
