@@ -28,8 +28,6 @@ DEFAULT_TARGETS=(
     "acfs/onboard/lessons/17_rch.md"
     "acfs/onboard/lessons/21_git_strategy.md"
     "acfs/onboard/lessons/22_swarm_coordination.md"
-    "apps/web/components/lessons/agents-md-lesson.tsx"
-    "apps/web/components/lessons/swarm-coordination-lesson.tsx"
 )
 
 usage() {

@@ -13,7 +13,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 DEFAULT_TARGETS=(
     "acfs/onboard/lessons/22_swarm_coordination.md"
-    "apps/web/components/lessons/swarm-coordination-lesson.tsx"
 )
 
 usage() {
