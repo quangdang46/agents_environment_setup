@@ -2141,9 +2141,12 @@ acfs_checkbox_module_is_critical() {
 
 acfs_checkbox_module_label() {
     local module="$1"
+    local max_width="${2:-60}"
+    [[ "$max_width" -lt 12 ]] && max_width=12
     local desc="${ACFS_MODULE_DESC[$module]:-$module}"
-    if [[ ${#desc} -gt 60 ]]; then
-        desc="${desc:0:57}..."
+    if [[ ${#desc} -gt "$max_width" ]]; then
+        local cut=$((max_width - 3))
+        desc="${desc:0:$cut}..."
     fi
     printf '%s' "$desc"
 }
@@ -2193,6 +2196,31 @@ acfs_run_interactive_checkbox() {
     local selected=()
     case "$picker" in
         whiptail|dialog)
+            # Dynamic dialog sizing: adapt to actual terminal so long labels
+            # don't overflow the frame.
+            local term_cols term_rows
+            term_cols="$(tput cols 2>/dev/null || echo 100)"
+            term_rows="$(tput lines 2>/dev/null || echo 30)"
+            local box_width="$term_cols"
+            local box_height="$term_rows"
+            [[ "$box_width" -gt 160 ]] && box_width=160
+            [[ "$box_width" -lt 80 ]] && box_width=80
+            [[ "$box_height" -gt 40 ]] && box_height=40
+            [[ "$box_height" -lt 20 ]] && box_height=20
+            local list_height=$((box_height - 9))
+            [[ "$list_height" -lt 8 ]] && list_height=8
+
+            # Find the longest module id to size the id column accurately;
+            # remaining width (minus borders, checkbox marker, padding) is
+            # the budget for the human-readable label so it cannot wrap or
+            # bleed past the frame.
+            local max_id_len=0
+            for module in "${optional_modules[@]}"; do
+                [[ ${#module} -gt "$max_id_len" ]] && max_id_len=${#module}
+            done
+            local label_budget=$((box_width - max_id_len - 16))
+            [[ "$label_budget" -lt 20 ]] && label_budget=20
+
             local args=()
             for module in "${optional_modules[@]}"; do
                 local enabled="${ACFS_MODULE_DEFAULT["$module"]:-1}"
@@ -2201,7 +2229,7 @@ acfs_run_interactive_checkbox() {
                     on_off="ON"
                 fi
                 local label
-                label="$(acfs_checkbox_module_label "$module")"
+                label="$(acfs_checkbox_module_label "$module" "$label_budget")"
                 args+=("$module" "$label" "$on_off")
             done
 
@@ -2211,9 +2239,9 @@ Recommended modules are pre-selected; author/extra libraries are off by default.
             local raw=""
             local rc=0
             if [[ "$picker" == "whiptail" ]]; then
-                raw="$(whiptail --title "$title" --checklist "$message" 25 78 16 "${args[@]}" 3>&1 1>&2 2>&3 < /dev/tty)" || rc=$?
+                raw="$(whiptail --title "$title" --checklist "$message" "$box_height" "$box_width" "$list_height" "${args[@]}" 3>&1 1>&2 2>&3 < /dev/tty)" || rc=$?
             else
-                raw="$(dialog --title "$title" --separate-output --checklist "$message" 25 78 16 "${args[@]}" 3>&1 1>&2 2>&3 < /dev/tty)" || rc=$?
+                raw="$(dialog --title "$title" --separate-output --checklist "$message" "$box_height" "$box_width" "$list_height" "${args[@]}" 3>&1 1>&2 2>&3 < /dev/tty)" || rc=$?
             fi
             if [[ "$rc" -ne 0 ]]; then
                 log_warn "Interactive selection cancelled; falling back to manifest defaults."

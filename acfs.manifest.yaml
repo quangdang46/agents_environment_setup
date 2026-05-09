@@ -1330,7 +1330,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "MCP Agent Mail"
@@ -1628,7 +1628,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, agent-skills]
     web:
       display_name: "Meta Skill"
@@ -1841,7 +1841,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "beads_rust"
@@ -1885,7 +1885,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "Beads Viewer"

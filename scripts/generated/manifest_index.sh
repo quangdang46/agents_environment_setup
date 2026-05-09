@@ -6,7 +6,7 @@
 # ============================================================
 # Data-only manifest index. Safe to source.
 
-ACFS_MANIFEST_SHA256="f048c6d4516e3586acf6aeb8369fadad676f0d835b168408f7c0259acb7a9f1e"
+ACFS_MANIFEST_SHA256="0fe3d05dbbb952236d0bdec007a1daf23d8976ab62a026fa6af3751333ec563c"
 
 ACFS_MODULES_IN_ORDER=(
   "base.system"
@@ -464,14 +464,14 @@ declare -gA ACFS_MODULE_DEFAULT=(
   ['cloud.supabase']="0"
   ['cloud.vercel']="0"
   ['stack.ntm']="0"
-  ['stack.mcp_agent_mail']="0"
-  ['stack.meta_skill']="0"
+  ['stack.mcp_agent_mail']="1"
+  ['stack.meta_skill']="1"
   ['stack.automated_plan_reviser']="0"
   ['stack.jeffreysprompts']="0"
   ['stack.process_triage']="0"
   ['stack.ultimate_bug_scanner']="0"
-  ['stack.beads_rust']="0"
-  ['stack.beads_viewer']="0"
+  ['stack.beads_rust']="1"
+  ['stack.beads_viewer']="1"
   ['stack.cass']="0"
   ['stack.cm']="0"
   ['stack.caam']="0"
