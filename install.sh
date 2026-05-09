@@ -8157,6 +8157,13 @@ main() {
     # through the manifest-driven selection engine
     acfs_apply_legacy_skips
 
+    # Run interactive checkbox picker before selection so user choices
+    # land in SKIP_MODULES and feed acfs_resolve_selection. The function
+    # honors $CHECKBOX_MODE (auto/always/never) and short-circuits in
+    # non-interactive / read-only modes (--yes, --only, --print-plan,
+    # --dry-run, --print, --list-modules).
+    acfs_run_interactive_checkbox || true
+
     # Resolve module selection (mjt.5.4)
     # Computes ACFS_EFFECTIVE_PLAN and ACFS_EFFECTIVE_RUN based on:
     # - CLI flags (--only, --skip, --no-deps, --only-phase)
