@@ -21,7 +21,6 @@ TEST_CHANGED_FILES=""
 TEST_SHELLCHECK_STATUS="pass"
 TEST_MANIFEST_STATUS="pass"
 TEST_CHECKSUM_STATUS="pass"
-TEST_WEB_STATUS="pass"
 TEST_REPO_ROOT="$REPO_ROOT"
 
 reset_fakes() {
@@ -33,7 +32,6 @@ reset_fakes() {
     TEST_SHELLCHECK_STATUS="pass"
     TEST_MANIFEST_STATUS="pass"
     TEST_CHECKSUM_STATUS="pass"
-    TEST_WEB_STATUS="pass"
     TEST_REPO_ROOT="$REPO_ROOT"
 }
 
@@ -49,7 +47,6 @@ run_release_doctor() {
             ACFS_RELEASE_DOCTOR_FAKE_SHELLCHECK_STATUS="$TEST_SHELLCHECK_STATUS" \
             ACFS_RELEASE_DOCTOR_FAKE_MANIFEST_DRIFT_STATUS="$TEST_MANIFEST_STATUS" \
             ACFS_RELEASE_DOCTOR_FAKE_CHECKSUM_CANDIDATE_STATUS="$TEST_CHECKSUM_STATUS" \
-            ACFS_RELEASE_DOCTOR_FAKE_WEB_CHECKS_STATUS="$TEST_WEB_STATUS" \
             ACFS_RELEASE_DOCTOR_REPO_ROOT="$TEST_REPO_ROOT" \
             bash "$RELEASE_DOCTOR" --json "$@" 2>&1
     )"
@@ -69,7 +66,6 @@ run_release_doctor_human() {
             ACFS_RELEASE_DOCTOR_FAKE_SHELLCHECK_STATUS="$TEST_SHELLCHECK_STATUS" \
             ACFS_RELEASE_DOCTOR_FAKE_MANIFEST_DRIFT_STATUS="$TEST_MANIFEST_STATUS" \
             ACFS_RELEASE_DOCTOR_FAKE_CHECKSUM_CANDIDATE_STATUS="$TEST_CHECKSUM_STATUS" \
-            ACFS_RELEASE_DOCTOR_FAKE_WEB_CHECKS_STATUS="$TEST_WEB_STATUS" \
             ACFS_RELEASE_DOCTOR_REPO_ROOT="$TEST_REPO_ROOT" \
             bash "$RELEASE_DOCTOR" "$@" 2>&1
     )"
@@ -101,7 +97,7 @@ run_test() {
 }
 
 test_pass_report() {
-    run_release_doctor --network=check --web=always
+    run_release_doctor --network=check
     [[ "$LAST_STATUS" -eq 0 ]] || return 1
     assert_jq '
       .ok == true and
@@ -112,7 +108,7 @@ test_pass_report() {
 
 test_fail_report() {
     TEST_MANIFEST_STATUS="fail"
-    run_release_doctor --network=check --web=always
+    run_release_doctor --network=check
     [[ "$LAST_STATUS" -eq 1 ]] || return 1
     assert_jq '
       .ok == false and
@@ -123,7 +119,7 @@ test_fail_report() {
 
 test_warning_report() {
     TEST_ORIGIN_MASTER="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    run_release_doctor --network=check --web=always
+    run_release_doctor --network=check
     [[ "$LAST_STATUS" -eq 0 ]] || return 1
     assert_jq '
       .ok == true and
@@ -133,7 +129,7 @@ test_warning_report() {
 }
 
 test_skipped_network_check() {
-    run_release_doctor --web=always
+    run_release_doctor
     [[ "$LAST_STATUS" -eq 0 ]] || return 1
     assert_jq '
       .ok == true and
@@ -175,7 +171,7 @@ BASH
 
     TEST_REPO_ROOT="$fixture"
     TEST_CHECKSUM_STATUS=""
-    run_release_doctor --network=check --web=never
+    run_release_doctor --network=check
     [[ "$LAST_STATUS" -eq 0 ]] || return 1
     assert_jq '
       .ok == true and
@@ -217,7 +213,7 @@ BASH
 
     TEST_REPO_ROOT="$fixture"
     TEST_CHECKSUM_STATUS=""
-    run_release_doctor --network=check --web=never
+    run_release_doctor --network=check
     [[ "$LAST_STATUS" -eq 1 ]] || return 1
     assert_jq '
       .ok == false and
@@ -265,7 +261,7 @@ BASH
 
     TEST_REPO_ROOT="$fixture"
     TEST_CHECKSUM_STATUS=""
-    run_release_doctor --network=check --web=never
+    run_release_doctor --network=check
     [[ "$LAST_STATUS" -eq 1 ]] || return 1
     assert_jq '
       .ok == false and
@@ -301,7 +297,6 @@ run_test "skipped network check" test_skipped_network_check
 run_test "checksum candidate ignores progress stderr" test_checksum_candidate_ignores_progress_stderr
 run_test "checksum candidate target diff fails" test_checksum_candidate_target_diff_fails
 run_test "checksum candidate unrelated diff fails" test_checksum_candidate_unrelated_diff_fails
-run_test "web check gating" test_web_check_gating
 run_test "help mentions release workflow" test_help_mentions_release_workflow
 run_test "human output reports governance checks" test_human_output_reports_governance_checks
 
