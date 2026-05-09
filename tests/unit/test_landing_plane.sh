@@ -110,16 +110,15 @@ test_dirty_session_prints_exact_gates_and_staging() {
 
 test_missing_gate_scenario_warns() {
     local status_file output
-    status_file="$(write_status_file missing_gate ' M apps/web/app/page.tsx')"
+    status_file="$(write_status_file missing_gate ' M scripts/lib/foo.sh')"
     output="$(run_landing_json "$status_file" '{"issues":[]}' '{"active":[]}' true false)"
     printf '%s\n' "$output" > "$ARTIFACT_DIR/missing-gate.json"
 
     jq -e '
       .status == "warn" and
       .quality_gates.status == "warn" and
-      (.quality_gates.web_files | index("apps/web/app/page.tsx")) != null and
-      any(.next_commands[]; . == "cd apps/web && bun run type-check && bun run lint") and
-      any(.next_commands[]; . == "cd apps/web && bun run build") and
+      (.changed_files | index("scripts/lib/foo.sh")) != null and
+      any(.next_commands[]; startswith("shellcheck ") and contains("scripts/lib/foo.sh")) and
       any(.next_commands[]; startswith("ubs "))
     ' <<<"$output" >/dev/null || return 1
     assert_no_forbidden_copy "$output" || return 1

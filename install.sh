@@ -33,6 +33,8 @@
 #   --only-phase <phase>  Only run modules in a specific phase (repeatable)
 #   --skip <module>       Skip a specific module (repeatable)
 #   --no-deps             Disable automatic dependency closure (expert/debug)
+#   --checkbox            Force interactive checkbox UI for module selection
+#   --no-checkbox         Skip interactive checkbox UI (use manifest defaults)
 #   --checksums-ref <ref> Fetch checksums.yaml from this ref (default: main for pinned tags/SHAs)
 #   --offline-pack <dir>  Use an extracted acfs-offline-pack/ and refuse live fallback
 #   --ref <ref>          Git ref to install (branch, tag, or SHA). Equivalent to
@@ -230,6 +232,10 @@ ONLY_MODULES=()
 ONLY_PHASES=()
 SKIP_MODULES=()
 NO_DEPS=false
+
+# Interactive module selection (checkbox UI)
+# Modes: "auto" (show on TTY when no --only/--yes), "always", "never"
+CHECKBOX_MODE="auto"
 
 # Resume/reinstall options (used by state.sh confirm_resume)
 export ACFS_FORCE_RESUME=false
@@ -1631,6 +1637,16 @@ parse_args() {
                 NO_DEPS=true
                 shift
                 ;;
+            --checkbox)
+                # Force interactive checkbox UI for module selection
+                CHECKBOX_MODE="always"
+                shift
+                ;;
+            --no-checkbox)
+                # Disable interactive checkbox UI (use manifest defaults)
+                CHECKBOX_MODE="never"
+                shift
+                ;;
             --webhook|--webhook=*)
                 # Webhook URL for install completion notification (bd-2zqr)
                 if [[ "$1" == "--webhook" ]]; then
@@ -2056,6 +2072,305 @@ source_generated_installers() {
 
     ACFS_GENERATED_SOURCED=true
     export ACFS_GENERATED_SOURCED
+}
+
+# ============================================================
+# Interactive checkbox-based module selection (whiptail/dialog/gum)
+#
+# Shows a checklist of optional modules, pre-selecting modules whose
+# manifest enabled_by_default is true. Critical and orchestration
+# modules are always installed and not displayed in the picker.
+#
+# Honors $CHECKBOX_MODE:
+#   "auto"   - show only when stdin/tty is interactive and no --only/--yes
+#   "always" - always show (errors if no TTY available)
+#   "never"  - never show; falls back to manifest defaults
+#
+# On confirmation, replaces ONLY_MODULES with the user's authoritative
+# selection: every default-on hidden module (critical/orchestration that
+# is enabled_by_default in the manifest) plus every optional module the
+# user kept checked. acfs_resolve_selection then treats this as the
+# explicit start set and adds dependency closure on top.
+# ============================================================
+acfs_checkbox_should_show() {
+    case "$CHECKBOX_MODE" in
+        never) return 1 ;;
+        always) ;;
+        auto)
+            [[ "$YES_MODE" == "true" ]] && return 1
+            [[ "$LIST_MODULES" == "true" ]] && return 1
+            [[ "$PRINT_PLAN_MODE" == "true" ]] && return 1
+            [[ "$DRY_RUN" == "true" ]] && return 1
+            [[ "$PRINT_MODE" == "true" ]] && return 1
+            [[ "$RESET_STATE_ONLY" == "true" ]] && return 1
+            [[ "$PIN_REF_MODE" == "true" ]] && return 1
+            [[ "${ACFS_FORCE_RESUME:-false}" == "true" ]] && return 1
+            [[ ${#ONLY_MODULES[@]} -gt 0 ]] && return 1
+            [[ ${#ONLY_PHASES[@]} -gt 0 ]] && return 1
+            ;;
+        *) return 1 ;;
+    esac
+
+    if [[ ! -t 0 ]] && [[ ! -r /dev/tty ]]; then
+        if [[ "$CHECKBOX_MODE" == "always" ]]; then
+            log_error "--checkbox requires an interactive terminal"
+            return 2
+        fi
+        return 1
+    fi
+
+    return 0
+}
+
+# Returns 0 if the module should be hidden from the checkbox UI
+# (because it is critical / orchestration / always-on infrastructure).
+acfs_checkbox_module_is_critical() {
+    local module="$1"
+    local tags="${ACFS_MODULE_TAGS["$module"]:-}"
+    [[ -z "$tags" ]] && return 1
+
+    IFS=',' read -ra _checkbox_tags <<< "$tags"
+    local _t=""
+    for _t in "${_checkbox_tags[@]}"; do
+        case "$_t" in
+            critical|orchestration) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+acfs_checkbox_module_label() {
+    local module="$1"
+    local max_width="${2:-60}"
+    [[ "$max_width" -lt 12 ]] && max_width=12
+    local desc="${ACFS_MODULE_DESC[$module]:-$module}"
+    if [[ ${#desc} -gt "$max_width" ]]; then
+        local cut=$((max_width - 3))
+        desc="${desc:0:$cut}..."
+    fi
+    printf '%s' "$desc"
+}
+
+# Export a black/white NEWT_COLORS palette for the whiptail picker so the
+# default red/magenta theme doesn't clash with users' terminals. A
+# pre-existing NEWT_COLORS in the environment is honoured.
+acfs_checkbox_apply_theme() {
+    [[ -n "${NEWT_COLORS:-}" ]] && return 0
+    # Newt color names: black/red/green/brown/blue/magenta/cyan/lightgray
+    # /gray/brightred/brightgreen/yellow/brightblue/brightmagenta/brightcyan
+    # /white. "brightwhite" is NOT valid; "white" already means bright white.
+    export NEWT_COLORS='
+root=,black
+border=white,black
+window=lightgray,black
+shadow=,black
+title=white,black
+button=black,lightgray
+actbutton=black,white
+checkbox=white,black
+actcheckbox=black,white
+entry=white,black
+label=white,black
+listbox=lightgray,black
+actlistbox=black,white
+textbox=lightgray,black
+acttextbox=black,white
+helpline=white,black
+roottext=white,black
+emptyscale=,gray
+fullscale=,white
+disentry=gray,black
+compactbutton=white,black
+actsellistbox=black,white
+sellistbox=white,black
+'
+}
+
+acfs_run_interactive_checkbox() {
+    if ! acfs_checkbox_should_show; then
+        local rc=$?
+        return "$rc"
+    fi
+
+    if [[ "${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        log_warn "Manifest index not loaded; skipping interactive selection."
+        return 0
+    fi
+
+    if [[ ${#ACFS_MODULES_IN_ORDER[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local optional_modules=()
+    local module=""
+    for module in "${ACFS_MODULES_IN_ORDER[@]}"; do
+        acfs_checkbox_module_is_critical "$module" && continue
+        optional_modules+=("$module")
+    done
+
+    if [[ ${#optional_modules[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    local picker=""
+    if command -v whiptail >/dev/null 2>&1; then
+        picker="whiptail"
+    elif command -v dialog >/dev/null 2>&1; then
+        picker="dialog"
+    elif command -v gum >/dev/null 2>&1; then
+        picker="gum"
+    else
+        if [[ "$CHECKBOX_MODE" == "always" ]]; then
+            log_error "--checkbox requires whiptail, dialog, or gum to be installed"
+            return 1
+        fi
+        log_info "Skipping interactive selection (no whiptail/dialog/gum found; using manifest defaults)."
+        return 0
+    fi
+
+    local selected=()
+    case "$picker" in
+        whiptail|dialog)
+            acfs_checkbox_apply_theme
+            # Dynamic dialog sizing: adapt to actual terminal so long labels
+            # don't overflow the frame.
+            local term_cols term_rows
+            term_cols="$(tput cols 2>/dev/null || echo 100)"
+            term_rows="$(tput lines 2>/dev/null || echo 30)"
+            local box_width="$term_cols"
+            local box_height="$term_rows"
+            [[ "$box_width" -gt 160 ]] && box_width=160
+            [[ "$box_width" -lt 80 ]] && box_width=80
+            [[ "$box_height" -gt 40 ]] && box_height=40
+            [[ "$box_height" -lt 20 ]] && box_height=20
+            local list_height=$((box_height - 9))
+            [[ "$list_height" -lt 8 ]] && list_height=8
+
+            # Find the longest module id to size the id column accurately;
+            # remaining width (minus borders, checkbox marker, padding) is
+            # the budget for the human-readable label so it cannot wrap or
+            # bleed past the frame.
+            local max_id_len=0
+            for module in "${optional_modules[@]}"; do
+                [[ ${#module} -gt "$max_id_len" ]] && max_id_len=${#module}
+            done
+            local label_budget=$((box_width - max_id_len - 16))
+            [[ "$label_budget" -lt 20 ]] && label_budget=20
+
+            local args=()
+            for module in "${optional_modules[@]}"; do
+                local enabled="${ACFS_MODULE_DEFAULT["$module"]:-1}"
+                local on_off="OFF"
+                if [[ "$enabled" == "1" || "$enabled" == "true" ]]; then
+                    on_off="ON"
+                fi
+                local label
+                label="$(acfs_checkbox_module_label "$module" "$label_budget")"
+                args+=("$module" "$label" "$on_off")
+            done
+
+            local title="ACFS module selection"
+            local message="Toggle modules with SPACE. ENTER to confirm, ESC to keep manifest defaults.
+Recommended modules are pre-selected; author/extra libraries are off by default."
+            local raw=""
+            local rc=0
+            if [[ "$picker" == "whiptail" ]]; then
+                raw="$(whiptail --title "$title" --checklist "$message" "$box_height" "$box_width" "$list_height" "${args[@]}" 3>&1 1>&2 2>&3 < /dev/tty)" || rc=$?
+            else
+                raw="$(dialog --title "$title" --separate-output --checklist "$message" "$box_height" "$box_width" "$list_height" "${args[@]}" 3>&1 1>&2 2>&3 < /dev/tty)" || rc=$?
+            fi
+            if [[ "$rc" -ne 0 ]]; then
+                log_warn "Interactive selection cancelled; falling back to manifest defaults."
+                return 0
+            fi
+
+            # whiptail returns space-separated double-quoted ids; dialog returns newline-separated.
+            if [[ "$picker" == "whiptail" ]]; then
+                # shellcheck disable=SC2206
+                local _tmp=($raw)
+                for module in "${_tmp[@]}"; do
+                    selected+=("${module%\"}")
+                    selected[-1]="${selected[-1]#\"}"
+                done
+            else
+                while IFS= read -r module; do
+                    [[ -n "$module" ]] && selected+=("$module")
+                done <<< "$raw"
+            fi
+            ;;
+        gum)
+            local pre_selected=()
+            local options=()
+            for module in "${optional_modules[@]}"; do
+                local enabled="${ACFS_MODULE_DEFAULT["$module"]:-1}"
+                local label
+                label="$(acfs_checkbox_module_label "$module")"
+                local entry="$module — $label"
+                options+=("$entry")
+                if [[ "$enabled" == "1" || "$enabled" == "true" ]]; then
+                    pre_selected+=("$entry")
+                fi
+            done
+
+            local selected_csv=""
+            local IFS_OLD="$IFS"
+            IFS=','
+            local pre_csv="${pre_selected[*]}"
+            IFS="$IFS_OLD"
+
+            local raw=""
+            local rc=0
+            if [[ -r /dev/tty ]]; then
+                raw="$(gum choose --no-limit --header "Select ACFS modules (recommended pre-checked; SPACE toggles, ENTER confirms)" --selected "$pre_csv" "${options[@]}" < /dev/tty)" || rc=$?
+            else
+                raw="$(gum choose --no-limit --header "Select ACFS modules" --selected "$pre_csv" "${options[@]}")" || rc=$?
+            fi
+            if [[ "$rc" -ne 0 ]]; then
+                log_warn "Interactive selection cancelled; falling back to manifest defaults."
+                return 0
+            fi
+            while IFS= read -r entry; do
+                [[ -z "$entry" ]] && continue
+                local mod="${entry%% —*}"
+                selected+=("$mod")
+            done <<< "$raw"
+            ;;
+    esac
+
+    # Build the authoritative ONLY_MODULES set from the picker:
+    # 1) Hidden critical/orchestration modules that default ON in the manifest
+    #    (always-on infra: base.system, lang.bun, shell.zsh, ...).
+    # 2) Optional modules the user explicitly checked in the picker.
+    # Modules unchecked in the picker (or hidden + default OFF) are excluded.
+    local -A selected_set=()
+    for module in "${selected[@]}"; do
+        selected_set["$module"]=1
+    done
+
+    local picker_only=()
+    local skipped_count=0
+    for module in "${ACFS_MODULES_IN_ORDER[@]}"; do
+        if acfs_checkbox_module_is_critical "$module"; then
+            local _enabled="${ACFS_MODULE_DEFAULT["$module"]:-1}"
+            if [[ "$_enabled" == "1" || "$_enabled" == "true" ]]; then
+                picker_only+=("$module")
+            fi
+        elif [[ -n "${selected_set[$module]:-}" ]]; then
+            picker_only+=("$module")
+        else
+            skipped_count=$((skipped_count + 1))
+        fi
+    done
+
+    ONLY_MODULES=("${picker_only[@]}")
+
+    if [[ "$skipped_count" -gt 0 ]]; then
+        log_info "Interactive selection: enabling ${#picker_only[@]} module(s); ${skipped_count} optional module(s) excluded"
+    else
+        log_info "Interactive selection: enabling all ${#picker_only[@]} module(s)"
+    fi
+
+    return 0
 }
 
 # ============================================================
@@ -7921,6 +8236,13 @@ main() {
     # This allows --skip-postgres, --skip-vault, --skip-cloud to work
     # through the manifest-driven selection engine
     acfs_apply_legacy_skips
+
+    # Run interactive checkbox picker before selection so user choices
+    # land in SKIP_MODULES and feed acfs_resolve_selection. The function
+    # honors $CHECKBOX_MODE (auto/always/never) and short-circuits in
+    # non-interactive / read-only modes (--yes, --only, --print-plan,
+    # --dry-run, --print, --list-modules).
+    acfs_run_interactive_checkbox || true
 
     # Resolve module selection (mjt.5.4)
     # Computes ACFS_EFFECTIVE_PLAN and ACFS_EFFECTIVE_RUN based on:

@@ -685,9 +685,6 @@ fi
 cd "$REPO_ROOT"
 
 git add scripts/generated/
-if [[ -d "$REPO_ROOT/apps/web/lib/generated" ]]; then
-    git add apps/web/lib/generated/
-fi
 
 if git diff --cached --quiet; then
     log "No generated artifact changes after regeneration (already up to date)"
@@ -698,7 +695,7 @@ git commit -m "$(cat <<'COMMIT_MSG'
 fix(manifest): auto-fix generated artifact checksum drift
 
 Detected by check-manifest-drift.sh.
-Regenerated installer and web generated artifacts via `bun run generate`
+Regenerated installer artifacts via `bun run generate`
 to sync ACFS_MANIFEST_SHA256 and internal checksums with source files.
 COMMIT_MSG
 )"

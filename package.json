@@ -3,15 +3,12 @@
   "version": "0.7.0",
   "private": true,
   "workspaces": [
-    "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun run --filter @acfs/web dev",
-    "build": "bun run --filter @acfs/web build",
     "lint": "bun run --filter '*' lint",
     "type-check": "bun run --filter '*' type-check",
-    "clean": "rm -rf apps/*/node_modules packages/*/node_modules node_modules"
+    "clean": "rm -rf packages/*/node_modules node_modules"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

@@ -337,6 +337,7 @@ declare -a MANIFEST_CHECKS=(
     "agents.codex	OpenAI Codex CLI	target_bin=\"\${ACFS_BIN_DIR:-\$HOME/.local/bin}\"\\n\"\$target_bin/codex\" --version || \"\$target_bin/codex\" --help	required	target_user"
     "agents.gemini	Google Gemini CLI	target_bin=\"\${ACFS_BIN_DIR:-\$HOME/.local/bin}\"\\n\"\$target_bin/gemini\" --version || \"\$target_bin/gemini\" --help	required	target_user"
     "agents.opencode	OpenCode (multi-provider agent harness)	opencode --version || opencode --help	optional	target_user"
+    "agents.oh_my_openagent	oh-my-openagent (OpenCode plugin / multi-provider config helper)	export PATH=\"\$HOME/.bun/bin:\$PATH\"\\nbunx --yes oh-my-openagent doctor 2>&1 | head -20	optional	target_user"
     "tools.vault	HashiCorp Vault CLI	vault --version	optional	root"
     "db.postgres18.1	PostgreSQL 18	psql --version	optional	root"
     "db.postgres18.2	PostgreSQL 18	systemctl status postgresql --no-pager	optional	root"

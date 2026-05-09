@@ -48,16 +48,7 @@ modules:
       runner: bash
       args: []
     web:
-      display_name: Example Tool
-      short_name: EX
-      tagline: Example stack tool
-      short_desc: Example generated tool metadata
-      icon: terminal
-      color: "#0EA5E9"
-      cli_name: example
-      command_example: example --help
       lesson_slug: example
-      tldr_snippet: example --version
   - id: stack.hidden
     description: Hidden stack tool
     run_as: target_user
@@ -68,12 +59,6 @@ modules:
       - echo hidden
     verify:
       - hidden --version
-    web:
-      visible: false
-      display_name: Hidden Tool
-      tagline: Hidden stack tool
-      cli_name: hidden
-      lesson_slug: hidden
   - id: base.local
     description: Local base tool
     run_as: target_user
@@ -119,26 +104,6 @@ modules:
 `
   );
 
-  writeFixtureFile(
-    root,
-    'apps/web/lib/generated/manifest-tools.ts',
-    'export const manifestTools = [{ moduleId: "stack.example" }];\n'
-  );
-  writeFixtureFile(
-    root,
-    'apps/web/lib/generated/manifest-commands.ts',
-    'export const manifestCommands = [{ moduleId: "stack.example" }];\n'
-  );
-  writeFixtureFile(
-    root,
-    'apps/web/lib/generated/manifest-tldr.ts',
-    'export const manifestTldrTools = [{ moduleId: "stack.example" }];\n'
-  );
-  writeFixtureFile(
-    root,
-    'apps/web/lib/generated/manifest-lessons-index.ts',
-    'export const manifestLessonLinks = [{ moduleId: "stack.example", lessonSlug: "example" }];\n'
-  );
   writeFixtureFile(root, 'acfs/onboard/lessons/01_example.md', '# Example\n');
   writeFixtureFile(
     root,
@@ -147,7 +112,6 @@ modules:
       'scripts/check-manifest-drift.sh --json',
       'bun run generate:diff',
       'scripts/generated/doctor_checks.sh',
-      'apps/web/lib/generated',
       'acfs/onboard/lessons',
       'checksums.yaml',
     ].join('\n')
@@ -167,7 +131,6 @@ describe('manifest drift contract', () => {
     expect(result.ok).toBe(true);
     expect(result.mismatches).toEqual([]);
     expect(result.summary.verifiedInstallers).toBe(1);
-    expect(result.summary.webVisibleModules).toBe(1);
     expect(result.summary.lessonLinkedModules).toBe(1);
   });
 
@@ -184,25 +147,6 @@ describe('manifest drift contract', () => {
     );
 
     expect(codes(root)).toContain('MANIFEST_INDEX_MODULE_MISSING');
-  });
-
-  test('detects missing generated website content', () => {
-    const root = cleanFixture();
-    writeFixtureFile(root, 'apps/web/lib/generated/manifest-tools.ts', 'export const manifestTools = [];\n');
-
-    expect(codes(root)).toContain('WEB_TOOL_MISSING');
-  });
-
-  test('detects stale generated website command tldr and lesson indexes', () => {
-    const root = cleanFixture();
-    writeFixtureFile(root, 'apps/web/lib/generated/manifest-commands.ts', 'export const manifestCommands = [];\n');
-    writeFixtureFile(root, 'apps/web/lib/generated/manifest-tldr.ts', 'export const manifestTldrTools = [];\n');
-    writeFixtureFile(root, 'apps/web/lib/generated/manifest-lessons-index.ts', 'export const manifestLessonLinks = [];\n');
-
-    const mismatchCodes = codes(root);
-    expect(mismatchCodes).toContain('WEB_COMMAND_MISSING');
-    expect(mismatchCodes).toContain('WEB_TLDR_MISSING');
-    expect(mismatchCodes).toContain('LESSON_LINK_MISSING');
   });
 
   test('detects missing generated doctor checks', () => {
@@ -227,7 +171,7 @@ describe('manifest drift contract', () => {
     expect(codes(root)).toContain('MISSING_VERIFIED_INSTALLER_CHECKSUM');
   });
 
-  test('detects missing lesson and README contract snippets', () => {
+  test('detects missing README contract snippets', () => {
     const root = cleanFixture();
     writeFixtureFile(root, 'README.md', 'checksums.yaml\n');
 
@@ -262,32 +206,7 @@ modules:
       runner: bash
       args: []
     web:
-      display_name: Example Tool
-      short_name: EX
-      tagline: Example stack tool
-      short_desc: Example generated tool metadata
-      icon: terminal
-      color: "#0EA5E9"
-      cli_name: example
-      command_example: example --help
       lesson_slug: missing
-      tldr_snippet: example --version
-  - id: stack.hidden
-    description: Hidden stack tool
-    run_as: target_user
-    optional: true
-    enabled_by_default: false
-    generated: true
-    install:
-      - echo hidden
-    verify:
-      - hidden --version
-    web:
-      visible: false
-      display_name: Hidden Tool
-      tagline: Hidden stack tool
-      cli_name: hidden
-      lesson_slug: hidden
   - id: base.local
     description: Local base tool
     run_as: target_user
@@ -299,11 +218,6 @@ modules:
     verify:
       - local --version
 `
-    );
-    writeFixtureFile(
-      root,
-      'apps/web/lib/generated/manifest-lessons-index.ts',
-      'export const manifestLessonLinks = [{ moduleId: "stack.example", lessonSlug: "missing" }];\n'
     );
 
     expect(codes(root)).toContain('ONBOARDING_LESSON_MISSING');

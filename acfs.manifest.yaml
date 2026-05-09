@@ -974,8 +974,8 @@ modules:
     phase: 7
     run_as: target_user
     optional: true
-    enabled_by_default: false
-    tags: [optional, agent]
+    enabled_by_default: true
+    tags: [recommended, agent]
     dependencies:
       - base.system
     installed_check:
@@ -990,6 +990,48 @@ modules:
     notes:
       - "Supports GitHub Copilot and OpenAI Codex subscriptions"
       - "Multi-provider agent supporting Claude, GPT, Gemini models"
+
+  - id: agents.oh_my_openagent
+    description: oh-my-openagent (OpenCode plugin / multi-provider config helper)
+    category: agents
+    phase: 7
+    run_as: target_user
+    optional: true
+    enabled_by_default: true
+    tags: [recommended, agent, opencode-plugin]
+    dependencies:
+      - lang.bun
+      - agents.opencode
+    installed_check:
+      run_as: target_user
+      command: "test -f \"$HOME/.config/opencode/opencode.json\" && grep -Eq 'oh-my-openagent|oh-my-opencode' \"$HOME/.config/opencode/opencode.json\""
+    install:
+      - |
+        # Install oh-my-openagent OpenCode plugin via bunx (non-interactive)
+        # Reference: https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/refs/heads/dev/docs/guide/installation.md
+        # Default subscription flags conservatively to "no" so unattended installs don't prompt;
+        # operators can re-run interactively (`bunx oh-my-openagent install`) to enable specific
+        # providers (--claude=yes|max20, --openai=yes, --gemini=yes, --copilot=yes, etc.).
+        export PATH="$HOME/.bun/bin:$PATH"
+        bunx --yes oh-my-openagent install \
+            --claude=no \
+            --openai=no \
+            --gemini=no \
+            --copilot=no \
+            --opencode-zen=no \
+            --zai=no \
+            --opencode-go=no \
+            --kimi=no \
+            --vercel-ai-gateway=no \
+          || true
+    verify:
+      - |
+        export PATH="$HOME/.bun/bin:$PATH"
+        bunx --yes oh-my-openagent doctor 2>&1 | head -20 || true
+    notes:
+      - "Default install runs non-interactively with all subscriptions disabled."
+      - "Run `bunx oh-my-openagent install` interactively to enable Claude / OpenAI / Gemini / Copilot subscriptions."
+      - "Configures ~/.config/opencode/opencode.json (or ~/.opencode/oh-my-openagent.json) with provider entries."
 
   # ============================================================
   # PHASE 8: Cloud & database tools
@@ -1247,7 +1289,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended]
     web:
       display_name: "Named Tmux Manager"
@@ -1629,7 +1671,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, agent-tools]
     web:
       display_name: "Automated Plan Reviser Pro"
@@ -1671,7 +1713,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, agent-skills, prompts]
     web:
       display_name: "JeffreysPrompts CLI"
@@ -1710,7 +1752,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, system-tools]
     web:
       display_name: "Process Triage"
@@ -1754,7 +1796,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended]
     web:
       display_name: "Ultimate Bug Scanner"
@@ -1885,7 +1927,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended]
     web:
       display_name: "Coding Agent Session Search"
@@ -1928,7 +1970,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended]
     web:
       display_name: "CASS Memory System"
@@ -1972,7 +2014,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended]
     web:
       display_name: "Coding Agent Account Manager"
@@ -2013,7 +2055,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [optional]
     web:
       display_name: "Simultaneous Launch Button"
@@ -2081,7 +2123,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, safety]
     web:
       display_name: "Destructive Command Guard"
@@ -2165,7 +2207,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended]
     web:
       display_name: "Repo Updater"
@@ -2209,7 +2251,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended]
     web:
       display_name: "Brenner Bot"
@@ -2252,7 +2294,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, performance]
     web:
       display_name: "Remote Compilation Helper"
@@ -2296,7 +2338,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, automation]
     web:
       display_name: "WezTerm Automata"
@@ -2342,7 +2384,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, system-health]
     web:
       display_name: "System Resource Protection Script"
@@ -2389,7 +2431,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, search]
     web:
       display_name: "FrankenSearch"
@@ -2433,7 +2475,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, system-tools]
     web:
       display_name: "Storage Ballast Helper"
@@ -2476,7 +2518,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, agent-tools]
     web:
       display_name: "Cross-Agent Session Resumer"
@@ -2519,7 +2561,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, release]
     web:
       display_name: "Doodlestein Self-Releaser"
@@ -2563,7 +2605,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, backup]
     web:
       display_name: "Agent Settings Backup"
@@ -2645,7 +2687,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [recommended, safety, hooks]
     web:
       display_name: "Post-Compact Reminder"
@@ -2787,7 +2829,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [utility]
     web:
       display_name: "Get Image from Internet Link"
@@ -2827,7 +2869,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [utility]
     web:
       display_name: "Chat Shared Conversation to File"
@@ -2908,7 +2950,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [utility, llm]
     web:
       display_name: "Token-Optimized Notation"
@@ -2990,7 +3032,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [utility, web, llm]
     web:
       display_name: "Markdown Web Browser"
@@ -3031,7 +3073,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [utility, llm, tui]
     web:
       display_name: "Source to Prompt TUI"
@@ -3212,7 +3254,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     tags: [workspace, agents]
     dependencies:
       - agents.claude
@@ -3321,7 +3363,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     generated: false
     tags: [orchestration]
     notes:
@@ -3356,7 +3398,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     generated: false
     tags: [orchestration]
     notes:
@@ -3406,7 +3448,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: true
-    enabled_by_default: true
+    enabled_by_default: false
     generated: false
     tags: [orchestration, maintenance]
     dependencies:
@@ -3478,7 +3520,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: false
-    enabled_by_default: true
+    enabled_by_default: false
     generated: false
     tags: [orchestration]
     notes:

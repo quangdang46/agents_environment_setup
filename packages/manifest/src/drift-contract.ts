@@ -24,10 +24,6 @@ export type DriftContractCode =
   | 'MISSING_FILE'
   | 'MANIFEST_INDEX_MODULE_MISSING'
   | 'DOCTOR_CHECK_MISSING'
-  | 'WEB_TOOL_MISSING'
-  | 'WEB_COMMAND_MISSING'
-  | 'WEB_TLDR_MISSING'
-  | 'LESSON_LINK_MISSING'
   | 'ONBOARDING_LESSON_MISSING'
   | 'README_SNIPPET_MISSING'
   | 'MISSING_VERIFIED_INSTALLER_CHECKSUM'
@@ -46,9 +42,6 @@ export interface DriftContractMismatch {
 export interface DriftContractSummary {
   modules: number;
   verifiedInstallers: number;
-  webVisibleModules: number;
-  webCommandModules: number;
-  webTldrModules: number;
   lessonLinkedModules: number;
   doctorChecksExpected: number;
   readmeSnippetsExpected: number;
@@ -77,10 +70,6 @@ const REQUIRED_README_SNIPPETS = [
   {
     snippet: 'scripts/generated/doctor_checks.sh',
     reason: 'manifest-derived doctor checks',
-  },
-  {
-    snippet: 'apps/web/lib/generated',
-    reason: 'manifest-derived website metadata',
   },
   {
     snippet: 'acfs/onboard/lessons',
@@ -113,16 +102,6 @@ function readText(
   return readFileSync(absPath, 'utf-8');
 }
 
-function extractModuleIdsFromGeneratedTs(content: string): Set<string> {
-  const ids = new Set<string>();
-  const regex = /moduleId:\s*"([^"]+)"/g;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(content)) !== null) {
-    ids.add(match[1]);
-  }
-  return ids;
-}
-
 function extractDoctorCheckIds(content: string): Set<string> {
   const ids = new Set<string>();
   const regex = /^\s*"([^"\t]+)\t/gm;
@@ -148,22 +127,10 @@ function extractManifestIndexModuleIds(content: string): Set<string> {
   return ids;
 }
 
-function webVisibleModules(manifest: Manifest): Module[] {
-  return manifest.modules.filter((module) => Boolean(module.web) && module.web?.visible !== false);
-}
-
-function webCommandModules(manifest: Manifest): Module[] {
-  return webVisibleModules(manifest).filter((module) => Boolean(module.web?.cli_name));
-}
-
-function webTldrModules(manifest: Manifest): Module[] {
-  return webVisibleModules(manifest).filter((module) =>
-    Boolean(module.web?.tldr_snippet || module.web?.tagline)
-  );
-}
-
 function lessonLinkedModules(manifest: Manifest): Module[] {
-  return webVisibleModules(manifest).filter((module) => Boolean(module.web?.lesson_slug));
+  return manifest.modules.filter((module) =>
+    Boolean(module.web?.lesson_slug && module.web?.visible !== false)
+  );
 }
 
 function expectedDoctorCheckIds(manifest: Manifest): Array<{ module: Module; id: string }> {
@@ -257,9 +224,6 @@ export function checkManifestDriftContract(rootDir = DEFAULT_ROOT): DriftContrac
   const summary: DriftContractSummary = {
     modules: 0,
     verifiedInstallers: 0,
-    webVisibleModules: 0,
-    webCommandModules: 0,
-    webTldrModules: 0,
     lessonLinkedModules: 0,
     doctorChecksExpected: 0,
     readmeSnippetsExpected: REQUIRED_README_SNIPPETS.length,
@@ -279,17 +243,11 @@ export function checkManifestDriftContract(rootDir = DEFAULT_ROOT): DriftContrac
 
   const manifest = parseResult.data;
   const verifiedModules = manifest.modules.filter((module) => Boolean(module.verified_installer));
-  const visibleModules = webVisibleModules(manifest);
-  const commandModules = webCommandModules(manifest);
-  const tldrModules = webTldrModules(manifest);
   const lessonModules = lessonLinkedModules(manifest);
   const doctorIds = expectedDoctorCheckIds(manifest);
 
   summary.modules = manifest.modules.length;
   summary.verifiedInstallers = verifiedModules.length;
-  summary.webVisibleModules = visibleModules.length;
-  summary.webCommandModules = commandModules.length;
-  summary.webTldrModules = tldrModules.length;
   summary.lessonLinkedModules = lessonModules.length;
   summary.doctorChecksExpected = doctorIds.length;
 
@@ -350,67 +308,6 @@ export function checkManifestDriftContract(rootDir = DEFAULT_ROOT): DriftContrac
     }
   }
 
-  const webTools = readText(root, 'apps/web/lib/generated/manifest-tools.ts', mismatches);
-  if (webTools !== null) {
-    addMissingModuleIds(
-      mismatches,
-      'WEB_TOOL_MISSING',
-      'apps/web/lib/generated/manifest-tools.ts',
-      visibleModules,
-      extractModuleIdsFromGeneratedTs(webTools),
-      'Generated website tool metadata'
-    );
-  }
-
-  const webCommands = readText(root, 'apps/web/lib/generated/manifest-commands.ts', mismatches);
-  if (webCommands !== null) {
-    addMissingModuleIds(
-      mismatches,
-      'WEB_COMMAND_MISSING',
-      'apps/web/lib/generated/manifest-commands.ts',
-      commandModules,
-      extractModuleIdsFromGeneratedTs(webCommands),
-      'Generated command reference metadata'
-    );
-  }
-
-  const webTldr = readText(root, 'apps/web/lib/generated/manifest-tldr.ts', mismatches);
-  if (webTldr !== null) {
-    addMissingModuleIds(
-      mismatches,
-      'WEB_TLDR_MISSING',
-      'apps/web/lib/generated/manifest-tldr.ts',
-      tldrModules,
-      extractModuleIdsFromGeneratedTs(webTldr),
-      'Generated TLDR metadata'
-    );
-  }
-
-  const lessonIndex = readText(root, 'apps/web/lib/generated/manifest-lessons-index.ts', mismatches);
-  if (lessonIndex !== null) {
-    const lessonIndexIds = extractModuleIdsFromGeneratedTs(lessonIndex);
-    addMissingModuleIds(
-      mismatches,
-      'LESSON_LINK_MISSING',
-      'apps/web/lib/generated/manifest-lessons-index.ts',
-      lessonModules,
-      lessonIndexIds,
-      'Generated lesson index'
-    );
-    for (const module of lessonModules) {
-      const slug = module.web?.lesson_slug;
-      if (slug && !lessonIndex.includes(`lessonSlug: "${slug}"`)) {
-        mismatches.push({
-          code: 'LESSON_LINK_MISSING',
-          file: 'apps/web/lib/generated/manifest-lessons-index.ts',
-          moduleId: module.id,
-          expected: slug,
-          message: `Generated lesson index is missing lesson slug "${slug}" for "${module.id}"`,
-        });
-      }
-    }
-  }
-
   checkOnboardingLessons(root, lessonModules, mismatches);
   checkReadmeSnippets(readText(root, 'README.md', mismatches), mismatches);
 
@@ -418,10 +315,7 @@ export function checkManifestDriftContract(rootDir = DEFAULT_ROOT): DriftContrac
     summary.verifiedInstallers +
     summary.modules +
     summary.doctorChecksExpected +
-    summary.webVisibleModules +
-    summary.webCommandModules +
-    summary.webTldrModules +
-    summary.lessonLinkedModules * 2 +
+    summary.lessonLinkedModules +
     summary.readmeSnippetsExpected;
 
   return {
@@ -439,7 +333,6 @@ Checks manifest-derived surfaces for semantic drift:
   - checksums.yaml coverage for verified installers
   - scripts/generated/manifest_index.sh module coverage
   - scripts/generated/doctor_checks.sh verify coverage
-  - apps/web/lib/generated manifest metadata
   - acfs/onboard/lessons lesson files
   - README release gate snippets
 `);

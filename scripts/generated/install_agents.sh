@@ -289,7 +289,7 @@ acfs_security_init() {
 }
 
 # Category: agents
-# Modules: 4
+# Modules: 5
 
 # Claude Code
 install_agents_claude() {
@@ -1150,6 +1150,61 @@ INSTALL_AGENTS_OPENCODE
     log_success "agents.opencode installed"
 }
 
+# oh-my-openagent (OpenCode plugin / multi-provider config helper)
+install_agents_oh_my_openagent() {
+    local module_id="agents.oh_my_openagent"
+    acfs_require_contract "module:${module_id}" || return 1
+    log_step "Installing agents.oh_my_openagent"
+
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: export PATH=\"\$HOME/.bun/bin:\$PATH\" (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_AGENTS_OH_MY_OPENAGENT'
+# Install oh-my-openagent OpenCode plugin via bunx (non-interactive)
+# Reference: https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/refs/heads/dev/docs/guide/installation.md
+# Default subscription flags conservatively to "no" so unattended installs don't prompt;
+# operators can re-run interactively (`bunx oh-my-openagent install`) to enable specific
+# providers (--claude=yes|max20, --openai=yes, --gemini=yes, --copilot=yes, etc.).
+export PATH="$HOME/.bun/bin:$PATH"
+bunx --yes oh-my-openagent install \
+    --claude=no \
+    --openai=no \
+    --gemini=no \
+    --copilot=no \
+    --opencode-zen=no \
+    --zai=no \
+    --opencode-go=no \
+    --kimi=no \
+    --vercel-ai-gateway=no \
+  || true
+INSTALL_AGENTS_OH_MY_OPENAGENT
+        then
+            log_warn "agents.oh_my_openagent: install command failed: export PATH=\"\$HOME/.bun/bin:\$PATH\""
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "agents.oh_my_openagent" "install command failed: export PATH=\"\$HOME/.bun/bin:\$PATH\""
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "agents.oh_my_openagent"
+            fi
+            return 0
+        fi
+    fi
+
+    # Verify
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: verify (optional): export PATH=\"\$HOME/.bun/bin:\$PATH\" (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_AGENTS_OH_MY_OPENAGENT'
+export PATH="$HOME/.bun/bin:$PATH"
+bunx --yes oh-my-openagent doctor 2>&1 | head -20
+INSTALL_AGENTS_OH_MY_OPENAGENT
+        then
+            log_warn "Optional verify failed: agents.oh_my_openagent"
+        fi
+    fi
+
+    log_success "agents.oh_my_openagent installed"
+}
+
 # Install all agents modules
 install_agents() {
     log_section "Installing agents modules"
@@ -1157,6 +1212,7 @@ install_agents() {
     install_agents_codex
     install_agents_gemini
     install_agents_opencode
+    install_agents_oh_my_openagent
 }
 
 # Run if executed directly

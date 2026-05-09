@@ -10,7 +10,6 @@ FULL_MODE=false
 JSON_MODE=false
 QUIET=false
 NETWORK_MODE="skip"
-WEB_MODE="auto"
 
 CHECK_IDS=()
 CHECK_LABELS=()
@@ -24,18 +23,16 @@ SKIP_COUNT=0
 
 usage() {
     cat <<'EOF'
-Usage: scripts/release-doctor.sh [--json] [--quiet] [--full] [--network=skip|check] [--web=auto|always|never]
+Usage: scripts/release-doctor.sh [--json] [--quiet] [--full] [--network=skip|check]
 
 Runs the ACFS maintainer release readiness gate:
   - branch policy and clean worktree check
   - ShellCheck over installer scripts
   - manifest/generated/checksum drift contract
   - optional verified-installer checksum candidate check
-  - web type-check, lint, and production build when needed
 
-Defaults keep network and web-heavy checks explicit:
+Defaults keep network-heavy checks explicit:
   --network=skip  Skip upstream checksum candidate fetching.
-  --web=auto      Run web checks only with --full or changed apps/web files.
 EOF
 }
 
@@ -137,10 +134,6 @@ parse_args() {
                 ;;
             --network=skip|--network=check)
                 NETWORK_MODE="${1#--network=}"
-                shift
-                ;;
-            --web=auto|--web=always|--web=never)
-                WEB_MODE="${1#--web=}"
                 shift
                 ;;
             --help|-h)
@@ -298,59 +291,6 @@ check_checksum_candidate() {
     fi
 }
 
-changed_files() {
-    if [[ -v ACFS_RELEASE_DOCTOR_CHANGED_FILES ]]; then
-        printf '%s\n' "$ACFS_RELEASE_DOCTOR_CHANGED_FILES"
-        return 0
-    fi
-    (cd "$REPO_ROOT" && git diff --name-only HEAD -- 2>/dev/null || true)
-}
-
-should_run_web_checks() {
-    case "$WEB_MODE" in
-        always) return 0 ;;
-        never) return 1 ;;
-    esac
-
-    if [[ "$FULL_MODE" == "true" ]]; then
-        return 0
-    fi
-
-    local changed
-    changed="$(changed_files)"
-    [[ "$changed" == apps/web/* || "$changed" == *$'\n'apps/web/* ]]
-}
-
-check_web() {
-    local command="cd apps/web && bun run type-check && bun run lint && bun run build"
-
-    if ! should_run_web_checks; then
-        record_check "web_checks" "Website checks" "skip" "no apps/web changes detected; use --full or --web=always to force" "$command"
-        return 0
-    fi
-
-    if record_fake_check_if_requested "web_checks" "Website checks" "$command"; then
-        return 0
-    fi
-
-    if ! command -v bun >/dev/null 2>&1; then
-        record_check "web_checks" "Website checks" "fail" "bun is not installed" "$command"
-        return 0
-    fi
-
-    local output status
-    set +e
-    output="$(cd "$REPO_ROOT/apps/web" && { bun run type-check && bun run lint && bun run build; } 2>&1)"
-    status=$?
-    set -e
-
-    if [[ "$status" -eq 0 ]]; then
-        record_check "web_checks" "Website checks" "pass" "type-check, lint, and build passed" "$command"
-    else
-        record_check "web_checks" "Website checks" "fail" "$(summarize_output "$output")" "$command"
-    fi
-}
-
 print_human_report() {
     local i status label detail
     if [[ "$QUIET" == "true" ]]; then
@@ -384,7 +324,7 @@ print_json_report() {
 
     printf '{\n'
     printf '  "ok": %s,\n' "$ok"
-    printf '  "mode": {"full": %s, "network": "%s", "web": "%s"},\n' "$FULL_MODE" "$(json_escape "$NETWORK_MODE")" "$(json_escape "$WEB_MODE")"
+    printf '  "mode": {"full": %s, "network": "%s"},\n' "$FULL_MODE" "$(json_escape "$NETWORK_MODE")"
     printf '  "summary": {"pass": %d, "warn": %d, "skip": %d, "fail": %d},\n' "$PASS_COUNT" "$WARN_COUNT" "$SKIP_COUNT" "$FAIL_COUNT"
     printf '  "checks": [\n'
     for i in "${!CHECK_IDS[@]}"; do
@@ -410,7 +350,6 @@ main() {
     check_shellcheck
     check_manifest_drift
     check_checksum_candidate
-    check_web
 
     if [[ "$JSON_MODE" == "true" ]]; then
         print_json_report

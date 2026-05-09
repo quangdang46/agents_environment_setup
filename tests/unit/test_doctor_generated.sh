@@ -790,10 +790,10 @@ test_manifest_guard_scripts_cover_all_generated_outputs() {
     local hook_file="$REPO_ROOT/scripts/hooks/pre-commit"
     local drift_file="$REPO_ROOT/scripts/check-manifest-drift.sh"
 
-    if grep -Fq 'git add apps/web/lib/generated/' "$hook_file"; then
-        harness_pass "Pre-commit hook stages apps/web/lib/generated/"
+    if grep -Fq 'git add scripts/generated/' "$hook_file"; then
+        harness_pass "Pre-commit hook stages scripts/generated/"
     else
-        harness_fail "Pre-commit hook does not stage apps/web/lib/generated/"
+        harness_fail "Pre-commit hook does not stage scripts/generated/"
     fi
 
     if grep -q 'bun run generate:diff' "$drift_file"; then
