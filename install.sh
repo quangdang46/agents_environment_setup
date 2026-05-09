@@ -2086,8 +2086,11 @@ source_generated_installers() {
 #   "always" - always show (errors if no TTY available)
 #   "never"  - never show; falls back to manifest defaults
 #
-# On confirmation, populates SKIP_MODULES with modules the user unchecked
-# so acfs_resolve_selection still resolves dependencies correctly.
+# On confirmation, replaces ONLY_MODULES with the user's authoritative
+# selection: every default-on hidden module (critical/orchestration that
+# is enabled_by_default in the manifest) plus every optional module the
+# user kept checked. acfs_resolve_selection then treats this as the
+# explicit start set and adds dependency closure on top.
 # ============================================================
 acfs_checkbox_should_show() {
     case "$CHECKBOX_MODE" in
@@ -2270,24 +2273,37 @@ Recommended modules are pre-selected; author/extra libraries are off by default.
             ;;
     esac
 
-    # Compute SKIP_MODULES = optional - selected
+    # Build the authoritative ONLY_MODULES set from the picker:
+    # 1) Hidden critical/orchestration modules that default ON in the manifest
+    #    (always-on infra: base.system, lang.bun, shell.zsh, ...).
+    # 2) Optional modules the user explicitly checked in the picker.
+    # Modules unchecked in the picker (or hidden + default OFF) are excluded.
     local -A selected_set=()
     for module in "${selected[@]}"; do
         selected_set["$module"]=1
     done
 
-    local additions=()
-    for module in "${optional_modules[@]}"; do
-        if [[ -z "${selected_set[$module]:-}" ]]; then
-            additions+=("$module")
+    local picker_only=()
+    local skipped_count=0
+    for module in "${ACFS_MODULES_IN_ORDER[@]}"; do
+        if acfs_checkbox_module_is_critical "$module"; then
+            local _enabled="${ACFS_MODULE_DEFAULT["$module"]:-1}"
+            if [[ "$_enabled" == "1" || "$_enabled" == "true" ]]; then
+                picker_only+=("$module")
+            fi
+        elif [[ -n "${selected_set[$module]:-}" ]]; then
+            picker_only+=("$module")
+        else
+            skipped_count=$((skipped_count + 1))
         fi
     done
 
-    if [[ ${#additions[@]} -gt 0 ]]; then
-        SKIP_MODULES+=("${additions[@]}")
-        log_info "Interactive selection: skipping ${#additions[@]} module(s) (${additions[*]})"
+    ONLY_MODULES=("${picker_only[@]}")
+
+    if [[ "$skipped_count" -gt 0 ]]; then
+        log_info "Interactive selection: enabling ${#picker_only[@]} module(s); ${skipped_count} optional module(s) excluded"
     else
-        log_info "Interactive selection: keeping all default-eligible modules"
+        log_info "Interactive selection: enabling all ${#picker_only[@]} module(s)"
     fi
 
     return 0
