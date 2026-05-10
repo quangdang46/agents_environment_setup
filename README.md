@@ -4,7 +4,7 @@
   <img src="docs/assets/acfs_illustration.webp" alt="Agentic Coding Flywheel Setup (ACFS) - From zero to fully-configured agentic coding VPS in 30 minutes">
 </div>
 
-![Version](https://img.shields.io/badge/Version-0.7.0-bd93f9?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-0.1.0-bd93f9?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%2025.10-6272a4?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT%2BOpenAI%2FAnthropic%20Rider-blue?style=for-the-badge)
 ![Shell](https://img.shields.io/badge/Shell-Bash-ff79c6?style=for-the-badge)
@@ -30,7 +30,7 @@
 ### Quick Install
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
 ```
 
 The installer is **idempotent**—if interrupted, simply re-run it. It will automatically resume from the last completed phase without prompts.
@@ -38,10 +38,10 @@ The installer is **idempotent**—if interrupted, simply re-run it. It will auto
 > **Production environments:** For stable, reproducible installs, pin to a tagged release or specific commit:
 > ```bash
 > # Preferred: use a tagged release (e.g., v0.5.0)
-> curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.5.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.5.0
+> curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.5.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.5.0
 >
 > # Alternative: pin to a specific commit SHA
-> curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/abc1234/install.sh" | bash -s -- --yes --mode vibe --ref abc1234
+> curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/abc1234/install.sh" | bash -s -- --yes --mode vibe --ref abc1234
 > ```
 > Tagged releases are tested and stable. Passing `--ref` ensures all fetched scripts use the same version.
 
@@ -433,19 +433,19 @@ The installer is the heart of ACFS—a modular Bash script that transforms a fre
 Full vibe mode (recommended for throwaway VPS):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
 ```
 
 Interactive mode (asks for confirmation):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" | bash
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" | bash
 ```
 
 Safe mode (no passwordless sudo, agent confirmations enabled):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" | bash -s -- --mode safe
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" | bash -s -- --mode safe
 ```
 
 ### Installer Modes
@@ -497,17 +497,17 @@ The installer tracks progress in `~/.acfs/state.json`. If interrupted:
 
 To force a fresh reinstall of all tools:
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" | bash -s -- --yes --mode vibe --force-reinstall
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" | bash -s -- --yes --mode vibe --force-reinstall
 ```
 
 ### Pre-Flight Check
 
 Before running the full installer, validate your system:
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/scripts/preflight.sh" | bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/scripts/preflight.sh" | bash -s -- --json
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/scripts/preflight.sh" | bash -s -- --format toon
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/scripts/preflight.sh" | bash -s -- --network=skip
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/scripts/preflight.sh" | bash
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/scripts/preflight.sh" | bash -s -- --json
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/scripts/preflight.sh" | bash -s -- --format toon
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/scripts/preflight.sh" | bash -s -- --network=skip
 ```
 
 This checks:
@@ -578,12 +578,12 @@ ACFS automatically upgrades Ubuntu to version **25.10** before installation when
 
 **To skip automatic upgrade:**
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" | bash -s -- --yes --mode vibe --skip-ubuntu-upgrade
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" | bash -s -- --yes --mode vibe --skip-ubuntu-upgrade
 ```
 
 **To specify a different target version:**
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" | bash -s -- --yes --mode vibe --target-ubuntu=25.04
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" | bash -s -- --yes --mode vibe --target-ubuntu=25.04
 ```
 
 **Monitoring upgrade progress:**
@@ -2972,7 +2972,7 @@ For local development, use the individual tools directly.
 
 The installer is **checkpointed**. Simply re-run it:
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
 ```
 
 It will skip already-completed phases and resume where it left off.
@@ -4329,7 +4329,7 @@ for f in ~/.zshrc ~/.tmux.conf ~/.p10k.zsh; do
   [ -f "$f" ] && mv "$f" "$f".backup."$ts"
 done
 
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe --force-reinstall
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe --force-reinstall
 ```
 
 ---
@@ -4598,16 +4598,16 @@ ACFS supports various configuration mechanisms for advanced users.
 **Examples:**
 ```bash
 # Install from a tagged release (recommended for production)
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.1.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.1.0
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.1.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.1.0
 
 # Install from a specific branch (development/testing)
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/feature/new-tool/install.sh" | bash -s -- --yes --mode vibe --ref feature/new-tool
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/feature/new-tool/install.sh" | bash -s -- --yes --mode vibe --ref feature/new-tool
 
 # Install from a specific commit (reproducibility)
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/abc1234/install.sh" | bash -s -- --yes --mode vibe --ref abc1234
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/abc1234/install.sh" | bash -s -- --yes --mode vibe --ref abc1234
 
 # Pin installer version but use latest checksums (avoid stale hash mismatches)
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.5.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.5.0 --checksums-ref main
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.5.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.5.0 --checksums-ref main
 ```
 
 > **Tip:** Always match the URL path with `--ref` so the initial script and all subsequently fetched scripts come from the same ref. If you use environment variables in a pipeline, attach them to `bash`, not `curl`: `curl ... | ACFS_REF=v0.5.0 bash -s -- --yes --mode vibe`.
@@ -4798,7 +4798,7 @@ MIT License (with OpenAI/Anthropic Rider). See [LICENSE](LICENSE) for details.
 ## Links
 
 - **Website:** [agent-flywheel.com](https://agent-flywheel.com) — Interactive wizard for beginners
-- **GitHub:** [Dicklesworthstone/agentic_coding_flywheel_setup](https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup)
+- **GitHub:** [quangdang46/agents_environment_setup](https://github.com/quangdang46/agents_environment_setup)
 - **Related Projects:**
   - [ntm](https://github.com/Dicklesworthstone/ntm) - Named Tmux Manager
   - [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) - Task management TUI
