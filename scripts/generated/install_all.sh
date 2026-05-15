@@ -386,6 +386,8 @@ install_all() {
     install_utils_rust_proxy
     install_utils_aadc
     install_utils_caut
+    install_utils_openproxy
+    install_utils_fast_file_search
     log_section "Category: acfs"
     install_acfs_workspace
     install_acfs_onboard

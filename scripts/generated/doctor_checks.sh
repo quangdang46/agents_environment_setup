@@ -389,6 +389,8 @@ declare -a MANIFEST_CHECKS=(
     "utils.rust_proxy	rust_proxy - Transparent proxy routing for debugging network traffic	rust_proxy --help || rust_proxy --version	optional	target_user"
     "utils.aadc	aadc - ASCII diagram corrector for fixing malformed ASCII art	aadc --help || aadc --version	optional	target_user"
     "utils.caut	coding_agent_usage_tracker (caut) - LLM provider usage tracker	caut --help || caut --version	optional	target_user"
+    "utils.openproxy	OpenProxy - lightweight HTTP/HTTPS proxy server	command -v openproxy	optional	target_user"
+    "utils.fast_file_search	Fast File Search - rapid file discovery tool	command -v fast_file_search	optional	target_user"
     "acfs.workspace.1	Agent workspace with tmux session and project folder	test -d /data/projects/my_first_project	optional	target_user"
     "acfs.workspace.2	Agent workspace with tmux session and project folder	acfs_has_active_agents_alias() {\\n  local file=\"\${1:-}\"\\n  [[ -f \"\$file\" ]] || return 1\\n\\n  awk '\\n      /^[[:space:]]*#/ { next }\\n      /^[[:space:]]*alias[[:space:]]+agents=/ { found=1; exit }\\n      END { exit(found ? 0 : 1) }\\n  ' \"\$file\" 2>/dev/null\\n}\\n\\nacfs_has_active_agents_alias ~/.zshrc.local || acfs_has_active_agents_alias ~/.zshrc	optional	target_user"
     "acfs.onboard	Onboarding TUI tutorial	onboard --help || command -v onboard	required	target_user"

@@ -289,7 +289,7 @@ acfs_security_init() {
 }
 
 # Category: tools
-# Modules: 16
+# Modules: 18
 
 # Lazygit (apt or binary fallback)
 install_tools_lazygit() {
@@ -1425,6 +1425,94 @@ INSTALL_UTILS_CAUT
     log_success "utils.caut installed"
 }
 
+# OpenProxy - lightweight HTTP/HTTPS proxy server
+install_utils_openproxy() {
+    local module_id="utils.openproxy"
+    acfs_require_contract "module:${module_id}" || return 1
+    log_step "Installing utils.openproxy"
+
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/openproxy/main/install.sh\" | bash (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_OPENPROXY'
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/openproxy/main/install.sh" | bash
+INSTALL_UTILS_OPENPROXY
+        then
+            log_warn "utils.openproxy: install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/openproxy/main/install.sh\" | bash"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.openproxy" "install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/openproxy/main/install.sh\" | bash"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.openproxy"
+            fi
+            return 0
+        fi
+    fi
+
+    # Verify
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: verify: command -v openproxy (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_OPENPROXY'
+command -v openproxy
+INSTALL_UTILS_OPENPROXY
+        then
+            log_warn "utils.openproxy: verify failed: command -v openproxy"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.openproxy" "verify failed: command -v openproxy"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.openproxy"
+            fi
+            return 0
+        fi
+    fi
+
+    log_success "utils.openproxy installed"
+}
+
+# Fast File Search - rapid file discovery tool
+install_utils_fast_file_search() {
+    local module_id="utils.fast_file_search"
+    acfs_require_contract "module:${module_id}" || return 1
+    log_step "Installing utils.fast_file_search"
+
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/fast_file_search/main/install.sh?\$(date +%s)\" | bash (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_FAST_FILE_SEARCH'
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/fast_file_search/main/install.sh?$(date +%s)" | bash
+INSTALL_UTILS_FAST_FILE_SEARCH
+        then
+            log_warn "utils.fast_file_search: install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/fast_file_search/main/install.sh?\$(date +%s)\" | bash"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.fast_file_search" "install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/fast_file_search/main/install.sh?\$(date +%s)\" | bash"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.fast_file_search"
+            fi
+            return 0
+        fi
+    fi
+
+    # Verify
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: verify: command -v fast_file_search (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_FAST_FILE_SEARCH'
+command -v fast_file_search
+INSTALL_UTILS_FAST_FILE_SEARCH
+        then
+            log_warn "utils.fast_file_search: verify failed: command -v fast_file_search"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.fast_file_search" "verify failed: command -v fast_file_search"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.fast_file_search"
+            fi
+            return 0
+        fi
+    fi
+
+    log_success "utils.fast_file_search installed"
+}
+
 # Install all tools modules
 install_tools() {
     log_section "Installing tools modules"
@@ -1444,6 +1532,8 @@ install_tools() {
     install_utils_rust_proxy
     install_utils_aadc
     install_utils_caut
+    install_utils_openproxy
+    install_utils_fast_file_search
 }
 
 # Run if executed directly
