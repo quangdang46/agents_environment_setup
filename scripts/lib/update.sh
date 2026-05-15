@@ -3548,7 +3548,7 @@ update_run_meta_skill_source_install() {
     fi
 
     echo "meta_skill: Linux ARM64 detected, building from source via cargo" >&2
-    update_run_in_target_context "" "$cargo_bin" install --git https://github.com/Dicklesworthstone/meta_skill --force
+    update_run_in_target_context "" "$cargo_bin" install --git https://github.com/quangdang46/ms --force
 }
 
 # shellcheck disable=SC2317,SC2329  # invoked indirectly via run_cmd()

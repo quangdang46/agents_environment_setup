@@ -799,7 +799,7 @@ doctor_fix_run_verified_installer() {
         fi
 
         doctor_fix_log INFO "meta_skill: Linux ARM64 detected, rebuilding from source via cargo"
-        env HOME="$runtime_home" PATH="$runtime_path" "$cargo_bin" install --git https://github.com/Dicklesworthstone/meta_skill --force
+        env HOME="$runtime_home" PATH="$runtime_path" "$cargo_bin" install --git https://github.com/quangdang46/ms --force
         return $?
     fi
 

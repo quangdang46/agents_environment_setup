@@ -727,14 +727,14 @@ test_meta_skill_arm64_linux_guidance() {
         return 1
     fi
 
-    if echo "$arm64_branch" | grep -q 'ARM64 Linux binary not yet available (see https://github.com/Dicklesworthstone/meta_skill/issues/1)'; then
+    if echo "$arm64_branch" | grep -q 'ARM64 Linux binary not yet available (see https://github.com/quangdang46/ms/issues/1)'; then
         harness_pass "meta_skill ARM64 Linux warning includes the upstream issue link"
     else
         harness_fail "meta_skill ARM64 Linux warning is missing the specific upstream guidance"
         harness_capture_output "meta_skill_arm64_branch" "$arm64_branch"
     fi
 
-    if echo "$arm64_branch" | grep -q 'Build from source: cargo install --git https://github.com/Dicklesworthstone/meta_skill --force'; then
+    if echo "$arm64_branch" | grep -q 'Build from source: cargo install --git https://github.com/quangdang46/ms --force'; then
         harness_pass "meta_skill ARM64 Linux fix uses the source-build fallback"
     else
         harness_fail "meta_skill ARM64 Linux fix hint is incorrect"

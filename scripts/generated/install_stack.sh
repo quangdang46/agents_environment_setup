@@ -742,7 +742,7 @@ install_stack_meta_skill() {
             # meta_skill has no prebuilt Linux ARM64 release asset yet; build from source there.
             if [[ "$(uname -s 2>/dev/null)" == "Linux" ]] && { [[ "$(uname -m 2>/dev/null)" == "aarch64" ]] || [[ "$(uname -m 2>/dev/null)" == "arm64" ]]; }; then
                 log_info "stack.meta_skill: Linux ARM64 detected; building meta_skill from source"
-                if run_as_target_shell "command -v cargo >/dev/null 2>&1 && cargo install --git https://github.com/Dicklesworthstone/meta_skill --force"; then
+                if run_as_target_shell "command -v cargo >/dev/null 2>&1 && cargo install --git https://github.com/quangdang46/ms --force"; then
                     install_success=true
                 else
                     log_error "stack.meta_skill: cargo source install failed for Linux ARM64"

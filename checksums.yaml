@@ -87,8 +87,8 @@ installers:
     sha256: "2b54a790738ad121f47f346bdd975ea851549d684588a4bd51fa068f55eed350"
 
   ms:
-    url: "https://raw.githubusercontent.com/Dicklesworthstone/meta_skill/main/scripts/install.sh"
-    sha256: "5233b2130670b8036643ce414d212fa6b610a10ec5e7cf4961df34a7fec58601"
+    url: "https://raw.githubusercontent.com/quangdang46/ms/main/install.sh"
+    sha256: "2bfd5b7185296791250b29ac2af23d22034b43fb78de3e170290e5d6550a1c2d"
 
   ntm:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/ntm/main/install.sh"

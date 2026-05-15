@@ -1636,7 +1636,7 @@ modules:
       tagline: "Skill management with MCP integration and adaptive suggestions"
       icon: "sparkles"
       color: "#14B8A6"
-      href: "https://github.com/Dicklesworthstone/meta_skill"
+      href: "https://github.com/quangdang46/ms"
       features:
         - "MCP server for native AI agent integration"
         - "Thompson sampling optimizes suggestions"

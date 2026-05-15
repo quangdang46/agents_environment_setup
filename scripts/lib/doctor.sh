@@ -2463,17 +2463,17 @@ check_stack() {
         local _ms_arch _ms_os _ms_fix
         _ms_arch="$(uname -m 2>/dev/null || echo unknown)"
         _ms_os="$(uname -s 2>/dev/null || echo unknown)"
-        _ms_fix="Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/meta_skill/main/scripts/install.sh | bash"
+        _ms_fix="Re-run: curl -fsSL https://raw.githubusercontent.com/quangdang46/ms/main/install.sh | bash"
 
         # Pre-built binaries exist for: x86_64-linux, aarch64-darwin, x86_64-darwin
         # ARM64 Linux (aarch64-Linux) does NOT have a pre-built binary yet:
-        # https://github.com/Dicklesworthstone/meta_skill/issues/1
+        # https://github.com/quangdang46/ms/issues/1
         case "${_ms_arch}-${_ms_os}" in
             aarch64-Linux|arm64-Linux)
                 # ARM64 Linux binary is not yet published; the install script will 404
                 check "stack.meta_skill" "meta_skill (ms)" "warn" \
-                    "ARM64 Linux binary not yet available (see https://github.com/Dicklesworthstone/meta_skill/issues/1)" \
-                    "Build from source: cargo install --git https://github.com/Dicklesworthstone/meta_skill --force"
+                    "ARM64 Linux binary not yet available (see https://github.com/quangdang46/ms/issues/1)" \
+                    "Build from source: cargo install --git https://github.com/quangdang46/ms --force"
                 ;;
             x86_64-Linux|x86_64-Darwin|arm64-Darwin|aarch64-Darwin)
                 # These platforms have pre-built binaries
@@ -2481,7 +2481,7 @@ check_stack() {
                     "$_ms_fix"
                 ;;
             *)
-                _ms_fix="meta_skill has no pre-built binary for ${_ms_arch}-${_ms_os}. Build from source: cargo install --git https://github.com/Dicklesworthstone/meta_skill --force"
+                _ms_fix="meta_skill has no pre-built binary for ${_ms_arch}-${_ms_os}. Build from source: cargo install --git https://github.com/quangdang46/ms --force"
                 check "stack.meta_skill" "meta_skill (ms)" "warn" "not installed" \
                     "$_ms_fix"
                 ;;

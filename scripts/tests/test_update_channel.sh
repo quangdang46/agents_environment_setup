@@ -765,7 +765,7 @@ for ms_arm64_arch in aarch64 arm64; do
     if [[ -f "$MS_ARM64_SIGNAL" ]]; then
         ms_arm64_args=$(cat "$MS_ARM64_SIGNAL")
         rm -f "$MS_ARM64_SIGNAL"
-        if [[ "$ms_arm64_args" == *"--git https://github.com/Dicklesworthstone/meta_skill --force"* ]]; then
+        if [[ "$ms_arm64_args" == *"--git https://github.com/quangdang46/ms --force"* ]]; then
             pass "meta_skill ARM64 Linux update path falls back to cargo source install ($ms_arm64_arch)"
         else
             fail "meta_skill ARM64 Linux fallback used wrong cargo args for $ms_arm64_arch: $ms_arm64_args"

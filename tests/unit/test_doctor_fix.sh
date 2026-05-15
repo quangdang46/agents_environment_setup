@@ -2353,7 +2353,7 @@ EOF
             return 1
         fi
 
-        if ! grep -q -- '--git https://github.com/Dicklesworthstone/meta_skill --force' "$cargo_signal"; then
+        if ! grep -q -- '--git https://github.com/quangdang46/ms --force' "$cargo_signal"; then
             echo "  cargo fallback did not force reinstall from meta_skill git source for arch $arch"
             cat "$cargo_signal"
             [[ -n "$original_uname" ]] && eval "$original_uname" || unset -f uname
