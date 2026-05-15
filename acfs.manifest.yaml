@@ -3245,6 +3245,84 @@ modules:
     verify:
       - caut --help || caut --version
 
+  - id: utils.openproxy
+    description: OpenProxy - lightweight HTTP/HTTPS proxy server
+    category: tools
+    phase: 9
+    run_as: target_user
+    optional: true
+    enabled_by_default: false
+    tags: [utility, network, proxy]
+    web:
+      display_name: "OpenProxy"
+      short_name: "OP"
+      tagline: "Lightweight HTTP/HTTPS proxy server"
+      icon: "server"
+      color: "#3B82F6"
+      href: "https://github.com/quangdang46/openproxy"
+      features:
+        - "Lightweight HTTP/HTTPS proxy"
+        - "Easy one-line installation"
+        - "Minimal resource footprint"
+        - "Works over SSH"
+      tech_stack: ["Bash", "Shell"]
+      use_cases:
+        - "Routing traffic through a proxy on VPS"
+        - "Debugging network requests"
+        - "Bypassing network restrictions"
+      language: "Bash"
+      stars: 5
+      cli_name: "openproxy"
+    dependencies:
+      - base.system
+    installed_check:
+      run_as: target_user
+      command: "command -v openproxy"
+    install:
+      - |
+        curl -fsSL "https://raw.githubusercontent.com/quangdang46/openproxy/main/install.sh" | bash
+    verify:
+      - command -v openproxy
+
+  - id: utils.fast_file_search
+    description: Fast File Search - rapid file discovery tool
+    category: tools
+    phase: 9
+    run_as: target_user
+    optional: true
+    enabled_by_default: false
+    tags: [utility, search, filesystem]
+    web:
+      display_name: "Fast File Search"
+      short_name: "FFS"
+      tagline: "Rapid file discovery on your VPS"
+      icon: "search"
+      color: "#10B981"
+      href: "https://github.com/quangdang46/fast_file_search"
+      features:
+        - "Fast file search across filesystem"
+        - "Easy one-line installation"
+        - "Minimal resource footprint"
+        - "Works over SSH"
+      tech_stack: ["Bash", "Shell"]
+      use_cases:
+        - "Finding files quickly on large VPS"
+        - "Locating configuration files"
+        - "Searching project directories"
+      language: "Bash"
+      stars: 5
+      cli_name: "fast_file_search"
+    dependencies:
+      - base.system
+    installed_check:
+      run_as: target_user
+      command: "command -v fast_file_search"
+    install:
+      - |
+        curl -fsSL "https://raw.githubusercontent.com/quangdang46/fast_file_search/main/install.sh?$(date +%s)" | bash
+    verify:
+      - command -v fast_file_search
+
   # ============================================================
   # PHASE 10: Finalization (onboard, doctor, verification)
   # ============================================================
