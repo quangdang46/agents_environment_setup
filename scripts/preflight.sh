@@ -909,7 +909,12 @@ check_network_basic() {
         return
     fi
 
-    # Test basic connectivity to GitHub (critical)
+    # Test basic connectivity to GitHub (critical for download but NOT for
+    # HTTP status codes).  GitHub.com returns HTTP 403 for bare curl requests
+    # without a recognizable User-Agent, even though the actual installer and
+    # raw-content URLs work fine.  A curl_exit of 0 with *any* valid HTTP
+    # status proves the server is reachable (DNS, TCP, TLS all succeeded).
+    # Only treat actual network failures (curl_exit != 0) as critical errors.
     local http_status=""
     local curl_exit=0
     http_status=$(curl -sL --max-time 10 --connect-timeout 5 -o /dev/null -w "%{http_code}" https://github.com 2>/dev/null) || curl_exit=$?
@@ -917,6 +922,8 @@ check_network_basic() {
 
     if [[ "$curl_exit" -eq 0 && "$http_status" -ge 200 && "$http_status" -lt 400 ]]; then
         pass "Network: github.com reachable"
+    elif [[ "$curl_exit" -eq 0 && "$http_status" -ge 400 ]]; then
+        warn "Network: github.com reachable (HTTP $http_status)" "Server responded but returned HTTP $http_status; this is common for automated requests and does not affect installation"
     else
         fail "Network: Cannot reach github.com" "$(preflight_describe_curl_result "$curl_exit" "$http_status" "github.com"); check network/firewall settings, then retry with --network=check. If it persists, run: acfs support-bundle"
         return
