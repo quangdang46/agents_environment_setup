@@ -5,7 +5,7 @@
 # Main installer script
 #
 # Usage:
-#   curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
+#   curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?$(date +%s)" | bash -s -- --yes --mode vibe
 #
 # Options:
 #   --yes         Skip all prompts, use defaults
@@ -59,8 +59,8 @@ export DEBCONF_NONINTERACTIVE_SEEN=true
 # ============================================================
 ACFS_VERSION="0.7.0"
 # Allow fork installations by overriding these via environment variables
-ACFS_REPO_OWNER="${ACFS_REPO_OWNER:-Dicklesworthstone}"
-ACFS_REPO_NAME="${ACFS_REPO_NAME:-agentic_coding_flywheel_setup}"
+ACFS_REPO_OWNER="${ACFS_REPO_OWNER:-quangdang46}"
+ACFS_REPO_NAME="${ACFS_REPO_NAME:-agents_environment_setup}"
 ACFS_REF="${ACFS_REF:-main}"
 # Preserve the original ref (branch/tag/sha) before resolving to a commit SHA.
 ACFS_REF_INPUT="$ACFS_REF"
@@ -1152,9 +1152,9 @@ generate_resume_hint() {
         cmd="curl -fsSL"
         if [[ -n "${ACFS_COMMIT_SHA_FULL:-}" ]]; then
             # Pin to exact commit SHA for reproducibility
-            install_url="https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_COMMIT_SHA_FULL}/install.sh"
+            install_url="https://raw.githubusercontent.com/${ACFS_REPO_OWNER}/${ACFS_REPO_NAME}/${ACFS_COMMIT_SHA_FULL}/install.sh"
         elif [[ -n "${ACFS_REF_INPUT:-}" && "${ACFS_REF_INPUT}" != "main" ]]; then
-            install_url="https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF_INPUT}/install.sh"
+            install_url="https://raw.githubusercontent.com/${ACFS_REPO_OWNER}/${ACFS_REPO_NAME}/${ACFS_REF_INPUT}/install.sh"
         else
             install_url="https://acfs.sh"
         fi
