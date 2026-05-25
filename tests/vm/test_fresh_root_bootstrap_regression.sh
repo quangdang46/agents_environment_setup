@@ -109,15 +109,15 @@ create_bootstrap_archive() {
     stage_dir="$(mktemp -d "$LOG_DIR/archive-stage.XXXXXX")"
     mkdir -p "$stage_dir/acfs-local/scripts"
 
-    cp -R /repo/scripts/lib "$stage_dir/acfs-local/scripts/"
-    cp -R /repo/scripts/generated "$stage_dir/acfs-local/scripts/"
-    cp /repo/scripts/preflight.sh "$stage_dir/acfs-local/scripts/preflight.sh"
-    cp /repo/scripts/acfs-global "$stage_dir/acfs-local/scripts/acfs-global"
-    cp /repo/scripts/acfs-update "$stage_dir/acfs-local/scripts/acfs-update"
-    cp -R /repo/acfs "$stage_dir/acfs-local/acfs"
-    cp /repo/checksums.yaml "$stage_dir/acfs-local/checksums.yaml"
-    cp /repo/acfs.manifest.yaml "$stage_dir/acfs-local/acfs.manifest.yaml"
-    cp /repo/VERSION "$stage_dir/acfs-local/VERSION"
+    cp -R "$REPO_ROOT/scripts/lib" "$stage_dir/acfs-local/scripts/"
+    cp -R "$REPO_ROOT/scripts/generated" "$stage_dir/acfs-local/scripts/"
+    cp "$REPO_ROOT/scripts/preflight.sh" "$stage_dir/acfs-local/scripts/preflight.sh"
+    cp "$REPO_ROOT/scripts/acfs-global" "$stage_dir/acfs-local/scripts/acfs-global"
+    cp "$REPO_ROOT/scripts/acfs-update" "$stage_dir/acfs-local/scripts/acfs-update"
+    cp -R "$REPO_ROOT/acfs" "$stage_dir/acfs-local/acfs"
+    cp "$REPO_ROOT/checksums.yaml" "$stage_dir/acfs-local/checksums.yaml"
+    cp "$REPO_ROOT/acfs.manifest.yaml" "$stage_dir/acfs-local/acfs.manifest.yaml"
+    cp "$REPO_ROOT/VERSION" "$stage_dir/acfs-local/VERSION"
 
     tar -czf "$archive_path" -C "$stage_dir" acfs-local
 }
@@ -180,16 +180,16 @@ run_stdin_install() {
     local status=0
 
     set +e
-    # shellcheck disable=SC2016  # $1 expands inside the child bash -c.
+    # shellcheck disable=SC2016  # $1..$3 expand inside the child bash -c.
     timeout 240s bash -c '
         set -euo pipefail
-        cat /repo/install.sh | env \
+        cat "$3/install.sh" | env \
             ACFS_TEST_MODE=1 \
             ACFS_TEST_ARCHIVE="$2" \
             ACFS_GENERATED_MIGRATED_CATEGORIES=filesystem,cli,network,tools,lang,agents,db,cloud,stack,acfs \
             TARGET_USER="$1" \
             bash -s -- --yes --skip-preflight --skip-ubuntu-upgrade --mode vibe --only users.ubuntu --no-deps
-    ' _ "$target_user" "$LOCAL_BOOTSTRAP_ARCHIVE" > "$log_file" 2>&1
+    ' _ "$target_user" "$LOCAL_BOOTSTRAP_ARCHIVE" "$REPO_ROOT" > "$log_file" 2>&1
     status=$?
     set -e
 
@@ -212,7 +212,7 @@ require_cmd sudo
 require_cmd tar
 require_cmd timeout
 
-cd /repo
+cd "$REPO_ROOT"
 
 LOCAL_BOOTSTRAP_ARCHIVE="$LOG_DIR/acfs-local-bootstrap.tar.gz"
 log "Creating local bootstrap archive from current checkout"
