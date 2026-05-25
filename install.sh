@@ -3960,6 +3960,53 @@ ensure_root() {
     fi
 }
 
+# Early dependency bootstrap (issue #152, #180): on a truly fresh Ubuntu, jq,
+# curl and git may be missing. Install them as early as possible so that the
+# pre-flight auto-fix checks (which use jq for state/migration tracking), gum
+# install, and other early phases don't fail with "jq: command not found".
+#
+# Safe to call multiple times: it short-circuits when all three binaries are
+# already present, and skips entirely in dry-run / print-only modes.
+ensure_early_bootstrap_deps() {
+    if [[ "${DRY_RUN:-false}" == "true" ]] || [[ "${PRINT_MODE:-false}" == "true" ]]; then
+        return 0
+    fi
+
+    local need_apt=false
+    acfs_early_system_binary_path curl &>/dev/null || need_apt=true
+    acfs_early_system_binary_path jq   &>/dev/null || need_apt=true
+    acfs_early_system_binary_path git  &>/dev/null || need_apt=true
+    if [[ "$need_apt" != "true" ]]; then
+        return 0
+    fi
+
+    # Only attempt apt operations if we can elevate to root.
+    if [[ $EUID -ne 0 ]] && [[ -z "${SUDO:-}" ]] && ! acfs_early_sudo_binary_path &>/dev/null; then
+        return 0
+    fi
+
+    local apt_get_bin=""
+    apt_get_bin="$(acfs_early_system_binary_path apt-get 2>/dev/null || true)"
+    if [[ -z "$apt_get_bin" ]]; then
+        log_warn "apt-get not found; cannot install bootstrap dependencies (curl, jq, git)"
+        return 0
+    fi
+
+    local -a sudo_cmd=()
+    if [[ $EUID -ne 0 ]]; then
+        local sudo_bin=""
+        sudo_bin="$(acfs_early_sudo_binary_path 2>/dev/null || true)"
+        if [[ -z "$sudo_bin" ]]; then
+            return 0
+        fi
+        sudo_cmd=("$sudo_bin")
+    fi
+
+    echo -e "${YELLOW}Installing minimal bootstrap dependencies (curl, jq, git)...${NC}" >&2
+    "${sudo_cmd[@]}" "$apt_get_bin" update -qq 2>/dev/null || true
+    "${sudo_cmd[@]}" "$apt_get_bin" install -y -qq curl jq git 2>/dev/null || true
+}
+
 # Disable needrestart's apt hook to prevent installation hangs.
 # On Ubuntu 22.04+, needrestart hooks into apt via /usr/lib/needrestart/apt-pinvoke
 # and can wait for interactive input even with NEEDRESTART_SUSPEND=1, because sudo
@@ -8333,6 +8380,11 @@ main() {
         echo ""
     fi
 
+    # Bootstrap minimal deps (curl/jq/git) BEFORE auto-fix checks so the
+    # pre-flight migration logic (which depends on jq) doesn't fail on a
+    # truly fresh Ubuntu host. See issue #152, #180.
+    ensure_early_bootstrap_deps
+
     # Run auto-fix checks before preflight (bd-19y9.3.4)
     if [[ "$SKIP_PREFLIGHT" != "true" ]]; then
         run_autofix_checks
@@ -8374,35 +8426,10 @@ main() {
 
     ensure_root
 
-    # Early dependency bootstrap (issue #152, #180): on a truly fresh Ubuntu,
-    # jq and curl may be missing. Install them before anything else so that
-    # later phases (state management, JSON parsing, gum install) don't fail.
-    # Also covers the case where sudo is available but $SUDO isn't set yet.
-    if [[ $EUID -eq 0 ]] || [[ -n "${SUDO:-}" ]] || acfs_early_sudo_binary_path &>/dev/null; then
-        local _need_early_apt=false
-        acfs_early_system_binary_path curl &>/dev/null || _need_early_apt=true
-        acfs_early_system_binary_path jq &>/dev/null   || _need_early_apt=true
-        acfs_early_system_binary_path git &>/dev/null   || _need_early_apt=true
-        if [[ "$_need_early_apt" == "true" ]]; then
-            echo -e "${YELLOW}Installing minimal bootstrap dependencies (curl, jq, git)...${NC}" >&2
-            local -a _sudo_cmd=()
-            local apt_get_bin=""
-            apt_get_bin="$(acfs_early_system_binary_path apt-get 2>/dev/null || true)"
-            if [[ -z "$apt_get_bin" ]]; then
-                log_warn "apt-get not found; cannot install bootstrap dependencies"
-            else
-                if [[ $EUID -ne 0 ]]; then
-                    local sudo_bin=""
-                    sudo_bin="$(acfs_early_sudo_binary_path 2>/dev/null || true)"
-                    [[ -n "$sudo_bin" ]] && _sudo_cmd=("$sudo_bin")
-                fi
-                if [[ $EUID -eq 0 || ${#_sudo_cmd[@]} -gt 0 ]]; then
-                    "${_sudo_cmd[@]}" "$apt_get_bin" update -qq 2>/dev/null || true
-                    "${_sudo_cmd[@]}" "$apt_get_bin" install -y -qq curl jq git 2>/dev/null || true
-                fi
-            fi
-        fi
-    fi
+    # Safety net: ensure curl/jq/git are available even if the earlier
+    # ensure_early_bootstrap_deps call was a no-op (e.g. sudo only became
+    # usable after ensure_root). Idempotent: no-op when already installed.
+    ensure_early_bootstrap_deps
 
     disable_needrestart_apt_hook  # Prevent apt hangs on Ubuntu 22.04+ (issue #70)
     validate_target_user
