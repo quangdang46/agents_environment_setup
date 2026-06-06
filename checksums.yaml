@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-06-03T22:52:18+00:00
+# checksums.yaml - Auto-generated 2026-06-06T05:39:54+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -32,7 +32,7 @@ installers:
 
   caam:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_account_manager/main/install.sh"
-    sha256: "6a024ba24851cce6c0e16ba051dbabef50eef9e86cd00d59b7c71abcbf3e6606"
+    sha256: "249548b708d193487bf8c86320c647624b28f4cb365afab40264676bd64838b6"
 
   casr:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/cross_agent_session_resumer/main/install.sh"
@@ -40,7 +40,7 @@ installers:
 
   cass:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/main/install.sh"
-    sha256: "8527c5672f503ecd07be096f4a8b8599bb9b625f475f60da1ac3d64e5218bffc"
+    sha256: "578776be0d761b02e49a907b8e033edd4965ead6c49bcbd84656f97b391e0109"
 
   claude:
     url: "https://claude.ai/install.sh"
@@ -144,7 +144,7 @@ installers:
 
   srps:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/system_resource_protection_script/main/install.sh"
-    sha256: "9ec8910931480a69300d8ec2ac828d1e71ef812f7fa760d058b71fddf4babb69"
+    sha256: "92102c5e57c0eb27bccbf4a89c54dade1f212af9f83274a9a0439193acc24794"
 
   tru:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/toon_rust/main/install.sh"
