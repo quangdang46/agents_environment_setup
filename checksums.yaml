@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-06-17T22:55:38+00:00
+# checksums.yaml - Auto-generated 2026-06-18T05:02:11+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -56,7 +56,7 @@ installers:
 
   dcg:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh"
-    sha256: "1f74fe03c3704e535e2b95b9524886a6c71ef1fdeadad82c8aba3f9cbc074d72"
+    sha256: "07d27f08a1c594a12e784cc62bafe888859f3c82b9010dcb29e43ebd1a6a3723"
 
   dsr:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/doodlestein_self_releaser/main/install.sh"
