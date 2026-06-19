@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-06-19T01:52:07+00:00
+# checksums.yaml - Auto-generated 2026-06-19T18:51:43+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -88,7 +88,7 @@ installers:
 
   ms:
     url: "https://raw.githubusercontent.com/quangdang46/ms/main/install.sh"
-    sha256: "44a5eb88454a0f79bd097f01cb40f60f9bfb178d940cbaab3e85a489de9e8970"
+    sha256: "6a3cfa90cd734a839b5950acd2949d1193780601ef1b52a9e7d16b93235434b9"
 
   ntm:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/ntm/main/install.sh"
@@ -156,7 +156,7 @@ installers:
 
   uv:
     url: "https://astral.sh/uv/install.sh"
-    sha256: "082fe70cff67c3e2b0386c5a837a24a1cd76bfff53ef505c6add7324f2e36226"
+    sha256: "f2217f2fe451df47895a580143e2707b59c995186b47dfaa2e92b1aedf0dc764"
 
   xf:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/xf/main/install.sh"
