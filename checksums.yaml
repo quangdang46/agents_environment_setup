@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-06-27T02:32:49+00:00
+# checksums.yaml - Auto-generated 2026-06-30T01:25:57+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -60,7 +60,7 @@ installers:
 
   dsr:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/doodlestein_self_releaser/main/install.sh"
-    sha256: "c41b9fea22c653ad86dbb824d70c65de00d7fdfd2cc59bc4293b7de648001bb0"
+    sha256: "8118145a84ac289b16f8d5d21844264f9dda9d79d1bb444f4320c8087ff3bf92"
 
   fsfs:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/frankensearch/refs/heads/main/install.sh"
@@ -84,7 +84,7 @@ installers:
 
   mdwb:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/markdown_web_browser/main/install.sh"
-    sha256: "2b54a790738ad121f47f346bdd975ea851549d684588a4bd51fa068f55eed350"
+    sha256: "9f333a66f920447f51d5c2295684395096cd3312b5e3d881a04e1b1b92715dd1"
 
   ms:
     url: "https://raw.githubusercontent.com/quangdang46/ms/main/install.sh"
@@ -152,7 +152,7 @@ installers:
 
   ubs:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/ultimate_bug_scanner/main/install.sh"
-    sha256: "0f0ad1cce27dd3a091f490debf0cfa643b24548a4b32c41781e74b27d9930043"
+    sha256: "642029e95ef4396377561ef1fe4228aa9eecded9dfe43653d1b9a3df36fec485"
 
   uv:
     url: "https://astral.sh/uv/install.sh"
