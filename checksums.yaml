@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-04T14:57:45+00:00
+# checksums.yaml - Auto-generated 2026-08-04T16:50:37+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -12,7 +12,7 @@ installers:
 
   atuin:
     url: "https://setup.atuin.sh"
-    sha256: "4fd224487379bfd91dfb6ccf361add8b41137e54d07c19314962d7ea89e9b7f8"
+    sha256: "9467a9ab89f6993c00593fee6442d0d97483526a657a5af747c404c48d694f1d"
 
   br:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh"
@@ -56,7 +56,7 @@ installers:
 
   dcg:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh"
-    sha256: "50e81084a9d27a0d4b14a8aed9c3dd90b43b6b700d9a6eff6f2080acb79eacf8"
+    sha256: "bac7861fb88c140e91e3e4148b86759370177409e1e282ebf75d213b73f28d9d"
 
   dsr:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/doodlestein_self_releaser/main/install.sh"
