@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-03T11:53:38+00:00
+# checksums.yaml - Auto-generated 2026-08-04T04:57:27+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -40,7 +40,7 @@ installers:
 
   cass:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/main/install.sh"
-    sha256: "ceb371c5ac476b98272a312aacd652fbb8795e707a767cb3c31e053da09dd035"
+    sha256: "c1b0fd72dfabdcf6d0edc59eb1fbc8132a0c5ffc5159f935f3144d450e693276"
 
   claude:
     url: "https://claude.ai/install.sh"
@@ -56,7 +56,7 @@ installers:
 
   dcg:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh"
-    sha256: "8dce900f5897d1fcc9e9d6b40fa71f6911416bd5262432c21fe077e5a169a224"
+    sha256: "70bbe17a1df7b74816d9bd20d2fab5ecca2b325bf603d580e794e5df8d825c3a"
 
   dsr:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/doodlestein_self_releaser/main/install.sh"
@@ -64,7 +64,7 @@ installers:
 
   fsfs:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/frankensearch/refs/heads/main/install.sh"
-    sha256: "8af5d05bc6dccd4c1ad4fc5823570d44586a58b8687002626210e74a1ff8858c"
+    sha256: "d0e93d1a680be4534b62a348313664037f794ca60f946928aea88ce71778fbdf"
 
   gemini_patch:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/misc_coding_agent_tips_and_scripts/main/fix-gemini-cli-ebadf-crash.sh"
