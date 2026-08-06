@@ -23,8 +23,26 @@ type FixtureEntry =
 const HOME = '/home/test';
 const PATH = '/bin';
 const REDACTION_SAMPLE = ['opaque', 'credential', 'sample'].join('-');
-const PROVIDERS = ['claude', 'codex', 'gemini'] as const;
+const PROVIDERS = ['claude', 'codex', 'agy'] as const;
 const AUDIT_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'agent-readiness-audit.ts');
+
+function fixtureChildKind(
+  entryPath: string,
+  directPath: string,
+  directEntry: FixtureEntry | undefined,
+  child: FixtureEntry
+): DirectoryEntryResult['kind'] {
+  if (directEntry?.kind === 'file') {
+    return 'file';
+  }
+  if (directEntry?.kind === 'directory' || entryPath !== directPath) {
+    return 'directory';
+  }
+  if (child.kind === 'file') {
+    return 'file';
+  }
+  return 'directory';
+}
 
 class FixtureFileSystem implements AgentReadinessFileSystem {
   private readonly entries: Map<string, FixtureEntry>;
@@ -82,13 +100,7 @@ class FixtureFileSystem implements AgentReadinessFileSystem {
       if (!name) continue;
       const directPath = `${prefix}${name}`;
       const directEntry = this.entries.get(directPath);
-      const kind = directEntry?.kind === 'file'
-        ? 'file'
-        : directEntry?.kind === 'directory' || entryPath !== directPath
-          ? 'directory'
-          : child.kind === 'file'
-            ? 'file'
-            : 'directory';
+      const kind = fixtureChildKind(entryPath, directPath, directEntry, child);
       children.set(name, { name, kind });
     }
 
@@ -126,6 +138,31 @@ function jsonFile(value: unknown): FixtureEntry {
   return { kind: 'file', content: JSON.stringify(value) };
 }
 
+function textFile(value: string): FixtureEntry {
+  return { kind: 'file', content: value };
+}
+
+function antigravitySettings(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    model: 'Gemini 3.1 Pro (High)',
+    toolPermission: 'always-proceed',
+    artifactReviewPolicy: 'always-proceed',
+    enableTelemetry: false,
+    enableTerminalSandbox: false,
+    allowNonWorkspaceAccess: true,
+    notifications: false,
+    showTips: false,
+    showFeedbackSurvey: false,
+    useG1Credits: false,
+    verbosity: 'high',
+    runningLightSpeed: 'medium',
+    colorScheme: 'terminal',
+    editor: 'auto',
+    altScreenMode: 'never',
+    ...overrides,
+  };
+}
+
 function profile(provider: string, name: string): Record<string, FixtureEntry> {
   return {
     [`${HOME}/.local/share/caam/profiles/${provider}/${name}/profile.json`]: jsonFile({
@@ -140,22 +177,22 @@ function baseEntries(): Record<string, FixtureEntry> {
   return {
     '/bin/claude': executable('/bin/claude'),
     '/bin/codex': executable('/bin/codex'),
-    '/bin/gemini': executable('/bin/gemini'),
+    '/bin/agy': executable('/bin/agy'),
     '/bin/caam': executable('/bin/caam'),
     [`${HOME}/.claude/.credentials.json`]: jsonFile({ claudeAiOauth: { accessToken: REDACTION_SAMPLE } }),
     [`${HOME}/.codex/auth.json`]: jsonFile({ tokens: { access_token: REDACTION_SAMPLE } }),
-    [`${HOME}/.gemini/settings.json`]: jsonFile({ selectedAuthType: 'oauth-personal' }),
-    [`${HOME}/.gemini/oauth_creds.json`]: jsonFile({ access_token: REDACTION_SAMPLE }),
+    [`${HOME}/.gemini/antigravity-cli/settings.json`]: jsonFile(antigravitySettings()),
+    [`${HOME}/.gemini/antigravity-cli/antigravity-oauth-token`]: textFile(REDACTION_SAMPLE),
     [`${HOME}/.config/caam/config.json`]: jsonFile({
       default_profiles: {
         claude: 'work',
         codex: 'work',
-        gemini: 'work',
+        agy: 'work',
       },
     }),
     ...profile('claude', 'work'),
     ...profile('codex', 'work'),
-    ...profile('gemini', 'work'),
+    ...profile('agy', 'work'),
   };
 }
 
@@ -189,7 +226,7 @@ function createCliFixture() {
 
   mkdirSync(home, { recursive: true });
   mkdirSync(bin, { recursive: true });
-  for (const command of ['claude', 'codex', 'gemini', 'caam']) {
+  for (const command of ['claude', 'codex', 'agy', 'caam']) {
     writeRealFile(join(bin, command), `#!/usr/bin/env bash\nprintf '%s 1.2.3\\n' '${command}'\n`, true);
   }
 
@@ -199,17 +236,15 @@ function createCliFixture() {
   writeRealFile(join(home, '.codex', 'auth.json'), JSON.stringify({
     tokens: { access_token: secret },
   }));
-  writeRealFile(join(home, '.gemini', 'settings.json'), JSON.stringify({
-    selectedAuthType: 'oauth-personal',
+  writeRealFile(join(home, '.gemini', 'antigravity-cli', 'settings.json'), JSON.stringify({
+    ...antigravitySettings(),
   }));
-  writeRealFile(join(home, '.gemini', 'oauth_creds.json'), JSON.stringify({
-    access_token: secret,
-  }));
+  writeRealFile(join(home, '.gemini', 'antigravity-cli', 'antigravity-oauth-token'), secret);
   writeRealFile(join(home, '.config', 'caam', 'config.json'), JSON.stringify({
     default_profiles: {
       claude: 'work',
       codex: 'work',
-      gemini: 'work',
+      agy: 'work',
     },
   }));
   for (const provider of PROVIDERS) {
@@ -284,7 +319,7 @@ describe('agent readiness audit', () => {
     expect(report.tools.map((tool) => [tool.id, tool.status])).toEqual([
       ['claude', 'pass'],
       ['codex', 'pass'],
-      ['gemini', 'pass'],
+      ['agy', 'pass'],
       ['caam', 'pass'],
     ]);
     expect(jsonRun.stdout).not.toContain(fixture.secret);
@@ -299,7 +334,7 @@ describe('agent readiness audit', () => {
     expect(humanRun.stdout).toContain('Summary: pass=4 warn=0 unknown=0 fail=0');
     expect(humanRun.stdout).toContain('[PASS] Claude Code (claude)');
     expect(humanRun.stdout).toContain('[PASS] Codex CLI (codex)');
-    expect(humanRun.stdout).toContain('[PASS] Gemini CLI (gemini)');
+    expect(humanRun.stdout).toContain('[PASS] Antigravity CLI (agy)');
     expect(humanRun.stdout).toContain('[PASS] Coding Agent Account Manager (caam)');
     expect(humanRun.stdout).not.toContain(fixture.secret);
     expect(humanRun.stdout).not.toContain(envSecret);
@@ -331,16 +366,32 @@ describe('agent readiness audit', () => {
     expect(codex?.auth?.detail).toContain('malformed JSON');
   });
 
-  test('fails when an agent CLI is missing', () => {
+  test('fails Antigravity config when policy settings are not pinned', () => {
     const entries = baseEntries();
-    delete entries['/bin/gemini'];
+    entries[`${HOME}/.gemini/antigravity-cli/settings.json`] = jsonFile(
+      antigravitySettings({ model: 'Gemini 2.5 Pro' })
+    );
 
     const report = reportFor(entries);
-    const gemini = report.tools.find((item) => item.id === 'gemini');
+    const antigravity = report.tools.find((item) => item.id === 'agy');
 
     expect(report.ok).toBe(false);
-    expect(gemini?.cli.status).toBe('fail');
-    expect(gemini?.cli.detail).toContain('gemini was not found');
+    expect(antigravity?.status).toBe('fail');
+    expect(antigravity?.config?.detail).toContain('model');
+    expect(antigravity?.nextActions.join('\n')).toContain('--acfs-prime-settings');
+    expect(JSON.stringify(report)).not.toContain(REDACTION_SAMPLE);
+  });
+
+  test('fails when an agent CLI is missing', () => {
+    const entries = baseEntries();
+    delete entries['/bin/agy'];
+
+    const report = reportFor(entries);
+    const antigravity = report.tools.find((item) => item.id === 'agy');
+
+    expect(report.ok).toBe(false);
+    expect(antigravity?.cli.status).toBe('fail');
+    expect(antigravity?.cli.detail).toContain('agy was not found');
   });
 
   test('does not treat system binaries as ACFS command aliases', () => {
@@ -371,7 +422,7 @@ describe('agent readiness audit', () => {
       default_profiles: {
         claude: 'work',
         codex: 'missing-profile',
-        gemini: 'work',
+        agy: 'work',
       },
     });
 
@@ -386,19 +437,19 @@ describe('agent readiness audit', () => {
 
   test('reports unreadable config as unknown without exposing contents', () => {
     const entries = baseEntries();
-    entries[`${HOME}/.gemini/settings.json`] = {
+    entries[`${HOME}/.gemini/antigravity-cli/settings.json`] = {
       kind: 'file',
       content: JSON.stringify({ credential: REDACTION_SAMPLE }),
       readable: false,
     };
-    delete entries[`${HOME}/.gemini/oauth_creds.json`];
+    delete entries[`${HOME}/.gemini/antigravity-cli/antigravity-oauth-token`];
 
     const report = reportFor(entries);
-    const gemini = report.tools.find((item) => item.id === 'gemini');
+    const antigravity = report.tools.find((item) => item.id === 'agy');
 
     expect(report.ok).toBe(true);
-    expect(gemini?.status).toBe('unknown');
-    expect(gemini?.auth?.status).toBe('unknown');
+    expect(antigravity?.status).toBe('unknown');
+    expect(antigravity?.config?.status).toBe('unknown');
     expect(JSON.stringify(report)).not.toContain(REDACTION_SAMPLE);
   });
 });

@@ -1110,10 +1110,10 @@ _check_agents() {
         missing+=("codex")
     fi
 
-    if _smoke_binary_exists "gemini"; then
-        found+=("gemini")
+    if _smoke_binary_exists "agy"; then
+        found+=("agy")
     else
-        missing+=("gemini")
+        missing+=("agy")
     fi
 
     if [[ ${#missing[@]} -eq 0 ]]; then
@@ -1125,7 +1125,7 @@ _check_agents() {
         _smoke_warn "Missing agents: ${missing[*]}" "May need manual installation"
         return 0
     else
-        _smoke_fail "Agents: none found" "bun install -g --trust @openai/codex@latest @google/gemini-cli@latest"
+        _smoke_fail "Agents: none found" "acfs-update --force --agents-only"
         return 1
     fi
 }

@@ -50,6 +50,38 @@ teardown() {
     assert_output --partial "-m -s /bin/bash -G sudo testuser"
 }
 
+@test "_generate_random_password: urandom fallback survives pipefail SIGPIPE" {
+    stub_command "openssl" "" 127
+    stub_command "python3" "" 127
+
+    run bash -c '
+        set -euo pipefail
+        source "$1/scripts/lib/logging.sh"
+        source "$1/scripts/lib/user.sh"
+        password="$(_generate_random_password)"
+        printf "len=%s\n" "${#password}"
+    ' _ "$PROJECT_ROOT"
+
+    assert_success
+    assert_output "len=32"
+}
+
+@test "ensure_user: password generator failure warns without aborting setup" {
+    stub_command "id" "" 1
+    spy_command "useradd"
+
+    _generate_random_password() {
+        return 1
+    }
+
+    run ensure_user
+    assert_success
+    assert_output --partial "Could not generate password for testuser"
+
+    run cat "$STUB_DIR/useradd.log"
+    assert_output --partial "-m -s /bin/bash -G sudo testuser"
+}
+
 @test "ensure_user: skips if exists" {
     # Mock id to succeed
     stub_command "id" "uid=1000(testuser)" 0
@@ -173,6 +205,83 @@ EOF
     if [[ -f "$STUB_DIR/mkdir.log" ]]; then
         fail "mkdir should not be called"
     fi
+}
+
+@test "migrate_ssh_keys: root repair guidance quotes custom target home" {
+    local custom_home="$BATS_TEST_TMPDIR/target home; dollar \$bad"
+    local local_home=""
+    local root_command=""
+    local ssh_stub_dir=""
+    local quoted_ssh_dir=""
+    local quoted_authorized_keys=""
+
+    export TARGET_HOME="$custom_home"
+    export HOME="$(create_temp_dir)"
+    export ACFS_CI=false
+
+    user_resolve_current_user() {
+        printf '%s\n' "root"
+    }
+
+    user_home_for_user() {
+        [[ "${1:-}" == "testuser" ]] || return 1
+        printf '%s\n' "$custom_home"
+    }
+
+    printf -v quoted_ssh_dir '%q' "$custom_home/.ssh"
+    printf -v quoted_authorized_keys '%q' "$custom_home/.ssh/authorized_keys"
+
+    run migrate_ssh_keys
+    assert_success
+
+    root_command="$(printf '%s\n' "$output" | sed -n 's/^    \(cat .*ssh root@YOUR_SERVER_IP .*\)$/\1/p')"
+    [[ -n "$root_command" ]]
+
+    local_home="$(create_temp_dir)"
+    mkdir -p "$local_home/.ssh"
+    printf 'ssh-ed25519 AAAATEST acfs\n' > "$local_home/.ssh/acfs_ed25519.pub"
+
+    ssh_stub_dir="$(create_temp_dir)"
+    cat > "$ssh_stub_dir/ssh" <<'EOF'
+#!/usr/bin/env bash
+printf 'argc=%s\n' "$#"
+printf 'target=%s\n' "${1:-}"
+printf 'remote=%s\n' "${2:-}"
+EOF
+    chmod +x "$ssh_stub_dir/ssh"
+
+    run env HOME="$local_home" PATH="$ssh_stub_dir:$PATH" bash -c "$root_command"
+    assert_success
+    assert_output --partial "argc=2"
+    assert_output --partial "target=root@YOUR_SERVER_IP"
+    assert_output --partial "test ! -L $quoted_ssh_dir"
+    assert_output --partial "tail -c 1 $quoted_authorized_keys"
+    assert_output --partial '\$bad'
+}
+
+@test "migrate_ssh_keys: tolerates unset HOME when current user is not target" {
+    local resolved_home
+
+    resolved_home="$(create_temp_dir)"
+    export TARGET_HOME="$resolved_home"
+    export ACFS_CI=false
+    unset HOME
+
+    user_resolve_current_user() {
+        printf '%s\n' "otheruser"
+    }
+
+    user_home_for_user() {
+        [[ "${1:-}" == "testuser" ]] || return 1
+        printf '%s\n' "$resolved_home"
+    }
+
+    run migrate_ssh_keys
+    assert_success
+    refute_output --partial "unbound variable"
+    assert_output --partial "No SSH keys found to migrate to testuser user"
+    assert_output --partial "passwordless sudo is not a login password"
+    assert_output --partial "use the root fallback:"
 }
 
 @test "user_home_for_user: rejects invalid fallback usernames" {
@@ -349,14 +458,95 @@ EOF
 }
 
 @test "prompt_ssh_key: --yes skips missing root keys without prompting" {
+    command -v setsid >/dev/null || skip "setsid is required to detach /dev/tty"
+
     export ACFS_TEST_MODE=1
     export ACFS_TEST_ROOT_AUTHORIZED_KEYS="$BATS_TEST_TMPDIR/missing_authorized_keys"
     export YES_MODE=true
 
-    run prompt_ssh_key
+    run env PROJECT_ROOT="$PROJECT_ROOT" BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR" setsid bash -c '
+        export ACFS_TEST_MODE=1
+        export ACFS_TEST_ROOT_AUTHORIZED_KEYS="$BATS_TEST_TMPDIR/missing_authorized_keys"
+        export TARGET_USER=testuser
+        export YES_MODE=true
+        source "$PROJECT_ROOT/scripts/lib/logging.sh"
+        source "$PROJECT_ROOT/scripts/lib/user.sh"
+        prompt_ssh_key </dev/null
+    '
     assert_success
     assert_output --partial "No SSH public key found for root"
     assert_output --partial "skipping SSH key prompt in --yes mode"
+}
+
+@test "prompt_ssh_key: --yes prompts for missing root key when a tty is available" {
+    command -v script >/dev/null || skip "script is required to allocate a tty"
+
+    local root_keys="$BATS_TEST_TMPDIR/root_authorized_keys"
+    local runner="$BATS_TEST_TMPDIR/prompt_key_runner.sh"
+    local pubkey="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey acfs"
+
+    cat > "$runner" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+export ACFS_TEST_MODE=1
+export ACFS_TEST_ROOT_AUTHORIZED_KEYS="$ROOT_KEYS"
+export TARGET_USER=testuser
+export YES_MODE=true
+source "$PROJECT_ROOT/scripts/lib/logging.sh"
+source "$PROJECT_ROOT/scripts/lib/user.sh"
+prompt_ssh_key
+printf 'stored=%s\n' "$(cat "$ROOT_KEYS")"
+EOF
+    chmod +x "$runner"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" ROOT_KEYS="$root_keys" RUNNER="$runner" PUBKEY="$pubkey" bash -c \
+        'printf "%s\n" "$PUBKEY" | script -qfec "$RUNNER" /dev/null'
+
+    assert_success
+    assert_output --partial "prompting for one even in --yes mode"
+    assert_output --partial "SSH key installed successfully"
+    assert_output --partial "after install, reconnect with the matching private key:"
+    assert_output --partial "ssh -i ~/.ssh/your_key testuser@<this_ip>"
+    refute_output --partial "ssh -i ~/.ssh/your_key root@<this_ip>"
+    assert_output --partial "stored=$pubkey"
+}
+
+@test "prompt_ssh_key: --yes missing root keys sets final SSH warning" {
+    command -v setsid >/dev/null || skip "setsid is required to detach /dev/tty"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR" setsid bash -c '
+        set -euo pipefail
+        source "$PROJECT_ROOT/scripts/lib/logging.sh"
+        source "$PROJECT_ROOT/scripts/lib/user.sh"
+        export ACFS_TEST_MODE=1
+        export ACFS_TEST_ROOT_AUTHORIZED_KEYS="$BATS_TEST_TMPDIR/missing_authorized_keys"
+        export TARGET_USER=testuser
+        export YES_MODE=true
+        prompt_ssh_key
+        printf "warning=%s\n" "${ACFS_SSH_KEY_WARNING:-}"
+    '
+    assert_success
+    assert_output --partial "warning=true"
+}
+
+@test "prompt_ssh_key: noninteractive missing root keys sets final SSH warning" {
+    command -v setsid >/dev/null || skip "setsid is required to detach /dev/tty"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR" setsid bash -c '
+        set -euo pipefail
+        source "$PROJECT_ROOT/scripts/lib/logging.sh"
+        source "$PROJECT_ROOT/scripts/lib/user.sh"
+        export ACFS_TEST_MODE=1
+        export ACFS_TEST_ROOT_AUTHORIZED_KEYS="$BATS_TEST_TMPDIR/missing_authorized_keys"
+        export TARGET_USER=testuser
+        export YES_MODE=false
+        prompt_ssh_key </dev/null
+        printf "warning=%s\n" "${ACFS_SSH_KEY_WARNING:-}"
+    '
+    assert_success
+    assert_output --partial "Non-interactive mode detected"
+    assert_output --partial "final summary's root fallback"
+    assert_output --partial "warning=true"
 }
 
 @test "migrate_ssh_keys: fails closed when TARGET_HOME is unresolved" {

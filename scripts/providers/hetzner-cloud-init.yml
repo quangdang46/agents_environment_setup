@@ -59,7 +59,7 @@ runcmd:
     # Run the ACFS installer in non-interactive mode
     # --yes: skip all prompts
     # --mode vibe: enable passwordless sudo and full agent permissions
-    curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" \
+    curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" \
       | bash -s -- --yes --mode vibe 2>&1 | tee -a /var/log/acfs/install.log
 
     echo "=== ACFS cloud-init finished at $(date -Iseconds) ==="

@@ -28,6 +28,9 @@ OFFLINE_PACK_WARNINGS=()
 OFFLINE_PACK_MODULES_JSON="[]"
 OFFLINE_PACK_ARTIFACTS_JSON="[]"
 OFFLINE_PACK_FAILURES_JSON="[]"
+OFFLINE_PACK_JQ_BIN=""
+OFFLINE_PACK_HASH_SPEC=""
+OFFLINE_PACK_AWK_BIN=""
 
 declare -gA OFFLINE_PACK_INSTALLER_URL=()
 declare -gA OFFLINE_PACK_INSTALLER_SHA=()
@@ -85,7 +88,7 @@ offline_pack_append_failure() {
     local message="$4"
 
     OFFLINE_PACK_FAILURES_JSON="$(
-        jq -c \
+        offline_pack_jq -c \
             --arg code "$code" \
             --arg moduleId "$module_id" \
             --arg tool "$tool" \
@@ -141,39 +144,207 @@ offline_pack_abs_dir() {
     local path="$1"
 
     [[ -n "$path" ]] || return 1
-    mkdir -p "$path"
+    offline_pack_mkdir_p "$path"
     cd "$path" && pwd -P
 }
 
+offline_pack_system_binary_path() {
+    local name="${1:-}"
+    local candidate=""
+
+    [[ -n "$name" ]] || return 1
+    case "$name" in
+        .|..)
+            return 1
+            ;;
+        *[!A-Za-z0-9._+-]*)
+            return 1
+            ;;
+    esac
+
+    for candidate in \
+        "/usr/bin/$name" \
+        "/bin/$name" \
+        "/usr/local/bin/$name" \
+        "/usr/local/sbin/$name" \
+        "/usr/sbin/$name" \
+        "/sbin/$name"
+    do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+offline_pack_required_binary_path() {
+    local name="${1:-}"
+    local path=""
+
+    path="$(offline_pack_system_binary_path "$name" 2>/dev/null || true)"
+    [[ -n "$path" ]] || return 127
+    printf '%s\n' "$path"
+}
+
 offline_pack_require_jq() {
-    if ! command -v jq >/dev/null 2>&1; then
+    OFFLINE_PACK_JQ_BIN="$(offline_pack_required_binary_path jq 2>/dev/null || true)"
+    if [[ -z "$OFFLINE_PACK_JQ_BIN" ]]; then
         echo "Error: jq is required for offline artifact pack building" >&2
         return 2
     fi
 }
 
+offline_pack_jq() {
+    local jq_bin="${OFFLINE_PACK_JQ_BIN:-}"
+
+    if [[ -z "$jq_bin" || ! -x "$jq_bin" ]]; then
+        jq_bin="$(offline_pack_required_binary_path jq)" || return $?
+        OFFLINE_PACK_JQ_BIN="$jq_bin"
+    fi
+
+    "$jq_bin" "$@"
+}
+
+offline_pack_awk() {
+    local awk_bin="${OFFLINE_PACK_AWK_BIN:-}"
+
+    if [[ -z "$awk_bin" || ! -x "$awk_bin" ]]; then
+        awk_bin="$(offline_pack_required_binary_path awk)" || return $?
+        OFFLINE_PACK_AWK_BIN="$awk_bin"
+    fi
+
+    "$awk_bin" "$@"
+}
+
+offline_pack_mkdir_p() {
+    local mkdir_bin=""
+
+    mkdir_bin="$(offline_pack_required_binary_path mkdir)" || return $?
+    "$mkdir_bin" -p "$@"
+}
+
+offline_pack_cp() {
+    local cp_bin=""
+
+    cp_bin="$(offline_pack_required_binary_path cp)" || return $?
+    "$cp_bin" "$@"
+}
+
+offline_pack_find() {
+    local find_bin=""
+
+    find_bin="$(offline_pack_required_binary_path find)" || return $?
+    "$find_bin" "$@"
+}
+
+offline_pack_date() {
+    local date_bin=""
+
+    date_bin="$(offline_pack_required_binary_path date)" || return $?
+    "$date_bin" "$@"
+}
+
+offline_pack_uname() {
+    local uname_bin=""
+
+    uname_bin="$(offline_pack_required_binary_path uname)" || return $?
+    "$uname_bin" "$@"
+}
+
+offline_pack_git() {
+    local git_bin=""
+
+    git_bin="$(offline_pack_system_binary_path git 2>/dev/null || true)"
+    [[ -n "$git_bin" ]] || return 127
+    "$git_bin" "$@"
+}
+
+offline_pack_curl_binary_path() {
+    local override="${ACFS_OFFLINE_PACK_CURL_BIN:-}"
+
+    if [[ -n "$override" ]]; then
+        case "$override" in
+            /*)
+                [[ -x "$override" ]] || return 127
+                printf '%s\n' "$override"
+                return 0
+                ;;
+            *)
+                return 127
+                ;;
+        esac
+    fi
+
+    offline_pack_required_binary_path curl
+}
+
+offline_pack_hash_tool() {
+    local sha256sum_bin=""
+    local shasum_bin=""
+
+    if [[ -n "$OFFLINE_PACK_HASH_SPEC" ]]; then
+        printf '%s\n' "$OFFLINE_PACK_HASH_SPEC"
+        return 0
+    fi
+
+    sha256sum_bin="$(offline_pack_system_binary_path sha256sum 2>/dev/null || true)"
+    if [[ -n "$sha256sum_bin" ]]; then
+        OFFLINE_PACK_HASH_SPEC="sha256sum:$sha256sum_bin"
+        printf '%s\n' "$OFFLINE_PACK_HASH_SPEC"
+        return 0
+    fi
+
+    shasum_bin="$(offline_pack_system_binary_path shasum 2>/dev/null || true)"
+    if [[ -n "$shasum_bin" ]]; then
+        OFFLINE_PACK_HASH_SPEC="shasum:$shasum_bin"
+        printf '%s\n' "$OFFLINE_PACK_HASH_SPEC"
+        return 0
+    fi
+
+    return 1
+}
+
 offline_pack_sha256() {
     local file="$1"
+    local hash_spec=""
     local hash_tool=""
+    local hash_bin=""
+    local output=""
+    local hash=""
 
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$file" | awk '{print $1}'
-        return 0
-    fi
+    hash_spec="$(offline_pack_hash_tool)" || {
+        echo "Error: no trusted SHA256 tool found" >&2
+        return 2
+    }
+    hash_tool="${hash_spec%%:*}"
+    hash_bin="${hash_spec#*:}"
 
-    if command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 "$file" | awk '{print $1}'
-        return 0
-    fi
+    case "$hash_tool" in
+        sha256sum) output="$("$hash_bin" "$file")" || return 1 ;;
+        shasum) output="$("$hash_bin" -a 256 "$file")" || return 1 ;;
+        *)
+            echo "Error: unsupported SHA256 tool: $hash_tool" >&2
+            return 2
+            ;;
+    esac
 
-    hash_tool="${hash_tool:-}"
-    echo "Error: no SHA256 tool found ($hash_tool)" >&2
-    return 2
+    read -r hash _ <<<"$output"
+    [[ -n "$hash" ]] || return 1
+    printf '%s\n' "$hash"
 }
 
 offline_pack_file_size() {
     local file="$1"
-    wc -c < "$file" | tr -d '[:space:]'
+    local wc_bin=""
+    local output=""
+
+    wc_bin="$(offline_pack_required_binary_path wc)" || return $?
+    output="$("$wc_bin" -c < "$file")" || return 1
+    output="${output//[[:space:]]/}"
+    [[ -n "$output" ]] || return 1
+    printf '%s\n' "$output"
 }
 
 offline_pack_parse_positive_int() {
@@ -317,7 +488,7 @@ offline_pack_resolve_inputs() {
         OFFLINE_PACK_MANIFEST_FILE="$OFFLINE_PACK_SOURCE_ROOT/acfs.manifest.yaml"
     fi
     if [[ -z "$OFFLINE_PACK_ARCH" ]]; then
-        OFFLINE_PACK_ARCH="$(uname -m)"
+        OFFLINE_PACK_ARCH="$(offline_pack_uname -m)"
     fi
 
     OFFLINE_PACK_CHECKSUMS_FILE="$(offline_pack_abs_file "$OFFLINE_PACK_CHECKSUMS_FILE")" || {
@@ -444,7 +615,7 @@ offline_pack_load_manifest_modules() {
             OFFLINE_PACK_VERIFIED_MODULES+=("$module_id")
         fi
     done < <(
-        awk '
+        offline_pack_awk '
             function trim(value) {
                 sub(/#.*/, "", value)
                 gsub(/^[ \t]+|[ \t]+$/, "", value)
@@ -495,6 +666,7 @@ offline_pack_load_manifest_modules() {
 offline_pack_select_modules() {
     local module_id=""
     local tool=""
+    local url=""
 
     if (( ${#OFFLINE_PACK_MODULE_ARGS[@]} == 0 )); then
         OFFLINE_PACK_SELECTED_MODULES=("${OFFLINE_PACK_VERIFIED_MODULES[@]}")
@@ -514,18 +686,27 @@ offline_pack_select_modules() {
             continue
         fi
 
-        if [[ -z "${OFFLINE_PACK_INSTALLER_URL[$tool]:-}" || -z "${OFFLINE_PACK_INSTALLER_SHA[$tool]:-}" ]]; then
+        url="${OFFLINE_PACK_INSTALLER_URL[$tool]:-}"
+        if [[ -z "$url" || -z "${OFFLINE_PACK_INSTALLER_SHA[$tool]:-}" ]]; then
             offline_pack_add_error "pack_checksums_mismatch: installer key $tool missing from checksums.yaml"
+            continue
         fi
+
+        case "$url" in
+            https://*) ;;
+            *)
+                offline_pack_add_error "pack_non_https_source: installer key $tool must use an HTTPS source URL"
+                ;;
+        esac
     done
 }
 
 offline_pack_iso_now() {
-    date -u +%Y-%m-%dT%H:%M:%SZ
+    offline_pack_date -u +%Y-%m-%dT%H:%M:%SZ
 }
 
 offline_pack_iso_expires() {
-    date -u -d "$OFFLINE_PACK_EXPIRES_DAYS days" +%Y-%m-%dT%H:%M:%SZ
+    offline_pack_date -u -d "$OFFLINE_PACK_EXPIRES_DAYS days" +%Y-%m-%dT%H:%M:%SZ
 }
 
 offline_pack_output_dir_is_empty() {
@@ -533,7 +714,7 @@ offline_pack_output_dir_is_empty() {
     local found=""
 
     [[ -d "$dir" ]] || return 0
-    found="$(find "$dir" -mindepth 1 -maxdepth 1 -print -quit)"
+    found="$(offline_pack_find "$dir" -mindepth 1 -maxdepth 1 -print -quit)"
     [[ -z "$found" ]]
 }
 
@@ -552,7 +733,7 @@ offline_pack_prepare_layout() {
         return 1
     fi
 
-    mkdir -p "$pack_root/scripts" "$pack_root/provenance" "$pack_root/artifacts"
+    offline_pack_mkdir_p "$pack_root/scripts" "$pack_root/provenance" "$pack_root/artifacts"
 
     for rel in VERSION acfs.manifest.yaml checksums.yaml; do
         case "$rel" in
@@ -561,13 +742,13 @@ offline_pack_prepare_layout() {
                     offline_pack_add_error "pack_source_missing: $rel"
                     return 1
                 }
-                cp "$OFFLINE_PACK_SOURCE_ROOT/$rel" "$pack_root/$rel"
+                offline_pack_cp "$OFFLINE_PACK_SOURCE_ROOT/$rel" "$pack_root/$rel"
                 ;;
             acfs.manifest.yaml)
-                cp "$OFFLINE_PACK_MANIFEST_FILE" "$pack_root/$rel"
+                offline_pack_cp "$OFFLINE_PACK_MANIFEST_FILE" "$pack_root/$rel"
                 ;;
             checksums.yaml)
-                cp "$OFFLINE_PACK_CHECKSUMS_FILE" "$pack_root/$rel"
+                offline_pack_cp "$OFFLINE_PACK_CHECKSUMS_FILE" "$pack_root/$rel"
                 ;;
         esac
     done
@@ -579,29 +760,24 @@ offline_pack_prepare_layout() {
         }
     done
 
-    cp -R "$OFFLINE_PACK_SOURCE_ROOT/scripts/lib" "$pack_root/scripts/lib"
-    cp -R "$OFFLINE_PACK_SOURCE_ROOT/scripts/generated" "$pack_root/scripts/generated"
-    cp -R "$OFFLINE_PACK_SOURCE_ROOT/acfs" "$pack_root/acfs"
+    offline_pack_cp -R "$OFFLINE_PACK_SOURCE_ROOT/scripts/lib" "$pack_root/scripts/lib"
+    offline_pack_cp -R "$OFFLINE_PACK_SOURCE_ROOT/scripts/generated" "$pack_root/scripts/generated"
+    offline_pack_cp -R "$OFFLINE_PACK_SOURCE_ROOT/acfs" "$pack_root/acfs"
 }
 
 offline_pack_fetch_url() {
     local url="$1"
     local destination="$2"
-    local source_path=""
     local curl_args=()
+    local curl_bin=""
 
-    mkdir -p "${destination%/*}"
+    offline_pack_mkdir_p "${destination%/*}"
 
     case "$url" in
-        file:///*)
-            source_path="${url#file://}"
-            [[ -f "$source_path" ]] || return 1
-            cp "$source_path" "$destination"
-            ;;
         https://*)
-            command -v curl >/dev/null 2>&1 || return 1
+            curl_bin="$(offline_pack_curl_binary_path)" || return 1
             curl_args=(--proto '=https' --proto-redir '=https' -fsSL --connect-timeout 10 --max-time "$OFFLINE_PACK_TIMEOUT_SECONDS" -o "$destination" "$url")
-            curl "${curl_args[@]}"
+            "$curl_bin" "${curl_args[@]}"
             ;;
         *)
             return 2
@@ -616,7 +792,7 @@ offline_pack_append_module_json() {
     local args_raw="$4"
 
     OFFLINE_PACK_MODULES_JSON="$(
-        jq -c \
+        offline_pack_jq -c \
             --arg id "$module_id" \
             --arg policy "bundled" \
             --arg tool "$tool" \
@@ -642,7 +818,7 @@ offline_pack_append_artifact_json() {
     local size_bytes="$6"
 
     OFFLINE_PACK_ARTIFACTS_JSON="$(
-        jq -c \
+        offline_pack_jq -c \
             --arg id "$module_id:$tool" \
             --arg moduleId "$module_id" \
             --arg key "$tool" \
@@ -736,7 +912,7 @@ offline_pack_plan_json() {
             url=""
         fi
         selected_json="$(
-            jq -c \
+            offline_pack_jq -c \
                 --arg moduleId "$module_id" \
                 --arg tool "$tool" \
                 --arg url "$url" \
@@ -745,7 +921,7 @@ offline_pack_plan_json() {
         )"
     done
 
-    jq -n \
+    offline_pack_jq -n \
         --arg schema "$OFFLINE_PACK_BUILD_SCHEMA" \
         --arg status "$(offline_pack_status)" \
         --arg mode "dry-run" \
@@ -757,8 +933,8 @@ offline_pack_plan_json() {
         --argjson staleAfterDays "$OFFLINE_PACK_EXPIRES_DAYS" \
         --argjson downloadTimeoutSeconds "$OFFLINE_PACK_TIMEOUT_SECONDS" \
         --argjson modules "$selected_json" \
-        --slurpfile errors <(offline_pack_json_lines "${OFFLINE_PACK_ERRORS[@]}" | jq -R . | jq -s .) \
-        --slurpfile warnings <(offline_pack_json_lines "${OFFLINE_PACK_WARNINGS[@]}" | jq -R . | jq -s .) \
+        --slurpfile errors <(offline_pack_json_lines "${OFFLINE_PACK_ERRORS[@]}" | offline_pack_jq -R . | offline_pack_jq -s .) \
+        --slurpfile warnings <(offline_pack_json_lines "${OFFLINE_PACK_WARNINGS[@]}" | offline_pack_jq -R . | offline_pack_jq -s .) \
         '{
           schema: $schema,
           status: $status,
@@ -788,13 +964,16 @@ offline_pack_write_manifest() {
     local pack_mode="complete"
 
     [[ "$OFFLINE_PACK_BEST_EFFORT" == "true" && ${#OFFLINE_PACK_ERRORS[@]} -gt 0 ]] && pack_mode="diagnostic"
-    [[ -f "$OFFLINE_PACK_SOURCE_ROOT/VERSION" ]] && version="$(tr -d '[:space:]' < "$OFFLINE_PACK_SOURCE_ROOT/VERSION")"
-    source_ref="$(git -C "$OFFLINE_PACK_SOURCE_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'unknown')"
-    source_commit="$(git -C "$OFFLINE_PACK_SOURCE_ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+    if [[ -f "$OFFLINE_PACK_SOURCE_ROOT/VERSION" ]]; then
+        version="$(< "$OFFLINE_PACK_SOURCE_ROOT/VERSION")"
+        version="${version//[[:space:]]/}"
+    fi
+    source_ref="$(offline_pack_git -C "$OFFLINE_PACK_SOURCE_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'unknown')"
+    source_commit="$(offline_pack_git -C "$OFFLINE_PACK_SOURCE_ROOT" rev-parse HEAD 2>/dev/null || printf 'unknown')"
     manifest_sha="$(offline_pack_sha256 "$OFFLINE_PACK_MANIFEST_FILE")"
     checksums_sha="$(offline_pack_sha256 "$OFFLINE_PACK_CHECKSUMS_FILE")"
 
-    jq -n \
+    offline_pack_jq -n \
         --arg schema "$OFFLINE_PACK_SCHEMA" \
         --argjson schemaVersion 1 \
         --arg generatedBy "acfs offline-pack build" \
@@ -838,7 +1017,7 @@ offline_pack_write_manifest() {
           }
         }' > "$pack_root/manifest.json"
 
-    jq -n \
+    offline_pack_jq -n \
         --arg generatedAt "$generated_at" \
         --arg sourceRef "$source_ref" \
         --arg sourceCommit "$source_commit" \
@@ -847,7 +1026,7 @@ offline_pack_write_manifest() {
         '{generatedAt: $generatedAt, sourceRef: $sourceRef, sourceCommit: $sourceCommit, target: {os: "ubuntu", version: $ubuntuVersion, architecture: $arch}}' \
         > "$pack_root/provenance/builder-env.json"
 
-    jq -n \
+    offline_pack_jq -n \
         --argjson artifacts "$OFFLINE_PACK_ARTIFACTS_JSON" \
         '{artifacts: $artifacts}' \
         > "$pack_root/provenance/source-index.json"
@@ -862,7 +1041,7 @@ offline_pack_result_json() {
     [[ -n "$pack_root" ]] && manifest_path="$pack_root/manifest.json"
     [[ "$OFFLINE_PACK_BEST_EFFORT" == "true" && ${#OFFLINE_PACK_ERRORS[@]} -gt 0 ]] && pack_mode="diagnostic"
 
-    jq -n \
+    offline_pack_jq -n \
         --arg schema "$OFFLINE_PACK_BUILD_SCHEMA" \
         --arg status "$(offline_pack_status)" \
         --arg generatedAt "$generated_at" \
@@ -873,8 +1052,8 @@ offline_pack_result_json() {
         --argjson modules "$OFFLINE_PACK_MODULES_JSON" \
         --argjson artifacts "$OFFLINE_PACK_ARTIFACTS_JSON" \
         --argjson failures "$OFFLINE_PACK_FAILURES_JSON" \
-        --slurpfile errors <(offline_pack_json_lines "${OFFLINE_PACK_ERRORS[@]}" | jq -R . | jq -s .) \
-        --slurpfile warnings <(offline_pack_json_lines "${OFFLINE_PACK_WARNINGS[@]}" | jq -R . | jq -s .) \
+        --slurpfile errors <(offline_pack_json_lines "${OFFLINE_PACK_ERRORS[@]}" | offline_pack_jq -R . | offline_pack_jq -s .) \
+        --slurpfile warnings <(offline_pack_json_lines "${OFFLINE_PACK_WARNINGS[@]}" | offline_pack_jq -R . | offline_pack_jq -s .) \
         '{
           schema: $schema,
           status: $status,

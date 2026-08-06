@@ -2228,7 +2228,7 @@ test_cleanup_old_backups_preserves_active_referenced_backups() {
 
 # ============================================================
 # Regression tests for handle_existing_installation session management
-# (ACFS #264 — https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup/issues/264)
+# (ACFS #264 — https://github.com/quangdang46/agents_environment_setup/issues/264)
 # ============================================================
 
 _acfs_264_setup_installation() {

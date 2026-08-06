@@ -36,6 +36,33 @@ ACFS_LOG_FILE="${ACFS_LOG_FILE:-/var/log/acfs/install.log}"
 # Log helpers
 # ============================================================
 
+_acfs_report_sudo_binary_path() {
+    local candidate=""
+
+    for candidate in \
+        /usr/bin/sudo \
+        /bin/sudo \
+        /usr/local/bin/sudo \
+        /usr/local/sbin/sudo \
+        /usr/sbin/sudo \
+        /sbin/sudo
+    do
+        [[ -x "$candidate" ]] || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+
+    return 1
+}
+
+_acfs_report_sudo() {
+    local sudo_bin=""
+
+    sudo_bin="$(_acfs_report_sudo_binary_path 2>/dev/null || true)"
+    [[ -n "$sudo_bin" ]] || return 1
+    "$sudo_bin" -n "$@"
+}
+
 _acfs_append_log_entry() {
     local entry="$1"
     local log_file="$ACFS_LOG_FILE"
@@ -44,8 +71,8 @@ _acfs_append_log_entry() {
 
     if [[ ! -d "$log_dir" ]]; then
         mkdir -p "$log_dir" 2>/dev/null || {
-            if command -v sudo &>/dev/null; then
-                sudo mkdir -p "$log_dir" 2>/dev/null || return 0
+            if _acfs_report_sudo_binary_path >/dev/null 2>&1; then
+                _acfs_report_sudo mkdir -p "$log_dir" 2>/dev/null || return 0
             else
                 return 0
             fi
@@ -57,8 +84,8 @@ _acfs_append_log_entry() {
         return 0
     fi
 
-    if command -v sudo &>/dev/null; then
-        printf '%s\n' "$entry" | sudo tee -a "$log_file" >/dev/null 2>&1 || true
+    if _acfs_report_sudo_binary_path >/dev/null 2>&1; then
+        printf '%s\n' "$entry" | _acfs_report_sudo tee -a "$log_file" >/dev/null 2>&1 || true
     fi
 }
 
@@ -202,9 +229,9 @@ report_build_resume_command() {
         resume_cmd="bash $local_install"
     else
         if [[ -n "${ACFS_COMMIT_SHA_FULL:-}" ]]; then
-            install_url="https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_COMMIT_SHA_FULL}/install.sh"
+            install_url="https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_COMMIT_SHA_FULL}/install.sh"
         elif [[ -n "${ACFS_REF_INPUT:-}" && "${ACFS_REF_INPUT}" != "main" ]]; then
-            install_url="https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF_INPUT}/install.sh"
+            install_url="https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF_INPUT}/install.sh"
         elif [[ -n "${ACFS_RAW:-}" ]]; then
             install_url="${ACFS_RAW%/}/install.sh"
         else
@@ -580,7 +607,7 @@ report_success() {
                 "  Next steps:" \
                 "    1. Log out and back in (or run: source ~/.zshrc)" \
                 "    2. Run: onboard" \
-                "    3. Start coding with: cc, cod, or gmi" \
+                "    3. Start coding with: cc, cod, or agy" \
                 "" \
                 "  Logs: ${ACFS_LOG_FILE}"
         else
@@ -595,7 +622,7 @@ report_success() {
             echo "  Next steps:"
             echo "    1. Log out and back in (or run: source ~/.zshrc)"
             echo "    2. Run: onboard"
-            echo "    3. Start coding with: cc, cod, or gmi"
+            echo "    3. Start coding with: cc, cod, or agy"
             echo ""
             echo "  Logs: ${ACFS_LOG_FILE}"
             echo ""

@@ -14,6 +14,55 @@ ARTIFACT_DIR="${ACFS_OFFLINE_PACK_TEST_ARTIFACTS_DIR:-${TMPDIR:-/tmp}/acfs-offli
 
 mkdir -p "$ARTIFACT_DIR"
 
+write_fake_curl() {
+    mkdir -p "$ARTIFACT_DIR/bin"
+    cat > "$ARTIFACT_DIR/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+output=""
+url=""
+
+while (($#)); do
+    case "$1" in
+        -o)
+            output="$2"
+            shift 2
+            ;;
+        --connect-timeout|--max-time|--proto|--proto-redir)
+            shift 2
+            ;;
+        -*)
+            shift
+            ;;
+        *)
+            url="$1"
+            shift
+            ;;
+    esac
+done
+
+[[ -n "$output" && -n "$url" ]] || exit 64
+
+case "$url" in
+    https://fixture.test/*/*)
+        path="${url#https://fixture.test/}"
+        name="${path%%/*}"
+        file_name="${path#*/}"
+        source_path="${ACFS_OFFLINE_PACK_TEST_ARTIFACTS_DIR:?}/$name/$file_name"
+        [[ -f "$source_path" ]] || exit 22
+        /bin/cp "$source_path" "$output"
+        ;;
+    *)
+        exit 22
+        ;;
+esac
+EOF
+    chmod +x "$ARTIFACT_DIR/bin/curl"
+}
+
+write_fake_curl
+
 pass() {
     TESTS_PASSED=$((TESTS_PASSED + 1))
     echo "PASS: $1"
@@ -40,14 +89,17 @@ write_fixture_source() {
     printf '# fixture acfs config\n' > "$source_root/acfs/zsh/acfs.zshrc"
     printf '#!/usr/bin/env bash\nprintf "rch fixture installer\\n"\n' > "$artifact_file"
     artifact_sha="$(sha256sum "$artifact_file" | awk '{print $1}')"
-    artifact_url="file://$artifact_file"
+    artifact_url="https://fixture.test/$name/rch-install.sh"
 
     case "$mode" in
+        file-url)
+            artifact_url="file://$artifact_file"
+            ;;
         mismatch)
             artifact_sha="0000000000000000000000000000000000000000000000000000000000000000"
             ;;
         missing)
-            artifact_url="file://$ARTIFACT_DIR/$name/missing-install.sh"
+            artifact_url="https://fixture.test/$name/missing-install.sh"
             ;;
     esac
 
@@ -98,7 +150,7 @@ run_pack() {
     local status=0
 
     set +e
-    output="$(bash "$OFFLINE_PACK_SH" "$@" 2>&1)"
+    output="$(ACFS_OFFLINE_PACK_CURL_BIN="$ARTIFACT_DIR/bin/curl" ACFS_OFFLINE_PACK_TEST_ARTIFACTS_DIR="$ARTIFACT_DIR" PATH="$ARTIFACT_DIR/bin:$PATH" bash "$OFFLINE_PACK_SH" "$@" 2>&1)"
     status=$?
     set -e
 
@@ -123,10 +175,26 @@ test_dry_run_json_uses_manifest_and_checksums() {
       .pack.downloadTimeoutSeconds == 60 and
       .pack.modules[0].moduleId == "stack.rch" and
       .pack.modules[0].verifiedInstallerKey == "rch" and
-      (.pack.modules[0].sourceUrl | startswith("file://"))
+      (.pack.modules[0].sourceUrl | startswith("https://"))
     ' <<<"$output" >/dev/null || return 1
 
     pass "dry_run_json_uses_manifest_and_checksums"
+}
+
+test_non_https_source_is_refused() {
+    local source_root output status
+    source_root="$(write_fixture_source non-https file-url)"
+
+    output="$(run_pack non-https build --dry-run --json --source-root "$source_root" --module stack.rch)"
+    status="$(cat "$ARTIFACT_DIR/non-https.exit")"
+
+    [[ "$status" -eq 1 ]] || return 1
+    jq -e '
+      .status == "fail" and
+      any(.validation.errors[]; contains("pack_non_https_source"))
+    ' <<<"$output" >/dev/null || return 1
+
+    pass "non_https_source_is_refused"
 }
 
 test_build_writes_manifest_and_verified_artifact() {
@@ -159,6 +227,36 @@ test_build_writes_manifest_and_verified_artifact() {
     jq -e '.status == "pass" and .output.packMode == "complete"' <<<"$output" >/dev/null || return 1
 
     pass "build_writes_manifest_and_verified_artifact"
+}
+
+test_build_ignores_path_poisoned_pack_tools() {
+    local source_root output_dir output status tool marker
+    local poison_markers=()
+    local poison_tools=(jq sha256sum shasum awk wc tr date uname cp mkdir find git)
+    source_root="$(write_fixture_source trusted-tools valid)"
+    output_dir="$ARTIFACT_DIR/trusted-tools/output"
+
+    for tool in "${poison_tools[@]}"; do
+        marker="$ARTIFACT_DIR/trusted-tools-$tool-used"
+        poison_markers+=("$marker")
+        cat > "$ARTIFACT_DIR/bin/$tool" <<EOF
+#!/usr/bin/env bash
+printf 'poisoned $tool\\n' > "$marker"
+exit 99
+EOF
+        chmod +x "$ARTIFACT_DIR/bin/$tool"
+    done
+
+    output="$(run_pack trusted-tools build --json --source-root "$source_root" --output "$output_dir" --module stack.rch)"
+    status="$(cat "$ARTIFACT_DIR/trusted-tools.exit")"
+
+    [[ "$status" -eq 0 ]] || return 1
+    for marker in "${poison_markers[@]}"; do
+        [[ ! -e "$marker" ]] || return 1
+    done
+    jq -e '.status == "pass" and .pack.artifacts[0].verifiedInstallerKey == "rch"' <<<"$output" >/dev/null || return 1
+
+    pass "build_ignores_path_poisoned_pack_tools"
 }
 
 test_checksum_mismatch_fails_closed() {
@@ -257,7 +355,9 @@ run_all_tests() {
     local test_name=""
     local tests=(
         test_dry_run_json_uses_manifest_and_checksums
+        test_non_https_source_is_refused
         test_build_writes_manifest_and_verified_artifact
+        test_build_ignores_path_poisoned_pack_tools
         test_checksum_mismatch_fails_closed
         test_unknown_module_is_refused
         test_non_verified_module_is_refused

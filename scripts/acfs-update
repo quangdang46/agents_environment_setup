@@ -145,6 +145,7 @@ read_state_string() {
   jq_bin="$(system_binary_path jq 2>/dev/null || true)"
   if [[ -n "$jq_bin" ]]; then
     value="$("$jq_bin" -r --arg key "$key" '.[$key] // empty' "$state_file" 2>/dev/null || true)"
+    value="${value%%$'\n'*}"
   else
     sed_bin="$(system_binary_path sed 2>/dev/null || true)"
     if [[ -n "$sed_bin" ]]; then
@@ -937,6 +938,7 @@ exec_as_target_user() {
   local env_bin=""
   local runuser_bin=""
   local sudo_bin=""
+  local true_bin=""
 
   sanitized_state_file="$(sanitize_abs_nonroot_path "${ACFS_STATE_FILE:-}" 2>/dev/null || true)"
   sanitized_system_state_file="$(sanitize_abs_nonroot_path "${ACFS_SYSTEM_STATE_FILE:-}" 2>/dev/null || true)"
@@ -990,7 +992,7 @@ exec_as_target_user() {
 
     sudo_bin="$(system_binary_path sudo 2>/dev/null || true)"
     if [[ -n "$sudo_bin" ]]; then
-      exec "$sudo_bin" -u "$user" -H "${cmd_with_env[@]}"
+      exec "$sudo_bin" -n -u "$user" -H "${cmd_with_env[@]}"
     fi
 
     echo "Error: need runuser or sudo to run acfs-update as '$user'" >&2
@@ -1003,8 +1005,16 @@ exec_as_target_user() {
     exit 1
   fi
 
+  true_bin="$(system_binary_path true 2>/dev/null || true)"
+  true_bin="${true_bin:-true}"
+  if ! "$sudo_bin" -n -u "$user" -H "$true_bin" 2>/dev/null; then
+    echo "Error: passwordless sudo is required to run acfs-update as '$user' from this account." >&2
+    echo "Log in as '$user' and rerun acfs-update, or run it from root/noninteractive sudo." >&2
+    exit 1
+  fi
+
   echo "Note: Running acfs-update as '$user' (ACFS owner)" >&2
-  exec "$sudo_bin" -u "$user" -H "${cmd_with_env[@]}"
+  exec "$sudo_bin" -n -u "$user" -H "${cmd_with_env[@]}"
 }
 
 main() {

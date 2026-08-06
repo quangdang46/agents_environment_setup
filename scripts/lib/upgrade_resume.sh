@@ -272,7 +272,7 @@ launch_continue_script() {
             curl_cmd="curl --proto '=https' --proto-redir '=https' -fsSL"
         fi
 
-        local install_url="${CONTINUE_INSTALL_URL:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh}"
+        local install_url="${CONTINUE_INSTALL_URL:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh}"
         local continue_ref="${CONTINUE_ACFS_REF:-main}"
         local continue_home="${CONTINUE_HOME:-/root}"
         local -a continue_args=()

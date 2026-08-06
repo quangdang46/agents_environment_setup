@@ -1,8 +1,8 @@
-# AGENTS.md — Agentic Coding Flywheel Setup
+# AGENTS.md — Agents Environment Setup
 
 > Guidelines for AI coding agents working in projects on this VPS.
 
-This VPS is configured with the [Agentic Coding Flywheel Setup (ACFS)](https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup) - a complete environment for multi-agent AI-assisted software development.
+This VPS is configured with the [Agents Environment Setup (ACFS)](https://github.com/quangdang46/agents_environment_setup) - a complete environment for multi-agent AI-assisted software development.
 
 ---
 
@@ -433,7 +433,7 @@ rg -l -t rust 'unwrap\(' | xargs ast-grep run -l Rust -p '$X.unwrap()' --json
 |---------|-------------|
 | `cc` | Claude Code (Anthropic) - start interactive session |
 | `cod` | Codex CLI (OpenAI) - start interactive session |
-| `gmi` | Gemini CLI (Google) - start interactive session |
+| `agy` | Antigravity CLI (Google) - start interactive session (successor to the retired `gmi`/Gemini CLI; pinned to "Gemini 3.1 Pro (High)") |
 
 ### Session Management (NTM)
 

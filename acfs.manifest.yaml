@@ -1,8 +1,8 @@
 # ACFS Module Manifest
-# Single source of truth for all tools installed by the Agentic Coding Flywheel Setup
+# Single source of truth for all tools installed by the Agents Environment Setup
 # Version: 2
 version: 2
-name: agentic_coding_flywheel_setup
+name: agents_environment_setup
 id: acfs
 
 defaults:
@@ -85,15 +85,6 @@ modules:
           mkdir -p /data/projects /data/cache
           chown -h "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" /data /data/projects /data/cache
       - |
-          # Install AGENTS.md template to workspace root for agent guidance
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
-          CURL_ARGS=(-fsSL)
-          if curl --help all 2>/dev/null | grep -q -- '--proto'; then
-            CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
-          fi
-          curl "${CURL_ARGS[@]}" -o /data/projects/AGENTS.md "${ACFS_RAW}/acfs/AGENTS.md" || true
-          chown "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" /data/projects/AGENTS.md 2>/dev/null || true
-      - |
           target_home=""
           explicit_target_home="${TARGET_HOME:-}"
           if [[ -n "$explicit_target_home" ]]; then
@@ -134,9 +125,27 @@ modules:
 
           mkdir -p "$target_home/.acfs"
           chown -hR "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" "$target_home/.acfs"
+
+          # Save the workspace AGENTS.md template into ACFS-owned storage.
+          # ACFS may freely refresh this canonical copy on every install/update.
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
+          CURL_ARGS=(-fsSL)
+          if curl --help all 2>/dev/null | grep -q -- '--proto'; then
+            CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
+          fi
+          mkdir -p "$target_home/.acfs/docs"
+          curl "${CURL_ARGS[@]}" -o "$target_home/.acfs/docs/AGENTS.workspace.md" "${ACFS_RAW}/acfs/AGENTS.md" || true
+          chown -R "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" "$target_home/.acfs/docs" 2>/dev/null || true
+
+          # Seed /data/projects/AGENTS.md ONLY when absent. An existing file
+          # may contain user-authored rules and is never overwritten; use
+          # `acfs agents install` for explicit, non-overwriting deployment.
+          if [[ -f "$target_home/.acfs/docs/AGENTS.workspace.md" && ! -e /data/projects/AGENTS.md ]]; then
+            cp "$target_home/.acfs/docs/AGENTS.workspace.md" /data/projects/AGENTS.md
+            chown "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" /data/projects/AGENTS.md 2>/dev/null || true
+          fi
     verify:
       - test -d /data/projects
-      - test -f /data/projects/AGENTS.md
       - |
           # Resolve TARGET_HOME using generated helper functions. Doctor
           # injects these helpers for manifest checks that reference
@@ -172,9 +181,10 @@ modules:
             exit 1
           fi
           test -d "$target_home/.acfs"
+          test -f "$target_home/.acfs/docs/AGENTS.workspace.md"
     notes:
       - "~/.acfs created during filesystem phase"
-      - "AGENTS.md template installed to /data/projects for agent guidance"
+      - "Workspace AGENTS.md template stored in ~/.acfs/docs (ACFS-owned); /data/projects/AGENTS.md is seeded only when absent and never overwritten"
 
   # ============================================================
   # PHASE 4: Shell setup (zsh + oh-my-zsh + p10k)
@@ -233,7 +243,7 @@ modules:
         fi
       - |
         # Install ACFS zshrc
-        ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+        ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
         mkdir -p ~/.acfs/zsh
         CURL_ARGS=(-fsSL)
         if curl --help all 2>/dev/null | grep -q -- '--proto'; then
@@ -242,7 +252,7 @@ modules:
         curl "${CURL_ARGS[@]}" -o ~/.acfs/zsh/acfs.zshrc "${ACFS_RAW}/acfs/zsh/acfs.zshrc"
       - |
         # Install ACFS shell completions (zsh)
-        ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+        ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
         mkdir -p ~/.acfs/completions
         CURL_ARGS=(-fsSL)
         if curl --help all 2>/dev/null | grep -q -- '--proto'; then
@@ -253,7 +263,7 @@ modules:
         curl "${CURL_ARGS[@]}" -o ~/.acfs/completions/acfs.bash "${ACFS_RAW}/scripts/completions/acfs.bash"
       - |
         # Install pre-configured Powerlevel10k settings (prevents config wizard on first login)
-        ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+        ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
         CURL_ARGS=(-fsSL)
         if curl --help all 2>/dev/null | grep -q -- '--proto'; then
           CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
@@ -730,7 +740,7 @@ modules:
         node --version
 
   - id: tools.atuin
-    description: Atuin shell history (Ctrl-R superpowers)
+    description: Atuin CLI with guarded agent-safe shim
     category: tools
     phase: 6
     run_as: target_user
@@ -741,12 +751,90 @@ modules:
       - base.system
     installed_check:
       run_as: target_user
-      command: "test -x ~/.atuin/bin/atuin"
+      command: "test -x ~/.atuin/bin/atuin && test -x \"${ACFS_BIN_DIR:-$HOME/.local/bin}/atuin\" && grep -Fq \"agent hook integration disabled by ACFS\" \"${ACFS_BIN_DIR:-$HOME/.local/bin}/atuin\""
     verified_installer:
       tool: atuin
       runner: sh
-      args: ["--", "--non-interactive"]
-    install: []
+      env: ["ATUIN_NO_MODIFY_PATH=1"]
+    install:
+      - |
+          # acfs-summary: install Atuin guard wrapper
+          real_bin="$HOME/.atuin/bin/atuin"
+          primary_dir="${ACFS_BIN_DIR:-$HOME/.local/bin}"
+          fallback_dir="$HOME/.local/bin"
+
+          write_atuin_guard_wrapper() {
+            local wrapper_path="${1:-}"
+            local real_bin_path="${2:-}"
+            local real_bin_q=""
+            local backup_path=""
+
+            [[ -n "$wrapper_path" && -n "$real_bin_path" && -x "$real_bin_path" ]] || return 1
+            printf -v real_bin_q "%q" "$real_bin_path"
+
+            if [[ -e "$wrapper_path" || -L "$wrapper_path" ]]; then
+              if [[ ! -L "$wrapper_path" ]] && grep -Fq "agent hook integration disabled by ACFS" "$wrapper_path" 2>/dev/null; then
+                :
+              else
+                backup_path="${wrapper_path}.acfs-backup.$(date +%s).$$"
+                mv "$wrapper_path" "$backup_path" 2>/dev/null || return 1
+              fi
+            fi
+
+            {
+              cat <<\ATUIN_ACFS_WRAPPER_HEAD
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          real_atuin_bin="${ATUIN_REAL_BIN:-}"
+          if [[ -z "$real_atuin_bin" ]]; then
+          ATUIN_ACFS_WRAPPER_HEAD
+              printf "    real_atuin_bin=%s\n" "$real_bin_q"
+              cat <<\ATUIN_ACFS_WRAPPER_TAIL
+          fi
+
+          if [[ ! -x "$real_atuin_bin" ]]; then
+              echo "atuin wrapper: real atuin binary not found at $real_atuin_bin" >&2
+              exit 127
+          fi
+
+          if [[ "${1:-}" == "hook" ]]; then
+              # atuin wrapper: agent hook integration disabled by ACFS
+              # Drain retained hook payloads so stale agent processes do not see EPIPE.
+              cat >/dev/null || true
+              exit 0
+          fi
+
+          _acfs_atuin_agent_context() {
+              local parent_comm=""
+
+              if [[ -n "${CODEX_CI:-}" || -n "${CODEX_THREAD_ID:-}" || -n "${CLAUDE_PROJECT_DIR:-}" || -n "${AGENT_NAME:-}" ]]; then
+                  return 0
+              fi
+
+              parent_comm="$(ps -o comm= -p "${PPID:-0}" 2>/dev/null || true)"
+              case "$parent_comm" in
+                  claude|codex|cod|cc|agy|antigravity|agy-locked|gmi|gemini|bun|node) return 0 ;;
+                  *) return 1 ;;
+              esac
+          }
+
+          if [[ "${1:-}" == "history" && ( "${2:-}" == "start" || "${2:-}" == "end" ) ]] && _acfs_atuin_agent_context; then
+              exit 0
+          fi
+
+          exec "$real_atuin_bin" "$@"
+          ATUIN_ACFS_WRAPPER_TAIL
+            } > "$wrapper_path"
+            chmod 0755 "$wrapper_path"
+          }
+
+          for dir in "$primary_dir" "$fallback_dir"; do
+            [[ -n "$dir" ]] || continue
+            mkdir -p "$dir"
+            write_atuin_guard_wrapper "$dir/atuin" "$real_bin"
+            [[ "$fallback_dir" != "$primary_dir" ]] || break
+          done
     verify:
       - ~/.atuin/bin/atuin --version
 
@@ -869,13 +957,13 @@ modules:
         "$target_bin/codex" --version || "$target_bin/codex" --help
 
   - id: agents.gemini
-    description: Google Gemini CLI
+    description: Legacy Google Gemini CLI (retired; not installed by default)
     category: agents
     phase: 7
     run_as: target_user
-    optional: false
-    enabled_by_default: true
-    tags: [recommended, agent]
+    optional: true
+    enabled_by_default: false
+    tags: [legacy, agent]
     dependencies:
       - lang.bun
       - lang.nvm
@@ -968,29 +1056,6 @@ modules:
         target_bin="${ACFS_BIN_DIR:-$HOME/.local/bin}"
         "$target_bin/gemini" --version || "$target_bin/gemini" --help
 
-  - id: agents.opencode
-    description: OpenCode (multi-provider agent harness)
-    category: agents
-    phase: 7
-    run_as: target_user
-    optional: true
-    enabled_by_default: true
-    tags: [recommended, agent]
-    dependencies:
-      - base.system
-    installed_check:
-      run_as: target_user
-      command: "command -v opencode"
-    verified_installer:
-      tool: opencode
-      runner: bash
-    install: []
-    verify:
-      - opencode --version || opencode --help
-    notes:
-      - "Supports GitHub Copilot and OpenAI Codex subscriptions"
-      - "Multi-provider agent supporting Claude, GPT, Gemini models"
-
   - id: agents.oh_my_openagent
     description: oh-my-openagent (OpenCode plugin / multi-provider config helper)
     category: agents
@@ -1032,6 +1097,131 @@ modules:
       - "Default install runs non-interactively with all subscriptions disabled."
       - "Run `bunx oh-my-openagent install` interactively to enable Claude / OpenAI / Gemini / Copilot subscriptions."
       - "Configures ~/.config/opencode/opencode.json (or ~/.opencode/oh-my-openagent.json) with provider entries."
+
+  # ============================================================
+  # PHASE 8: Cloud & database tools
+  # ============================================================
+
+  - id: agents.antigravity
+    description: Antigravity CLI (agy) — Google, successor to the retired Gemini CLI
+    category: agents
+    phase: 7
+    run_as: target_user
+    optional: false
+    enabled_by_default: true
+    tags: [recommended, agent]
+    dependencies:
+      - base.system
+    installed_check:
+      run_as: target_user
+      command: 'target_bin="${ACFS_BIN_DIR:-$HOME/.local/bin}"; test -x "$target_bin/agy" && test -x "$target_bin/agy-locked" && test -x "$target_bin/gmi"'
+    # agy is a standalone self-updating native binary (no bun/node runtime needed).
+    # The installer is supply-chain-verified via the external-installer checksum store
+    # (checksums.yaml -> antigravity); it SHA512-verifies the downloaded binary itself,
+    # drops agy into ~/.local/bin, and is idempotent (no-op if already present).
+    verified_installer:
+      tool: antigravity
+      runner: bash
+    install:
+      - |
+        # acfs-summary: install agy-locked launchers and prime settings
+        target_bin="${ACFS_BIN_DIR:-$HOME/.local/bin}"
+        source_file=""
+        for candidate in \
+          "${ACFS_LIB_DIR:-$HOME/.acfs/scripts/lib}/agy_locked.py" \
+          "$HOME/.acfs/scripts/lib/agy_locked.py"; do
+          if [[ -f "$candidate" ]]; then
+            source_file="$candidate"
+            break
+          fi
+        done
+
+        if [[ -z "$source_file" ]]; then
+          echo "agents.antigravity: agy locked launcher asset not found" >&2
+          exit 1
+        fi
+
+        mkdir -p "$target_bin"
+        install -m 0755 "$source_file" "$target_bin/agy-locked"
+        install -m 0755 "$source_file" "$target_bin/gmi"
+
+        if "$target_bin/agy-locked" --acfs-prime-settings; then
+          echo "agents.antigravity: agy locked settings and dcg hook primed" >&2
+        else
+          echo "agents.antigravity: warning: settings will be primed on first agy launch" >&2
+        fi
+    verify:
+      - |
+        # acfs-summary: verify agy-locked launchers and pinned settings
+        target_bin="${ACFS_BIN_DIR:-$HOME/.local/bin}"
+        test -x "$target_bin/agy"
+        test -x "$target_bin/agy-locked"
+        test -x "$target_bin/gmi"
+        python3 - <<'PY'
+        import json
+        import pathlib
+        import sys
+
+        settings_path = pathlib.Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
+        hook_path = pathlib.Path.home() / ".gemini" / "config" / "hooks" / "dcg-antigravity-hook.py"
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"invalid or missing Antigravity settings: {settings_path}: {exc}", file=sys.stderr)
+            raise SystemExit(1)
+
+        expected = {
+            "model": "Gemini 3.1 Pro (High)",
+            "toolPermission": "always-proceed",
+            "artifactReviewPolicy": "always-proceed",
+            "enableTelemetry": False,
+            "enableTerminalSandbox": False,
+            "allowNonWorkspaceAccess": True,
+            "notifications": False,
+            "showTips": False,
+            "showFeedbackSurvey": False,
+            "useG1Credits": False,
+            "verbosity": "high",
+            "runningLightSpeed": "medium",
+            "colorScheme": "terminal",
+            "editor": "auto",
+            "altScreenMode": "never",
+        }
+        for key, value in expected.items():
+            if settings.get(key) != value:
+                print(f"Antigravity setting {key} is {settings.get(key)!r}, expected {value!r}", file=sys.stderr)
+                raise SystemExit(1)
+        if not hook_path.is_file():
+            print(f"Antigravity dcg hook is missing: {hook_path}", file=sys.stderr)
+            raise SystemExit(1)
+        PY
+    notes:
+      - "Pin the model to 'Gemini 3.1 Pro (High)' on every invocation (see scripts/lib/agy_model_guard.sh)"
+      - "Auth is Google OAuth (a human step); the agy shell alias in acfs.zshrc launches the locked policy wrapper"
+      - "ACFS installs agy-locked and maps both agy and gmi to it; the legacy Gemini CLI module is not installed by default"
+
+  - id: agents.opencode
+    description: OpenCode (multi-provider agent harness)
+    category: agents
+    phase: 7
+    run_as: target_user
+    optional: true
+    enabled_by_default: false
+    tags: [optional, agent]
+    dependencies:
+      - base.system
+    installed_check:
+      run_as: target_user
+      command: "command -v opencode"
+    verified_installer:
+      tool: opencode
+      runner: bash
+    install: []
+    verify:
+      - opencode --version || opencode --help
+    notes:
+      - "Supports GitHub Copilot and OpenAI Codex subscriptions"
+      - "Multi-provider agent supporting Claude, GPT, Gemini models"
 
   # ============================================================
   # PHASE 8: Cloud & database tools
@@ -1185,7 +1375,11 @@ modules:
         version="${tag#v}"
         base_url="https://github.com/supabase/cli/releases/download/${tag}"
         tarball="supabase_linux_${arch}.tar.gz"
-        checksums="supabase_${version}_checksums.txt"
+        # Supabase CLI v2.99.0 (2026-05-18) renamed the per-version asset to plain
+        # `checksums.txt`. Older releases still ship `supabase_${version}_checksums.txt`.
+        # Try the new name first, then fall back to the legacy one so both work. (#282)
+        checksums_new="checksums.txt"
+        checksums_legacy="supabase_${version}_checksums.txt"
 
         tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/acfs-supabase.XXXXXX")"
         tmp_tgz="$(mktemp "${TMPDIR:-/tmp}/acfs-supabase.tgz.XXXXXX")"
@@ -1199,7 +1393,11 @@ modules:
         fi
 
         curl "${CURL_ARGS[@]}" -o "$tmp_tgz" "${base_url}/${tarball}"
-        curl "${CURL_ARGS[@]}" -o "$tmp_checksums" "${base_url}/${checksums}"
+        if ! curl "${CURL_ARGS[@]}" -o "$tmp_checksums" "${base_url}/${checksums_new}" 2>/dev/null \
+           && ! curl "${CURL_ARGS[@]}" -o "$tmp_checksums" "${base_url}/${checksums_legacy}" 2>/dev/null; then
+          echo "Supabase CLI: failed to download checksums (tried ${checksums_new} and ${checksums_legacy})" >&2
+          exit 1
+        fi
 
         expected_sha="$(awk -v tb="$tarball" '$2 == tb {print $1; exit}' "$tmp_checksums" 2>/dev/null)"
         if [[ -z "$expected_sha" ]]; then
@@ -1289,7 +1487,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "Named Tmux Manager"
@@ -1361,7 +1559,7 @@ modules:
     verified_installer:
       tool: mcp_agent_mail
       runner: bash
-      env: ["AM_INSTALL_SKIP_MCP_SETUP=1"]
+      env: ["AM_INSTALL_SKIP_MCP_SETUP=1", "AM_INSTALL_SKIP_REMOTE_HTTP_READINESS=1"]
       args: ["--dest", "$TARGET_HOME/mcp_agent_mail", "--yes"]
     install:
       - |
@@ -1449,7 +1647,6 @@ modules:
           Environment=$storage_root_env
           Environment=$database_url_env
           Environment=$http_allow_env
-          ExecStartPre=${am_bin_exec} migrate
           ExecStart=${am_bin_exec} serve-http --no-tui --host 127.0.0.1 --port 8765 --path ${am_mcp_path_exec}
           Restart=always
           RestartSec=5
@@ -1500,6 +1697,23 @@ modules:
             "$curl_bin" "$@"
           }
 
+          agent_mail_readiness_ready() {
+            local readiness_body=""
+            local readiness_url=""
+
+            for readiness_url in \
+              http://127.0.0.1:8765/health/readiness \
+              http://127.0.0.1:8765/health
+            do
+              readiness_body="$(agent_mail_service_curl -fsS --max-time 5 "$readiness_url" 2>/dev/null)" || continue
+              if printf '%s\n' "$readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+                return 0
+              fi
+            done
+
+            return 1
+          }
+
           stop_agent_mail_fallback() {
             if [[ -f "$fallback_pid_file" ]]; then
               existing_pid="$(cat "$fallback_pid_file" 2>/dev/null || true)"
@@ -1521,7 +1735,8 @@ modules:
           }
 
           launch_agent_mail_fallback() {
-            if agent_mail_service_curl -fsS --max-time 5 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; then
+            if agent_mail_service_curl -fsS --max-time 5 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \
+               agent_mail_readiness_ready; then
               return 0
             fi
 
@@ -1529,17 +1744,18 @@ modules:
               existing_pid="$(cat "$fallback_pid_file" 2>/dev/null || true)"
               if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null && \
                  ps -p "$existing_pid" -o args= 2>/dev/null | grep -Fq "$am_bin serve-http"; then
-                return 0
+                stop_agent_mail_fallback
+              else
+                rm -f "$fallback_pid_file"
               fi
-              rm -f "$fallback_pid_file"
             fi
 
             nohup env \
               RUST_LOG=info \
               STORAGE_ROOT="$storage_root" \
               DATABASE_URL="$db_url" \
-              HTTP_PATH="$am_mcp_path" \
-              "$am_bin" serve-http --host 127.0.0.1 --port 8765 --path "$am_mcp_path" --no-auth --no-tui \
+              HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED=true \
+              "$am_bin" serve-http --no-tui --host 127.0.0.1 --port 8765 --path "$am_mcp_path" \
               >>"$fallback_log_file" 2>&1 < /dev/null &
             echo $! > "$fallback_pid_file"
           }
@@ -1580,11 +1796,29 @@ modules:
             "$curl_bin" "$@"
           }
 
+          agent_mail_readiness_ready() {
+            local readiness_body=""
+            local readiness_url=""
+
+            for readiness_url in \
+              http://127.0.0.1:8765/health/readiness \
+              http://127.0.0.1:8765/health
+            do
+              readiness_body="$(agent_mail_service_curl -fsS --max-time 10 "$readiness_url" 2>/dev/null)" || continue
+              if printf '%s\n' "$readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+                return 0
+              fi
+            done
+
+            return 1
+          }
+
           waited=0
-          max_wait=90
-          until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; do
+          max_wait=240
+          until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \
+                agent_mail_readiness_ready; do
             if [[ "$waited" -ge "$max_wait" ]]; then
-              echo "Agent Mail service did not become healthy on 127.0.0.1:8765 after ${max_wait}s" >&2
+              echo "Agent Mail service did not become ready on 127.0.0.1:8765 after ${max_wait}s" >&2
               exit 1
             fi
             sleep 2
@@ -1607,6 +1841,23 @@ modules:
             "$curl_bin" "$@"
           }
 
+          agent_mail_readiness_ready() {
+            local readiness_body=""
+            local readiness_url=""
+
+            for readiness_url in \
+              http://127.0.0.1:8765/health/readiness \
+              http://127.0.0.1:8765/health
+            do
+              readiness_body="$(agent_mail_service_curl -fsS --max-time 10 "$readiness_url" 2>/dev/null)" || continue
+              if printf '%s\n' "$readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+                return 0
+              fi
+            done
+
+            return 1
+          }
+
           runtime_dir="/run/user/$(id -u)"
           if [[ -d "$runtime_dir" ]]; then
             export XDG_RUNTIME_DIR="$runtime_dir"
@@ -1616,11 +1867,12 @@ modules:
             systemctl --user is-active --quiet agent-mail.service >/dev/null 2>&1 || exit 1
           fi
           agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null
+          agent_mail_readiness_ready
     notes:
-      - "Installs with --no-start, then writes a managed no-auth user service on port 8765"
+      - "Runs the upstream installer with ACFS-owned MCP setup/readiness skips, then writes a managed local service on port 8765"
       - "Managed service pins storage, database, and MCP path under ~/.mcp_agent_mail_git_mailbox_repo"
       - "If a user systemd manager is available, verification requires agent-mail.service to be active"
-      - "Server health is verified at http://127.0.0.1:8765/health/liveness after install"
+      - "Server liveness and readiness are verified after install"
 
   - id: stack.meta_skill
     description: Local-first knowledge management with hybrid semantic search (ms)
@@ -1671,7 +1923,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, agent-tools]
     web:
       display_name: "Automated Plan Reviser Pro"
@@ -1713,7 +1965,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, agent-skills, prompts]
     web:
       display_name: "JeffreysPrompts CLI"
@@ -1752,7 +2004,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, system-tools]
     web:
       display_name: "Process Triage"
@@ -1796,7 +2048,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "Ultimate Bug Scanner"
@@ -1927,7 +2179,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "Coding Agent Session Search"
@@ -1959,6 +2211,7 @@ modules:
     verified_installer:
       tool: cass
       runner: bash
+      env: ["TMPDIR=$TARGET_HOME/.cache/acfs/installer-tmp/cass.XXXXXX"]
       args: ["--easy-mode", "--verify"]
     install: []
     verify:
@@ -1970,7 +2223,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "CASS Memory System"
@@ -2014,7 +2267,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "Coding Agent Account Manager"
@@ -2055,7 +2308,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [optional]
     web:
       display_name: "Simultaneous Launch Button"
@@ -2123,7 +2376,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, safety]
     web:
       display_name: "Destructive Command Guard"
@@ -2155,7 +2408,11 @@ modules:
       tool: dcg
       runner: bash
       args: ["--easy-mode"]
-    install: []
+    install:
+      - |
+          if command -v claude >/dev/null 2>&1; then
+            dcg install --force
+          fi
     verify:
       - dcg --version
       - |
@@ -2207,7 +2464,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "Repo Updater"
@@ -2251,7 +2508,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended]
     web:
       display_name: "Brenner Bot"
@@ -2294,7 +2551,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, performance]
     web:
       display_name: "Remote Compilation Helper"
@@ -2338,7 +2595,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, automation]
     web:
       display_name: "WezTerm Automata"
@@ -2384,7 +2641,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, system-health]
     web:
       display_name: "System Resource Protection Script"
@@ -2431,7 +2688,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, search]
     web:
       display_name: "FrankenSearch"
@@ -2475,7 +2732,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, system-tools]
     web:
       display_name: "Storage Ballast Helper"
@@ -2518,7 +2775,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, agent-tools]
     web:
       display_name: "Cross-Agent Session Resumer"
@@ -2561,7 +2818,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, release]
     web:
       display_name: "Doodlestein Self-Releaser"
@@ -2605,7 +2862,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, backup]
     web:
       display_name: "Agent Settings Backup"
@@ -2687,7 +2944,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [recommended, safety, hooks]
     web:
       display_name: "Post-Compact Reminder"
@@ -2829,7 +3086,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [utility]
     web:
       display_name: "Get Image from Internet Link"
@@ -2869,7 +3126,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [utility]
     web:
       display_name: "Chat Shared Conversation to File"
@@ -2877,7 +3134,7 @@ modules:
       tagline: "Convert AI chat share links to Markdown and HTML"
       icon: "file-text"
       color: "#8B5CF6"
-      href: "https://github.com/Dicklesworthstone/csctf"
+      href: "https://github.com/Dicklesworthstone/chat_shared_conversation_to_file"
       features:
         - "Multi-provider support (ChatGPT, Claude, Gemini, Grok)"
         - "Dual Markdown + HTML output"
@@ -2950,7 +3207,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [utility, llm]
     web:
       display_name: "Token-Optimized Notation"
@@ -3032,7 +3289,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [utility, web, llm]
     web:
       display_name: "Markdown Web Browser"
@@ -3073,7 +3330,7 @@ modules:
     phase: 9
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [utility, llm, tui]
     web:
       display_name: "Source to Prompt TUI"
@@ -3096,7 +3353,7 @@ modules:
       stars: 156
       cli_name: "s2p"
     dependencies:
-      - lang.rust
+      - lang.bun
     installed_check:
       run_as: target_user
       command: "command -v s2p"
@@ -3108,7 +3365,7 @@ modules:
       env: ["RU_NON_INTERACTIVE=1"]
     install: []
     verify:
-      - s2p --help || s2p --version
+      - s2p --help
 
   - id: utils.rust_proxy
     description: rust_proxy - Transparent proxy routing for debugging network traffic
@@ -3245,6 +3502,9 @@ modules:
     verify:
       - caut --help || caut --version
 
+  # ============================================================
+  # PHASE 10: Finalization (onboard, doctor, verification)
+  # ============================================================
   - id: utils.openproxy
     description: OpenProxy - lightweight HTTP/HTTPS proxy server
     category: tools
@@ -3326,18 +3586,19 @@ modules:
   # ============================================================
   # PHASE 10: Finalization (onboard, doctor, verification)
   # ============================================================
+
   - id: acfs.workspace
     description: Agent workspace with tmux session and project folder
     category: acfs
     phase: 10
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     tags: [workspace, agents]
     dependencies:
       - agents.claude
       - agents.codex
-      - agents.gemini
+      - agents.antigravity
       - cli.modern
     installed_check:
       run_as: target_user
@@ -3362,7 +3623,7 @@ modules:
           "    0:welcome  - This instructions window" \
           "    1:claude   - Claude Code (Anthropic)" \
           "    2:codex    - Codex CLI (OpenAI)" \
-          "    3:gemini   - Gemini CLI (Google)" \
+          "    3:agy      - Antigravity CLI (Google)" \
           "" \
           "  TMUX BASICS:" \
           "    Ctrl-b d        - Detach (keep session running)" \
@@ -3373,7 +3634,7 @@ modules:
           "  START AN AGENT:" \
           "    claude          - Start Claude Code" \
           "    codex           - Start Codex CLI" \
-          "    gemini          - Start Gemini CLI" \
+          "    agy             - Start Antigravity CLI" \
           "" \
           "  PROJECT: /data/projects/my_first_project" \
           "  (Rename with: mv /data/projects/my_first_project /data/projects/NEW_NAME)" \
@@ -3388,7 +3649,7 @@ modules:
           # Add agent windows
           tmux new-window -t "$SESSION_NAME" -n "claude" -c /data/projects/my_first_project
           tmux new-window -t "$SESSION_NAME" -n "codex" -c /data/projects/my_first_project
-          tmux new-window -t "$SESSION_NAME" -n "gemini" -c /data/projects/my_first_project
+          tmux new-window -t "$SESSION_NAME" -n "agy" -c /data/projects/my_first_project
 
           # Send instructions to welcome window
           tmux send-keys -t "$SESSION_NAME:welcome" "cat ~/.acfs/workspace-instructions.txt" Enter
@@ -3441,7 +3702,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     generated: false
     tags: [orchestration]
     notes:
@@ -3456,7 +3717,7 @@ modules:
         elif [[ -f "packages/onboard/onboard.sh" ]]; then
           cp "packages/onboard/onboard.sh" "$onboard_tmp"
         else
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
           CURL_ARGS=(-fsSL)
           if curl --help all 2>/dev/null | grep -q -- '--proto'; then
             CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
@@ -3476,7 +3737,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     generated: false
     tags: [orchestration]
     notes:
@@ -3490,7 +3751,7 @@ modules:
         elif [[ -f "scripts/lib/nightly_update.sh" ]]; then
           cp "scripts/lib/nightly_update.sh" ~/.acfs/scripts/nightly-update.sh
         else
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
           CURL_ARGS=(-fsSL)
           if curl --help all 2>/dev/null | grep -q -- '--proto'; then
             CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
@@ -3506,7 +3767,7 @@ modules:
         elif [[ -f "scripts/acfs-update" ]]; then
           cp "scripts/acfs-update" "$update_tmp"
         else
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
           CURL_ARGS=(-fsSL)
           if curl --help all 2>/dev/null | grep -q -- '--proto'; then
             CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
@@ -3526,7 +3787,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: true
-    enabled_by_default: false
+    enabled_by_default: true
     generated: false
     tags: [orchestration, maintenance]
     dependencies:
@@ -3543,7 +3804,7 @@ modules:
         elif [[ -f "scripts/lib/nightly_update.sh" ]]; then
           cp "scripts/lib/nightly_update.sh" ~/.acfs/scripts/nightly-update.sh
         else
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
           CURL_ARGS=(-fsSL)
           if curl --help all 2>/dev/null | grep -q -- '--proto'; then
             CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
@@ -3558,7 +3819,7 @@ modules:
         elif [[ -f "scripts/templates/acfs-nightly-update.timer" ]]; then
           cp "scripts/templates/acfs-nightly-update.timer" ~/.config/systemd/user/acfs-nightly-update.timer
         else
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
           CURL_ARGS=(-fsSL)
           if curl --help all 2>/dev/null | grep -q -- '--proto'; then
             CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
@@ -3572,7 +3833,7 @@ modules:
         elif [[ -f "scripts/templates/acfs-nightly-update.service" ]]; then
           cp "scripts/templates/acfs-nightly-update.service" ~/.config/systemd/user/acfs-nightly-update.service
         else
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
           CURL_ARGS=(-fsSL)
           if curl --help all 2>/dev/null | grep -q -- '--proto'; then
             CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
@@ -3598,7 +3859,7 @@ modules:
     phase: 10
     run_as: target_user
     optional: false
-    enabled_by_default: false
+    enabled_by_default: true
     generated: false
     tags: [orchestration]
     notes:
@@ -3613,7 +3874,7 @@ modules:
         elif [[ -f "scripts/lib/doctor.sh" ]]; then
           cp "scripts/lib/doctor.sh" "$doctor_tmp"
         else
-          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
+          ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
           CURL_ARGS=(-fsSL)
           if curl --help all 2>/dev/null | grep -q -- '--proto'; then
             CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)

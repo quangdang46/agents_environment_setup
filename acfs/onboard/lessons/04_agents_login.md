@@ -12,7 +12,9 @@ You have three powerful coding agents installed:
 |-------|---------|-------|---------|
 | Claude Code | `claude` | `cc` | Anthropic |
 | Codex CLI | `codex` | `cod` | OpenAI |
-| Gemini CLI | `gemini` | `gmi` | Google |
+| Antigravity CLI | `agy` | `agy` | Google |
+
+> The Gemini CLI retired on 2026-06-18. `gmi` is still defined for muscle memory, but ACFS maps it to the same locked Antigravity launcher as `agy`; use `agy` in new docs and workflows.
 
 ---
 
@@ -36,11 +38,13 @@ codex --dangerously-bypass-approvals-and-sandbox
 - Bypass safety prompts
 - No approval/sandbox checks
 
-### `gmi` (Gemini CLI)
+### `agy` (Antigravity CLI)
 ```bash
-gemini --yolo
+agy --model "Gemini 3.1 Pro (High)" --dangerously-skip-permissions
 ```
-- YOLO mode (no confirmations)
+- Model pinned to "Gemini 3.1 Pro (High)" (the only allowed model)
+- Auto-approves tool permissions (no confirmations)
+- Successor to the retired Gemini CLI; the binary self-updates in the background
 
 ---
 
@@ -91,11 +95,11 @@ Follow the browser prompts to authenticate with your **ChatGPT Pro/Plus/Team acc
 >
 > **If login fails:** Check ChatGPT Settings → Security → "API/Device access"
 
-### Gemini CLI
+### Antigravity CLI
 ```bash
-gemini
+agy
 ```
-Follow the prompts to authenticate with your Google account.
+Follow the prompts to authenticate with your Google account. ACFS keeps the model pinned to Gemini 3.1 Pro (High).
 
 ---
 
@@ -106,7 +110,7 @@ After logging in, **immediately** back up your credentials:
 ```bash
 caam backup claude my-main-account
 caam backup codex my-main-account
-caam backup gemini my-main-account
+caam backup agy my-main-account
 ```
 
 Now you can switch accounts later with:
@@ -131,7 +135,7 @@ cod "Hello! Please confirm you're working."
 ```
 
 ```bash
-gmi "Hello! Please confirm you're working."
+agy "Hello! Please confirm you're working."
 ```
 
 ---
@@ -151,7 +155,7 @@ Let's verify your agents are ready:
 
 ```bash
 # Check which agents are installed
-which claude codex gemini
+which claude codex agy
 
 # Check your agent credential backups
 caam ls

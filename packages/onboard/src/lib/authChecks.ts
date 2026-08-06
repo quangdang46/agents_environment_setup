@@ -217,8 +217,7 @@ export function createAuthChecks(overrides: Partial<AuthCheckDeps> = {}) {
     path.join(homedir, '.bashrc'),
     path.join(homedir, '.profile'),
   ];
-  const geminiHome = deps.env.GEMINI_CLI_HOME ?? homedir;
-  const geminiConfigPaths = [path.join(geminiHome, '.gemini', '.env'), ...shellConfigPaths];
+  const antigravityHome = deps.env.ANTIGRAVITY_HOME ?? path.join(homedir, '.gemini', 'antigravity-cli');
 
   const runCommand = (
     command: string,
@@ -252,23 +251,6 @@ export function createAuthChecks(overrides: Partial<AuthCheckDeps> = {}) {
     }
   };
 
-  const getConfiguredValue = (variableName: string, filePaths: string[] = []): string | null => {
-    const envValue = deps.env[variableName];
-    if (hasNonBlankString(envValue) && !isPlaceholderSecret(envValue)) {
-      return normalizeConfigValue(envValue);
-    }
-    for (const filePath of filePaths) {
-      if (!deps.existsSync(filePath)) {
-        continue;
-      }
-      const configuredValue = readConfiguredValueFromFile(deps.readFileSync, filePath, variableName);
-      if (hasNonBlankString(configuredValue) && !isPlaceholderSecret(configuredValue)) {
-        return configuredValue;
-      }
-    }
-    return null;
-  };
-
   const getConfiguredSecret = (variableName: string, filePaths: string[] = []): string | null => {
     const envValue = deps.env[variableName];
     if (hasUsableSecret(envValue)) {
@@ -284,14 +266,6 @@ export function createAuthChecks(overrides: Partial<AuthCheckDeps> = {}) {
       }
     }
     return null;
-  };
-
-  const hasTruthyConfiguredValue = (variableName: string, filePaths: string[] = []): boolean => {
-    const configuredValue = getConfiguredValue(variableName, filePaths);
-    if (!hasNonBlankString(configuredValue)) {
-      return false;
-    }
-    return ['1', 'true', 'yes', 'on'].includes(configuredValue.toLowerCase());
   };
 
   const checkTailscale = (): AuthStatus => {
@@ -373,67 +347,22 @@ export function createAuthChecks(overrides: Partial<AuthCheckDeps> = {}) {
     return { authenticated: false };
   };
 
-  const checkGemini = (): AuthStatus => {
-    if (!deps.commandExists('gemini')) {
+  const checkAntigravity = (): AuthStatus => {
+    if (!deps.commandExists('agy')) {
       return { authenticated: false };
     }
 
-    const geminiApiKey = getConfiguredSecret('GEMINI_API_KEY', geminiConfigPaths);
-    if (geminiApiKey) {
-      return { authenticated: true, details: 'via GEMINI_API_KEY' };
+    const tokenPath = path.join(antigravityHome, 'antigravity-oauth-token');
+    if (!deps.existsSync(tokenPath)) {
+      return { authenticated: false };
     }
-
-    const vertexModeEnabled = hasTruthyConfiguredValue('GOOGLE_GENAI_USE_VERTEXAI', geminiConfigPaths);
-    if (vertexModeEnabled) {
-      const googleApiKey = getConfiguredSecret('GOOGLE_API_KEY', geminiConfigPaths);
-      if (googleApiKey) {
-        return { authenticated: true, details: 'via GOOGLE_API_KEY (Vertex AI)' };
+    try {
+      const token = deps.readFileSync(tokenPath, 'utf-8');
+      if (hasUsableSecret(token)) {
+        return { authenticated: true };
       }
-
-      const vertexProject =
-        getConfiguredValue('GOOGLE_CLOUD_PROJECT', geminiConfigPaths) ??
-        getConfiguredValue('GOOGLE_CLOUD_PROJECT_ID', geminiConfigPaths);
-      const vertexLocation = getConfiguredValue('GOOGLE_CLOUD_LOCATION', geminiConfigPaths);
-      const serviceAccountPath = getConfiguredValue('GOOGLE_APPLICATION_CREDENTIALS', geminiConfigPaths);
-
-      if (
-        hasNonBlankString(vertexProject) &&
-        hasNonBlankString(vertexLocation) &&
-        hasNonBlankString(serviceAccountPath) &&
-        deps.existsSync(serviceAccountPath)
-      ) {
-        return { authenticated: true, details: 'via GOOGLE_APPLICATION_CREDENTIALS (Vertex AI)' };
-      }
-
-      if (
-        hasNonBlankString(vertexProject) &&
-        hasNonBlankString(vertexLocation) &&
-        deps.commandExists('gcloud') &&
-        runCommand('gcloud auth application-default print-access-token')
-      ) {
-        return { authenticated: true, details: 'via gcloud ADC (Vertex AI)' };
-      }
-    }
-
-    const googleAccountsPath = path.join(geminiHome, '.gemini', 'google_accounts.json');
-    const googleAccounts = safeReadJson<{ active?: string | null }>(
-      deps.readFileSync,
-      googleAccountsPath,
-    );
-    if (hasNonBlankString(googleAccounts?.active) && !isPlaceholderSecret(googleAccounts.active)) {
-      return { authenticated: true, details: googleAccounts.active.trim() };
-    }
-
-    const oauthCredsPath = path.join(geminiHome, '.gemini', 'oauth_creds.json');
-    const oauthCreds = safeReadJson<{ access_token?: string; refresh_token?: string }>(
-      deps.readFileSync,
-      oauthCredsPath,
-    );
-    if (
-      hasUsableSecret(oauthCreds?.access_token) ||
-      hasUsableSecret(oauthCreds?.refresh_token)
-    ) {
-      return { authenticated: true };
+    } catch {
+      return { authenticated: false };
     }
 
     return { authenticated: false };
@@ -545,7 +474,7 @@ export function createAuthChecks(overrides: Partial<AuthCheckDeps> = {}) {
     tailscale: checkTailscale,
     'claude-code': checkClaude,
     'codex-cli': checkCodex,
-    'gemini-cli': checkGemini,
+    'antigravity-cli': checkAntigravity,
     github: checkGitHub,
     vercel: checkVercel,
     supabase: checkSupabase,
@@ -568,7 +497,7 @@ export function createAuthChecks(overrides: Partial<AuthCheckDeps> = {}) {
     checkTailscale,
     checkClaude,
     checkCodex,
-    checkGemini,
+    checkAntigravity,
     checkGitHub,
     checkVercel,
     checkSupabase,
@@ -582,7 +511,7 @@ const {
   checkTailscale,
   checkClaude,
   checkCodex,
-  checkGemini,
+  checkAntigravity,
   checkGitHub,
   checkVercel,
   checkSupabase,
@@ -595,7 +524,7 @@ export {
   checkTailscale,
   checkClaude,
   checkCodex,
-  checkGemini,
+  checkAntigravity,
   checkGitHub,
   checkVercel,
   checkSupabase,

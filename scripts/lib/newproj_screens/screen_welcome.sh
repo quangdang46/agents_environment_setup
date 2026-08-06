@@ -36,7 +36,7 @@ render_welcome_screen() {
     ║     ██║  ██║╚██████╗ ██║      ███████║                ║
     ║     ╚═╝  ╚═╝ ╚═════╝ ╚═╝      ╚══════╝                ║
     ║                                                       ║
-    ║          Agentic Coding Flywheel Setup                ║
+    ║          Agents Environment Setup                ║
     ║                                                       ║
     ╚═══════════════════════════════════════════════════════╝
 EOF
@@ -46,7 +46,7 @@ EOF
     |                                                       |
     |     A   C   F   S                                    |
     |                                                       |
-    |     Agentic Coding Flywheel Setup                    |
+    |     Agents Environment Setup                    |
     |                                                       |
     +-------------------------------------------------------+
 EOF

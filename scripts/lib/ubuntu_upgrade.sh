@@ -21,6 +21,12 @@ export UBUNTU_UPGRADE_MIN_DISK_MB=5000
 # Directory for resume infrastructure (created during upgrade)
 export ACFS_RESUME_DIR="/var/lib/acfs"
 
+# The original installer arguments (e.g. --yes --mode vibe) captured when the
+# upgrade sequence starts. Used to regenerate the resume infrastructure on the
+# pre-do-release-upgrade kernel-reboot path without losing the caller's flags,
+# which would otherwise strand a non-interactive (--yes) upgrade after reboot.
+ACFS_UPGRADE_ORIGINAL_ARGS=()
+
 # Lock file location
 export ACFS_UPGRADE_LOCK="/var/run/acfs-upgrade.lock"
 ACFS_UPGRADE_LOCK_FD="${ACFS_UPGRADE_LOCK_FD:-}"
@@ -187,6 +193,11 @@ ubuntu_resolve_target_home() {
     fi
 
     if [[ -n "$explicit_home" && "$current_user" == "$target_user" ]]; then
+        printf '%s\n' "$explicit_home"
+        return 0
+    fi
+
+    if [[ -n "$explicit_home" && "$current_user" == "root" ]]; then
         printf '%s\n' "$explicit_home"
         return 0
     fi
@@ -844,7 +855,11 @@ ubuntu_do_upgrade() {
             state_update ".ubuntu_upgrade.enabled = true | .ubuntu_upgrade.current_stage = \"pre_upgrade_reboot\"" 2>/dev/null || true
         fi
 
-        if ! upgrade_setup_infrastructure "$acfs_source_dir"; then
+        # Pass the original install args (captured in ubuntu_start_upgrade_sequence)
+        # so the regenerated continue_context.env keeps --yes/--mode/etc. An empty
+        # arg list here overwrites the good context written before do-release-upgrade
+        # and strands automated upgrades after the reboot.
+        if ! upgrade_setup_infrastructure "$acfs_source_dir" "${ACFS_UPGRADE_ORIGINAL_ARGS[@]}"; then
             log_error "Failed to set up upgrade resume infrastructure; refusing automatic reboot"
             return 1
         fi
@@ -1361,7 +1376,7 @@ upgrade_setup_infrastructure() {
     log_detail "Creating continuation script..."
     local repo_owner repo_name repo_ref
     repo_owner="${ACFS_REPO_OWNER:-Dicklesworthstone}"
-    repo_name="${ACFS_REPO_NAME:-agentic_coding_flywheel_setup}"
+    repo_name="${ACFS_REPO_NAME:-agents_environment_setup}"
     repo_ref="${ACFS_COMMIT_SHA_FULL:-${ACFS_REF:-main}}"
     local source_dir_q repo_ref_q install_url install_url_q
     local target_user_q target_home_q acfs_home_q acfs_state_file_q continue_home_q
@@ -1523,6 +1538,11 @@ ubuntu_start_upgrade_sequence() {
     local source_dir="$1"
     shift
     local install_args=("$@")
+    # Preserve the caller's args so the kernel-reboot path inside
+    # ubuntu_do_upgrade can regenerate the resume infrastructure with them
+    # instead of an empty arg list (which dropped --yes/--mode and stranded
+    # non-interactive upgrades after the pre-upgrade reboot).
+    ACFS_UPGRADE_ORIGINAL_ARGS=("${install_args[@]}")
 
     # Get current and target versions
     local current_version

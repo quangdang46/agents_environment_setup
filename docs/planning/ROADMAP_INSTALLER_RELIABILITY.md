@@ -458,12 +458,12 @@ print_human() {
         echo -e "${YELLOW}Pre-flight passed with warnings. You may proceed, but consider addressing warnings.${NC}"
         echo ""
         echo -e "Ready to install! Run:"
-        echo -e "  curl -fsSL \"https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?\$(date +%s)\" | bash -s -- --yes --mode vibe"
+        echo -e "  curl -fsSL \"https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?\$(date +%s)\" | bash -s -- --yes --mode vibe"
     else
         echo -e "${GREEN}Pre-flight passed! Your VPS is ready for ACFS.${NC}"
         echo ""
         echo -e "Run:"
-        echo -e "  curl -fsSL \"https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?\$(date +%s)\" | bash -s -- --yes --mode vibe"
+        echo -e "  curl -fsSL \"https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?\$(date +%s)\" | bash -s -- --yes --mode vibe"
     fi
 }
 
@@ -801,7 +801,7 @@ handle_checksum_mismatch() {
         log_error "This MUST be resolved before continuing."
         log_error ""
         log_error "Options:"
-        log_error "  1. File an issue: https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup/issues"
+        log_error "  1. File an issue: https://github.com/quangdang46/agents_environment_setup/issues"
         log_error "  2. Manually verify the upstream script is safe"
         log_error "  3. Wait for maintainers to update checksums"
         return 1  # Abort for critical tools

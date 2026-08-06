@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 # ============================================================
 # AUTO-GENERATED FROM acfs.manifest.yaml - DO NOT EDIT
 # Regenerate: bun run generate (from packages/manifest)
@@ -254,7 +254,68 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
 
     export TARGET_USER TARGET_HOME MODE ACFS_BIN_DIR
     export ACFS_BOOTSTRAP_DIR ACFS_LIB_DIR ACFS_GENERATED_DIR ACFS_ASSETS_DIR ACFS_CHECKSUMS_YAML ACFS_MANIFEST_YAML
+
+    # Defensive ownership repair (#306): when running as root, make sure the
+    # target user owns their XDG bin dir before the user-space language
+    # installers (uv/rust/bun) write into it. uv installs via an atomic
+    # mktemp+rename inside ~/.local/bin, so a root-owned ~/.local/bin makes its
+    # mktemp fail with "Permission denied (os error 13)" once the installer is
+    # re-exec'd as the (non-root) target user. The ownership repair is
+    # deliberately non-recursive: only the two directories themselves are
+    # touched, never their contents.
+    if [[ $EUID -eq 0 ]] && [[ -n "${TARGET_USER:-}" ]] && [[ "${TARGET_USER}" != "root" ]]; then
+        # SECURITY: never chown through a symlink. If an untrusted target user
+        # pre-staged ~/.local or ~/.local/bin as a symlink (e.g. -> /etc) before
+        # the root install, a chown that follows it would transfer ownership of
+        # the link target to them (local privilege escalation). chown -h /
+        # nofollow is not portable, so refuse the repair entirely when either
+        # path already exists as a symlink.
+        if [[ -L "$TARGET_HOME/.local" ]] || [[ -L "$TARGET_HOME/.local/bin" ]]; then
+            log_warn "Skipping ~/.local ownership repair: $TARGET_HOME/.local or .local/bin is a symlink (refusing to chown through it)"
+        else
+            _acfs_repair_mkdir="$(_acfs_system_binary_path mkdir 2>/dev/null || true)"
+            _acfs_repair_chown="$(_acfs_system_binary_path chown 2>/dev/null || true)"
+            if [[ -n "$_acfs_repair_mkdir" ]] && [[ -n "$_acfs_repair_chown" ]]; then
+                if "$_acfs_repair_mkdir" -p "$TARGET_HOME/.local/bin" 2>/dev/null; then
+                    "$_acfs_repair_chown" "${TARGET_USER}" "$TARGET_HOME/.local" "$TARGET_HOME/.local/bin" 2>/dev/null || true
+                fi
+            fi
+            unset _acfs_repair_mkdir _acfs_repair_chown
+        fi
+    fi
 fi
+
+acfs_generated_ensure_selection() {
+    if [[ "${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        local manifest_index="${ACFS_GENERATED_DIR:-$ACFS_GENERATED_SCRIPT_DIR}/manifest_index.sh"
+        if [[ ! -f "$manifest_index" ]]; then
+            log_error "Manifest index not found: $manifest_index"
+            return 1
+        fi
+        source "$manifest_index"
+        ACFS_MANIFEST_INDEX_LOADED=true
+        export ACFS_MANIFEST_INDEX_LOADED
+    fi
+
+    if [[ "${ACFS_GENERATED_SELECTION_READY:-false}" != "true" ]]; then
+        if ! declare -f acfs_resolve_selection >/dev/null 2>&1; then
+            log_error "Install selection helper not loaded"
+            return 1
+        fi
+        acfs_resolve_selection || return 1
+        ACFS_GENERATED_SELECTION_READY=true
+        export ACFS_GENERATED_SELECTION_READY
+    fi
+
+    return 0
+}
+
+acfs_generated_should_run_module() {
+    local module_id="${1:-}"
+    [[ -n "$module_id" ]] || return 1
+    acfs_generated_ensure_selection || return 1
+    should_run_module "$module_id"
+}
 
 # Source contract validation
 if [[ -f "$ACFS_GENERATED_SCRIPT_DIR/../lib/contract.sh" ]]; then
@@ -295,6 +356,11 @@ acfs_security_init() {
 install_stack_ntm() {
     local module_id="stack.ntm"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.ntm (not selected)"
+        return 0
+    fi
     log_step "Installing stack.ntm"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -374,6 +440,11 @@ INSTALL_STACK_NTM
 install_stack_mcp_agent_mail() {
     local module_id="stack.mcp_agent_mail"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.mcp_agent_mail (not selected)"
+        return 0
+    fi
     log_step "Installing stack.mcp_agent_mail"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -400,7 +471,7 @@ install_stack_mcp_agent_mail() {
                     fi
 
                     if [[ -n "$url" ]] && [[ -n "$expected_sha256" ]]; then
-                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'env' 'AM_INSTALL_SKIP_MCP_SETUP=1' 'bash' '-s' '--' '--dest' "$TARGET_HOME"'/mcp_agent_mail' '--yes'; then
+                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'env' 'AM_INSTALL_SKIP_MCP_SETUP=1' 'AM_INSTALL_SKIP_REMOTE_HTTP_READINESS=1' 'bash' '-s' '--' '--dest' "$TARGET_HOME"'/mcp_agent_mail' '--yes'; then
                             install_success=true
                         else
                             log_error "stack.mcp_agent_mail: verify_checksum or installer execution failed"
@@ -520,7 +591,6 @@ Environment=$rust_log_env
 Environment=$storage_root_env
 Environment=$database_url_env
 Environment=$http_allow_env
-ExecStartPre=${am_bin_exec} migrate
 ExecStart=${am_bin_exec} serve-http --no-tui --host 127.0.0.1 --port 8765 --path ${am_mcp_path_exec}
 Restart=always
 RestartSec=5
@@ -571,6 +641,23 @@ agent_mail_service_curl() {
   "$curl_bin" "$@"
 }
 
+agent_mail_readiness_ready() {
+  local readiness_body=""
+  local readiness_url=""
+
+  for readiness_url in \
+    http://127.0.0.1:8765/health/readiness \
+    http://127.0.0.1:8765/health
+  do
+    readiness_body="$(agent_mail_service_curl -fsS --max-time 5 "$readiness_url" 2>/dev/null)" || continue
+    if printf '%s\n' "$readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 stop_agent_mail_fallback() {
   if [[ -f "$fallback_pid_file" ]]; then
     existing_pid="$(cat "$fallback_pid_file" 2>/dev/null || true)"
@@ -592,7 +679,8 @@ stop_agent_mail_fallback() {
 }
 
 launch_agent_mail_fallback() {
-  if agent_mail_service_curl -fsS --max-time 5 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; then
+  if agent_mail_service_curl -fsS --max-time 5 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \
+     agent_mail_readiness_ready; then
     return 0
   fi
 
@@ -600,17 +688,18 @@ launch_agent_mail_fallback() {
     existing_pid="$(cat "$fallback_pid_file" 2>/dev/null || true)"
     if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null && \
        ps -p "$existing_pid" -o args= 2>/dev/null | grep -Fq "$am_bin serve-http"; then
-      return 0
+      stop_agent_mail_fallback
+    else
+      rm -f "$fallback_pid_file"
     fi
-    rm -f "$fallback_pid_file"
   fi
 
   nohup env \
     RUST_LOG=info \
     STORAGE_ROOT="$storage_root" \
     DATABASE_URL="$db_url" \
-    HTTP_PATH="$am_mcp_path" \
-    "$am_bin" serve-http --host 127.0.0.1 --port 8765 --path "$am_mcp_path" --no-auth --no-tui \
+    HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED=true \
+    "$am_bin" serve-http --no-tui --host 127.0.0.1 --port 8765 --path "$am_mcp_path" \
     >>"$fallback_log_file" 2>&1 < /dev/null &
   echo $! > "$fallback_pid_file"
 }
@@ -642,7 +731,7 @@ INSTALL_STACK_MCP_AGENT_MAIL
         fi
     fi
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
-        log_info "dry-run: install: until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; do (target_user)"
+        log_info "dry-run: install: until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \\ (target_user)"
     else
         if ! run_as_target_shell <<'INSTALL_STACK_MCP_AGENT_MAIL'
 # Wait for the managed Agent Mail service to become healthy.
@@ -660,11 +749,29 @@ agent_mail_service_curl() {
   "$curl_bin" "$@"
 }
 
+agent_mail_readiness_ready() {
+  local readiness_body=""
+  local readiness_url=""
+
+  for readiness_url in \
+    http://127.0.0.1:8765/health/readiness \
+    http://127.0.0.1:8765/health
+  do
+    readiness_body="$(agent_mail_service_curl -fsS --max-time 10 "$readiness_url" 2>/dev/null)" || continue
+    if printf '%s\n' "$readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 waited=0
-max_wait=90
-until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; do
+max_wait=240
+until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \
+      agent_mail_readiness_ready; do
   if [[ "$waited" -ge "$max_wait" ]]; then
-    echo "Agent Mail service did not become healthy on 127.0.0.1:8765 after ${max_wait}s" >&2
+    echo "Agent Mail service did not become ready on 127.0.0.1:8765 after ${max_wait}s" >&2
     exit 1
   fi
   sleep 2
@@ -672,7 +779,7 @@ until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/li
 done
 INSTALL_STACK_MCP_AGENT_MAIL
         then
-            log_error "stack.mcp_agent_mail: install command failed: until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; do"
+            log_error "stack.mcp_agent_mail: install command failed: until agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \\"
             return 1
         fi
     fi
@@ -707,6 +814,23 @@ agent_mail_service_curl() {
   "$curl_bin" "$@"
 }
 
+agent_mail_readiness_ready() {
+  local readiness_body=""
+  local readiness_url=""
+
+  for readiness_url in \
+    http://127.0.0.1:8765/health/readiness \
+    http://127.0.0.1:8765/health
+  do
+    readiness_body="$(agent_mail_service_curl -fsS --max-time 10 "$readiness_url" 2>/dev/null)" || continue
+    if printf '%s\n' "$readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 runtime_dir="/run/user/$(id -u)"
 if [[ -d "$runtime_dir" ]]; then
   export XDG_RUNTIME_DIR="$runtime_dir"
@@ -716,6 +840,7 @@ if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/d
   systemctl --user is-active --quiet agent-mail.service >/dev/null 2>&1 || exit 1
 fi
 agent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null
+agent_mail_readiness_ready
 INSTALL_STACK_MCP_AGENT_MAIL
         then
             log_error "stack.mcp_agent_mail: verify failed: if [[ -d \"\$runtime_dir\" ]]; then"
@@ -730,6 +855,11 @@ INSTALL_STACK_MCP_AGENT_MAIL
 install_stack_meta_skill() {
     local module_id="stack.meta_skill"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.meta_skill (not selected)"
+        return 0
+    fi
     log_step "Installing stack.meta_skill"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -829,6 +959,11 @@ INSTALL_STACK_META_SKILL
 install_stack_automated_plan_reviser() {
     local module_id="stack.automated_plan_reviser"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.automated_plan_reviser (not selected)"
+        return 0
+    fi
     log_step "Installing stack.automated_plan_reviser"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -928,6 +1063,11 @@ INSTALL_STACK_AUTOMATED_PLAN_REVISER
 install_stack_jeffreysprompts() {
     local module_id="stack.jeffreysprompts"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.jeffreysprompts (not selected)"
+        return 0
+    fi
     log_step "Installing stack.jeffreysprompts"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1027,6 +1167,11 @@ INSTALL_STACK_JEFFREYSPROMPTS
 install_stack_process_triage() {
     local module_id="stack.process_triage"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.process_triage (not selected)"
+        return 0
+    fi
     log_step "Installing stack.process_triage"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1126,6 +1271,11 @@ INSTALL_STACK_PROCESS_TRIAGE
 install_stack_ultimate_bug_scanner() {
     local module_id="stack.ultimate_bug_scanner"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.ultimate_bug_scanner (not selected)"
+        return 0
+    fi
     log_step "Installing stack.ultimate_bug_scanner"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1215,6 +1365,11 @@ INSTALL_STACK_ULTIMATE_BUG_SCANNER
 install_stack_beads_rust() {
     local module_id="stack.beads_rust"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.beads_rust (not selected)"
+        return 0
+    fi
     log_step "Installing stack.beads_rust"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1304,6 +1459,11 @@ INSTALL_STACK_BEADS_RUST
 install_stack_beads_viewer() {
     local module_id="stack.beads_viewer"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.beads_viewer (not selected)"
+        return 0
+    fi
     log_step "Installing stack.beads_viewer"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1383,6 +1543,11 @@ INSTALL_STACK_BEADS_VIEWER
 install_stack_cass() {
     local module_id="stack.cass"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.cass (not selected)"
+        return 0
+    fi
     log_step "Installing stack.cass"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1391,8 +1556,29 @@ install_stack_cass() {
         if ! {
             # Try security-verified install (no unverified fallback; fail closed)
             local install_success=false
+            local verified_installer_env_ready=true
 
-            if acfs_security_init; then
+            local verified_installer_tmpdir_template="$TARGET_HOME"'/.cache/acfs/installer-tmp/cass.XXXXXX'
+            local verified_installer_tmpdir_parent="${verified_installer_tmpdir_template%/*}"
+            local verified_installer_tmpdir=""
+            if [[ "$verified_installer_tmpdir_template" == *[[:space:]]* ]]; then
+                log_error "stack.cass: installer TMPDIR template contains whitespace: $verified_installer_tmpdir_template"
+                verified_installer_env_ready=false
+            elif [[ "$verified_installer_tmpdir_template" != *XXXXXX* ]]; then
+                log_error "stack.cass: installer TMPDIR template must contain XXXXXX: $verified_installer_tmpdir_template"
+                verified_installer_env_ready=false
+            elif ! run_as_target mkdir -p "$verified_installer_tmpdir_parent"; then
+                log_error "stack.cass: failed to prepare installer TMPDIR parent: $verified_installer_tmpdir_parent"
+                verified_installer_env_ready=false
+            elif ! verified_installer_tmpdir="$(run_as_target mktemp -d "$verified_installer_tmpdir_template" 2>/dev/null)"; then
+                log_error "stack.cass: failed to create installer TMPDIR from template: $verified_installer_tmpdir_template"
+                verified_installer_env_ready=false
+            elif [[ -z "$verified_installer_tmpdir" ]]; then
+                log_error "stack.cass: installer TMPDIR creation returned an empty path"
+                verified_installer_env_ready=false
+            fi
+
+            if [[ "$verified_installer_env_ready" = "true" ]] && acfs_security_init; then
                 local known_installers_decl=""
                 # Check if KNOWN_INSTALLERS is available as an associative array (declare -A)
                 known_installers_decl="$(declare -p KNOWN_INSTALLERS 2>/dev/null || true)"
@@ -1409,7 +1595,7 @@ install_stack_cass() {
                     fi
 
                     if [[ -n "$url" ]] && [[ -n "$expected_sha256" ]]; then
-                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'bash' '-s' '--' '--easy-mode' '--verify'; then
+                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'env' "TMPDIR=$verified_installer_tmpdir" 'bash' '-s' '--' '--easy-mode' '--verify'; then
                             install_success=true
                         else
                             log_error "stack.cass: verify_checksum or installer execution failed"
@@ -1426,7 +1612,11 @@ install_stack_cass() {
                     log_error "stack.cass: KNOWN_INSTALLERS array not available"
                 fi
             else
-                log_error "stack.cass: acfs_security_init failed - check security.sh and checksums.yaml"
+                if [[ "$verified_installer_env_ready" != "true" ]]; then
+                    log_error "stack.cass: verified installer environment setup failed"
+                else
+                    log_error "stack.cass: acfs_security_init failed - check security.sh and checksums.yaml"
+                fi
             fi
 
             # Verified install is required - no fallback
@@ -1462,6 +1652,11 @@ INSTALL_STACK_CASS
 install_stack_cm() {
     local module_id="stack.cm"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.cm (not selected)"
+        return 0
+    fi
     log_step "Installing stack.cm"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1551,6 +1746,11 @@ INSTALL_STACK_CM
 install_stack_caam() {
     local module_id="stack.caam"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.caam (not selected)"
+        return 0
+    fi
     log_step "Installing stack.caam"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1630,6 +1830,11 @@ INSTALL_STACK_CAAM
 install_stack_slb() {
     local module_id="stack.slb"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.slb (not selected)"
+        return 0
+    fi
     log_step "Installing stack.slb"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1698,6 +1903,11 @@ INSTALL_STACK_SLB
 install_stack_dcg() {
     local module_id="stack.dcg"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.dcg (not selected)"
+        return 0
+    fi
     log_step "Installing stack.dcg"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1753,6 +1963,19 @@ install_stack_dcg() {
             fi
         }; then
             log_error "stack.dcg: verified installer failed"
+            return 1
+        fi
+    fi
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: if command -v claude >/dev/null 2>&1; then (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_STACK_DCG'
+if command -v claude >/dev/null 2>&1; then
+  dcg install --force
+fi
+INSTALL_STACK_DCG
+        then
+            log_error "stack.dcg: install command failed: if command -v claude >/dev/null 2>&1; then"
             return 1
         fi
     fi
@@ -1828,6 +2051,11 @@ INSTALL_STACK_DCG
 install_stack_ru() {
     local module_id="stack.ru"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.ru (not selected)"
+        return 0
+    fi
     log_step "Installing stack.ru"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1907,6 +2135,11 @@ INSTALL_STACK_RU
 install_stack_brenner_bot() {
     local module_id="stack.brenner_bot"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.brenner_bot (not selected)"
+        return 0
+    fi
     log_step "Installing stack.brenner_bot"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1996,6 +2229,11 @@ INSTALL_STACK_BRENNER_BOT
 install_stack_rch() {
     local module_id="stack.rch"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.rch (not selected)"
+        return 0
+    fi
     log_step "Installing stack.rch"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2085,6 +2323,11 @@ INSTALL_STACK_RCH
 install_stack_wezterm_automata() {
     local module_id="stack.wezterm_automata"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.wezterm_automata (not selected)"
+        return 0
+    fi
     log_step "Installing stack.wezterm_automata"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2135,6 +2378,11 @@ INSTALL_STACK_WEZTERM_AUTOMATA
 install_stack_srps() {
     local module_id="stack.srps"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.srps (not selected)"
+        return 0
+    fi
     log_step "Installing stack.srps"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2240,6 +2488,11 @@ INSTALL_STACK_SRPS
 install_stack_frankensearch() {
     local module_id="stack.frankensearch"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.frankensearch (not selected)"
+        return 0
+    fi
     log_step "Installing stack.frankensearch"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2402,6 +2655,11 @@ INSTALL_STACK_FRANKENSEARCH
 install_stack_storage_ballast_helper() {
     local module_id="stack.storage_ballast_helper"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.storage_ballast_helper (not selected)"
+        return 0
+    fi
     log_step "Installing stack.storage_ballast_helper"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2491,6 +2749,11 @@ INSTALL_STACK_STORAGE_BALLAST_HELPER
 install_stack_cross_agent_session_resumer() {
     local module_id="stack.cross_agent_session_resumer"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.cross_agent_session_resumer (not selected)"
+        return 0
+    fi
     log_step "Installing stack.cross_agent_session_resumer"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2580,6 +2843,11 @@ INSTALL_STACK_CROSS_AGENT_SESSION_RESUMER
 install_stack_doodlestein_self_releaser() {
     local module_id="stack.doodlestein_self_releaser"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.doodlestein_self_releaser (not selected)"
+        return 0
+    fi
     log_step "Installing stack.doodlestein_self_releaser"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2669,6 +2937,11 @@ INSTALL_STACK_DOODLESTEIN_SELF_RELEASER
 install_stack_agent_settings_backup() {
     local module_id="stack.agent_settings_backup"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.agent_settings_backup (not selected)"
+        return 0
+    fi
     log_step "Installing stack.agent_settings_backup"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -2811,6 +3084,11 @@ INSTALL_STACK_AGENT_SETTINGS_BACKUP
 install_stack_pcr() {
     local module_id="stack.pcr"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping stack.pcr (not selected)"
+        return 0
+    fi
     log_step "Installing stack.pcr"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then

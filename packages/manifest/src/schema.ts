@@ -196,8 +196,8 @@ export const ModuleSchema = z
       .min(1, 'Description cannot be empty')
       .refine((s) => s.trim().length > 0, 'Description cannot be only whitespace')
       .refine(
-        (s) => !/[\n\r]/.test(s),
-        'Description must be single-line (newlines break generated bash scripts)'
+        (s) => !/[\n\r\t]/.test(s),
+        'Description must be single-line with no tabs (newlines break generated bash scripts; tabs corrupt the tab-delimited doctor check records)'
       ),
 
     // SECURITY: Category is used in generated script filenames (install_<category>.sh)

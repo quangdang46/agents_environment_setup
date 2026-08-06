@@ -51,6 +51,41 @@ write_update_refresh_checksums_fixture() {
     done < <(update_required_checksum_tools)
 }
 
+@test "update required checksum tools cover the security installer registry" {
+    local actual=""
+    local expected=""
+
+    actual="$(update_required_checksum_tools | sort)"
+    expected="$(bash -c 'source "$1"; printf "%s\n" "${!KNOWN_INSTALLERS[@]}" | sort' _ "$PROJECT_ROOT/scripts/lib/security.sh")"
+
+    if [[ "$actual" != "$expected" ]]; then
+        printf 'update_required_checksum_tools is out of sync with KNOWN_INSTALLERS\n' >&2
+        printf 'Actual:\n%s\n' "$actual" >&2
+        printf 'Expected:\n%s\n' "$expected" >&2
+        return 1
+    fi
+}
+
+@test "checksums metadata validation rejects missing current stack installer" {
+    local checksum_file="$HOME/checksums-missing-rch.yaml"
+    local tool=""
+    local index=1
+    local tool_sha=""
+
+    printf 'installers:\n' > "$checksum_file"
+    while IFS= read -r tool; do
+        [[ "$tool" != "rch" ]] || continue
+        printf -v tool_sha '%064d' "$index"
+        printf '  %s:\n' "$tool" >> "$checksum_file"
+        printf '    url: "https://example.com/%s/install.sh"\n' "$tool" >> "$checksum_file"
+        printf '    sha256: "%s"\n' "$tool_sha" >> "$checksum_file"
+        index=$((index + 1))
+    done < <(update_required_checksum_tools)
+
+    run update_checksums_file_has_required_metadata "$checksum_file"
+    assert_failure
+}
+
 @test "get_version: detects bun" {
     mkdir -p "$HOME/.bun/bin"
     # Create stub script at location
@@ -505,22 +540,63 @@ EOF
     local current_home
     local target_home
     local state_file
-    local fake_path
-    local original_path="${PATH-}"
+    local sed_path
+    local head_path
     current_home="$(create_temp_dir)"
     target_home="$(create_temp_dir)"
     state_file="$BATS_TEST_TMPDIR/update-state.json"
-    fake_path="$(create_temp_dir)"
+    sed_path="$(command -v sed)"
+    head_path="$(command -v head)"
 
     cat > "$state_file" <<EOF
 {"bin_dir":"$target_home/custom-bin"}
 EOF
 
-    ln -s /usr/bin/sed "$fake_path/sed"
-    ln -s /usr/bin/head "$fake_path/head"
+    update_system_binary_path() {
+        case "${1:-}" in
+            sed) printf '%s\n' "$sed_path" ;;
+            head) printf '%s\n' "$head_path" ;;
+            *) return 1 ;;
+        esac
+    }
 
     export HOME="$current_home"
-    export PATH="$fake_path"
+    export TARGET_USER="acfstestuser"
+    export TARGET_HOME="$target_home"
+    export ACFS_STATE_FILE="$state_file"
+    unset ACFS_BIN_DIR
+    unset ACFS_HOME
+
+    run update_preferred_user_bin_dir
+    assert_success
+    assert_output "$target_home/custom-bin"
+}
+
+@test "update_preferred_user_bin_dir: ignores PATH-poisoned jq" {
+    local current_home
+    local target_home
+    local state_file
+    local fake_path
+    local marker
+    local original_path="${PATH-}"
+    current_home="$(create_temp_dir)"
+    target_home="$(create_temp_dir)"
+    state_file="$BATS_TEST_TMPDIR/update-state-path-poisoned-jq.json"
+    fake_path="$(create_temp_dir)"
+    marker="$BATS_TEST_TMPDIR/update-fake-jq-used"
+
+    cat > "$state_file" <<EOF
+{"bin_dir":"$target_home/custom-bin"}
+EOF
+    cat > "$fake_path/jq" <<EOF
+#!/usr/bin/env bash
+: > "$marker"
+printf '%s\n' "$target_home/poison-bin"
+EOF
+    chmod +x "$fake_path/jq"
+
+    export HOME="$current_home"
+    export PATH="$fake_path:/usr/bin:/bin"
     export TARGET_USER="acfstestuser"
     export TARGET_HOME="$target_home"
     export ACFS_STATE_FILE="$state_file"
@@ -529,6 +605,39 @@ EOF
 
     run update_preferred_user_bin_dir
     PATH="${original_path:-/usr/bin:/bin}"
+    assert_success
+    assert_output "$target_home/custom-bin"
+    [[ ! -e "$marker" ]] || fail "update_preferred_user_bin_dir used PATH-poisoned jq"
+}
+
+@test "update_preferred_user_bin_dir: clamps multiline state bin_dir" {
+    local current_home
+    local target_home
+    local state_file
+    local jq_candidate=""
+
+    for jq_candidate in /usr/bin/jq /bin/jq /usr/local/bin/jq; do
+        [[ -x "$jq_candidate" ]] && break
+        jq_candidate=""
+    done
+    [[ -n "$jq_candidate" ]] || skip "system jq required"
+
+    current_home="$(create_temp_dir)"
+    target_home="$(create_temp_dir)"
+    state_file="$BATS_TEST_TMPDIR/update-state-multiline-bin-dir.json"
+
+    cat > "$state_file" <<EOF
+{"bin_dir":"$target_home/custom-bin\n$target_home/poison-bin"}
+EOF
+
+    export HOME="$current_home"
+    export TARGET_USER="acfstestuser"
+    export TARGET_HOME="$target_home"
+    export ACFS_STATE_FILE="$state_file"
+    unset ACFS_BIN_DIR
+    unset ACFS_HOME
+
+    run update_preferred_user_bin_dir
     assert_success
     assert_output "$target_home/custom-bin"
 }
@@ -1233,7 +1342,7 @@ EOF
     run grep -F 'output=$("$bun_bin" install -g --trust "$pkg" 2>&1)' "$update"
     assert_failure
 
-    run grep -F 'run_cmd_bun_with_retry "Gemini CLI" update_run_in_target_context "" "$bun_bin" install -g --trust @google/gemini-cli@latest' "$update"
+    run grep -F 'run_cmd "Antigravity CLI" update_run_in_target_context "" "$agy_bin" update' "$update"
     assert_success
 
     run grep -F 'run_cmd_bun_with_retry "Wrangler (Cloudflare)" update_run_in_target_context "" "$bun_bin" install -g --trust wrangler@latest' "$update"
@@ -1242,7 +1351,7 @@ EOF
     run grep -F 'run_cmd_bun_with_retry "Vercel CLI" update_run_in_target_context "" "$bun_bin" install -g --trust vercel@latest' "$update"
     assert_success
 
-    run grep -F 'run_cmd_bun_with_retry "Gemini CLI" "$bun_bin" install -g --trust @google/gemini-cli@latest' "$update"
+    run grep -F 'run_cmd_bun_with_retry "Gemini CLI" update_run_in_target_context "" "$bun_bin" install -g --trust @google/gemini-cli@latest' "$update"
     assert_failure
 
     run grep -F 'run_cmd_bun_with_retry "Wrangler (Cloudflare)" "$bun_bin" install -g --trust wrangler@latest' "$update"
@@ -1254,7 +1363,19 @@ EOF
     run grep -F 'update_run_verified_installer_or_existing_on_transient "Meta Skill" ms ms ms --easy-mode || true' "$update"
     assert_success
 
+    run grep -F 'update_run_verified_installer_or_existing_on_transient "CASS Memory" cm cm cm --easy-mode --verify || true' "$update"
+    assert_success
+
+    run grep -F 'update_run_verified_installer_or_existing_on_transient "DCG" dcg dcg dcg --easy-mode || true' "$update"
+    assert_success
+
     run grep -F 'run_cmd "Meta Skill" update_run_verified_installer ms --easy-mode' "$update"
+    assert_failure
+
+    run grep -F 'run_cmd "CASS Memory" update_run_verified_installer cm --easy-mode --verify' "$update"
+    assert_failure
+
+    run grep -F 'run_cmd "DCG" update_run_verified_installer dcg --easy-mode' "$update"
     assert_failure
 
     run grep -F 'run_cmd "Supabase CLI" update_run_in_target_context "ACFS_PRIMARY_BIN_DIR=$supabase_primary_bin" bash -c "$(supabase_release_update_script)"' "$update"
@@ -1399,6 +1520,7 @@ EOF
         esac
         return 0
     }
+    update_run_verified_installer_or_existing_on_transient() { return 0; }
     update_run_verified_installer_with_env() { return 0; }
     update_run_slb_source_install() { return 0; }
     update_run_fsfs_installer() { return 0; }
@@ -1411,6 +1533,8 @@ EOF
 }
 
 @test "update_stack skips upstream MCP Agent Mail setup and owns service readiness" {
+    local mode_file="$HOME/mcp-agent-mail-installer-mode"
+
     QUIET=true
     VERBOSE=false
     DRY_RUN=false
@@ -1434,6 +1558,7 @@ EOF
     update_target_home() { printf '%s\n' "$HOME"; }
     update_run_logged_passthrough() {
         printf '%s\n' "$*" > "$HOME/mcp-agent-mail-passthrough.args"
+        stat -c '%a' "${4:-}" > "$mode_file"
         return 0
     }
     update_source_stack_lib() { return 0; }
@@ -1450,7 +1575,76 @@ EOF
 
     run update_stack
     assert_success
-    [[ "$(cat "$HOME/mcp-agent-mail-passthrough.args")" == "update_run_in_target_context AM_INSTALL_SKIP_MCP_SETUP=1 bash "* ]]
+    local passthrough_args
+    passthrough_args="$(cat "$HOME/mcp-agent-mail-passthrough.args")"
+    [[ "$passthrough_args" == update_run_in_target_context* ]]
+    [[ "$passthrough_args" == *"AM_INSTALL_SKIP_MCP_SETUP=1"* ]]
+    [[ "$passthrough_args" == *"AM_INSTALL_SKIP_REMOTE_HTTP_READINESS=1"* ]]
+    [[ "$passthrough_args" == *"bash "* ]]
+    [[ "$(cat "$mode_file")" == "755" ]]
+}
+
+@test "update_stack runs CASS through target tmpdir fallback and continues on failure" {
+    local calls_file="$HOME/verified-installer-calls"
+
+    QUIET=true
+    VERBOSE=false
+    DRY_RUN=false
+    UPDATE_STACK=true
+    ABORT_ON_FAILURE=false
+    ACFS_UPDATE_RETRY_MAX_ATTEMPTS=1
+    UPDATE_LOG_FILE="$HOME/update.log"
+    SUCCESS_COUNT=0
+    FAIL_COUNT=0
+    SKIP_COUNT=0
+
+    declare -gA KNOWN_INSTALLERS=([mcp_agent_mail]="https://example.test/install-am.sh")
+
+    update_require_security() { return 0; }
+    get_checksum() { printf '%s\n' "abc123"; }
+    verify_checksum() {
+        printf '%s\n' '#!/usr/bin/env bash'
+        printf '%s\n' 'exit 0'
+    }
+    update_target_user() { id -un; }
+    update_target_home() { printf '%s\n' "$HOME"; }
+    update_run_logged_passthrough() { return 0; }
+    update_source_stack_lib() { return 0; }
+    _stack_repair_agent_mail_cli_symlink() { return 0; }
+    _stack_configure_agent_mail_service() { return 0; }
+    _stack_wait_for_agent_mail_health() { return 0; }
+    capture_version_before() { :; }
+    capture_version_after() { return 1; }
+    update_binary_exists() { return 1; }
+    update_run_verified_installer() {
+        printf 'plain:%s\n' "$*" >> "$calls_file"
+        return 0
+    }
+    update_run_verified_installer_with_env() {
+        printf 'env:%s\n' "$*" >> "$calls_file"
+        return 0
+    }
+    update_run_verified_installer_with_target_tmpdir_or_existing_on_transient() {
+        printf 'tmp-existing:%s\n' "$*" >> "$calls_file"
+        return 1
+    }
+    update_run_verified_installer_or_existing_on_transient() {
+        printf 'existing:%s\n' "$*" >> "$calls_file"
+        return 1
+    }
+    update_run_slb_source_install() { return 0; }
+    update_run_fsfs_installer() { return 0; }
+
+    run update_stack
+    assert_success
+    run grep -Fx "tmp-existing:CASS cass cass cass --easy-mode --verify" "$calls_file"
+    assert_success
+    run grep -Fx "existing:CASS Memory cm cm cm --easy-mode --verify" "$calls_file"
+    assert_success
+    run grep -Fx "plain:cm --easy-mode --verify" "$calls_file"
+    assert_failure
+    run grep -Fx "plain:cass --easy-mode --verify" "$calls_file"
+    assert_failure
 }
 
 @test "update_stack honors abort-on-failure for MCP Agent Mail target-home failure" {
@@ -1491,6 +1685,7 @@ EOF
         esac
         return 0
     }
+    update_run_verified_installer_or_existing_on_transient() { return 0; }
     update_run_verified_installer_with_env() { return 0; }
     update_run_slb_source_install() { return 0; }
     update_run_fsfs_installer() { return 0; }
@@ -1683,6 +1878,27 @@ EOF
     assert_output --partial "-n $STUB_DIR/fuser $lockfile"
 }
 
+@test "update root helpers use resolved noninteractive sudo" {
+    local update="$PROJECT_ROOT/scripts/lib/update.sh"
+
+    run grep -F 'sudo_bin="$(get_sudo 2>/dev/null || true)"' "$update"
+    assert_success
+    run grep -F '_sudo_prefix_ref=("$sudo_bin" -n)' "$update"
+    assert_success
+    run grep -F 'run_cmd "$desc" "${sudo_cmd[@]}" "$@"' "$update"
+    assert_success
+    run grep -F 'run_cmd_with_retry_status "$desc" "${sudo_cmd[@]}" "$@"' "$update"
+    assert_success
+    run grep -F 'run_cmd_attempt_with_retry "$desc" "${sudo_cmd[@]}" "$@"' "$update"
+    assert_success
+    run grep -F '"${sudo_cmd[@]}" "${_apt_env[@]}" apt-get update -qq' "$update"
+    assert_success
+    run grep -F '"${sudo_cmd[@]}" chmod -x "$apt_hook"' "$update"
+    assert_success
+    run grep -F '"${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 dpkg --configure -a' "$update"
+    assert_success
+}
+
 @test "wait_for_apt_lock: uses trusted fuser resolver instead of caller PATH" {
     init_stub_dir
     local empty_path="$HOME/empty-path"
@@ -1762,7 +1978,10 @@ exit 0
 EOF
     chmod +x "$STUB_DIR/dpkg"
 
-    get_sudo() { printf '%s\n' ""; }
+    update_sudo_prefix() {
+        local -n _sudo_prefix_ref="$1"
+        _sudo_prefix_ref=()
+    }
 
     run fix_apt_issues
 
@@ -1811,7 +2030,10 @@ exit 0
 EOF
     chmod +x "$STUB_DIR/apt-get"
 
-    get_sudo() { printf '%s\n' ""; }
+    update_sudo_prefix() {
+        local -n _sudo_prefix_ref="$1"
+        _sudo_prefix_ref=()
+    }
 
     run fix_apt_issues
 
@@ -2349,6 +2571,99 @@ EOF
     [[ "$FAIL_COUNT" -eq 0 ]]
 }
 
+@test "update_atuin: prefers dedicated updater and skips setup installer" {
+    export ACFS_UPDATE_RETRY_MAX_ATTEMPTS=1
+    export ACFS_UPDATE_RETRY_SLEEP_SECONDS=0
+    export ACFS_BIN_DIR="$HOME/.local/bin"
+    QUIET=true
+    VERBOSE=false
+    DRY_RUN=false
+    YES_MODE=false
+    ABORT_ON_FAILURE=false
+    UPDATE_LOG_FILE="$HOME/update.log"
+    SUCCESS_COUNT=0
+    FAIL_COUNT=0
+    SKIP_COUNT=0
+
+    mkdir -p "$HOME/.atuin/bin" "$HOME/.local/bin"
+    cat > "$HOME/.atuin/bin/atuin" <<'EOF'
+#!/usr/bin/env bash
+echo "atuin 18.17.1"
+EOF
+    cat > "$HOME/.atuin/bin/atuin-update" <<EOF
+#!/usr/bin/env bash
+touch "$HOME/atuin-dedicated-updater-ran"
+EOF
+    chmod +x "$HOME/.atuin/bin/atuin" "$HOME/.atuin/bin/atuin-update"
+
+    update_run_verified_installer() {
+        : > "$HOME/atuin-setup-installer-ran"
+        return 1
+    }
+
+    update_atuin
+
+    [[ -f "$HOME/atuin-dedicated-updater-ran" ]]
+    [[ ! -e "$HOME/atuin-setup-installer-ran" ]]
+    [[ "$FAIL_COUNT" -eq 0 ]]
+}
+
+@test "update_disable_atuin_agent_integrations: removes only Atuin harness hooks" {
+    mkdir -p "$HOME/.codex" "$HOME/.claude" "$HOME/.pi/agent/extensions"
+    cat > "$HOME/.codex/hooks.json" <<'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {"type": "command", "command": "dcg --mode strict"},
+          {"type": "command", "command": "atuin hook codex"}
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {"matcher": "^Bash$", "hooks": [{"type": "command", "command": "/home/test/.atuin/bin/atuin hook codex"}]}
+    ]
+  }
+}
+EOF
+    cat > "$HOME/.claude/settings.json" <<'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "atuin hook claude-code"}]}
+    ],
+    "Notification": [
+      {"hooks": [{"type": "command", "command": "notify-send done"}]}
+    ]
+  }
+}
+EOF
+    cat > "$HOME/.pi/agent/extensions/atuin.ts" <<'EOF'
+import { execFile } from "node:child_process";
+export default function atuin(pi: any): void {
+  pi.on("tool_result", () => execFile("atuin", ["history", "start"]));
+}
+EOF
+
+    run update_disable_atuin_agent_integrations "$HOME"
+    assert_success
+
+    run jq -r '.hooks.PreToolUse[0].hooks[0].command' "$HOME/.codex/hooks.json"
+    assert_success
+    assert_output "dcg --mode strict"
+    run jq -e '[.. | objects | .command? // empty | select(test("atuin[[:space:]]+hook"))] | length == 0' "$HOME/.codex/hooks.json" "$HOME/.claude/settings.json"
+    assert_success
+    run jq -r '.hooks.Notification[0].hooks[0].command' "$HOME/.claude/settings.json"
+    assert_success
+    assert_output "notify-send done"
+    run grep -F "Atuin integration intentionally disabled by ACFS" "$HOME/.pi/agent/extensions/atuin.ts"
+    assert_success
+    run grep -F 'execFile(' "$HOME/.pi/agent/extensions/atuin.ts"
+    assert_failure
+}
+
 @test "update_repair_atuin_install: uses target atuin as shim source when HOME differs" {
     local current_home
     local target_home
@@ -2380,14 +2695,26 @@ EOF
     run update_repair_atuin_install
     assert_success
 
-    [[ -L "$ACFS_BIN_DIR/atuin" ]]
-    [[ -L "$target_home/.local/bin/atuin" ]]
+    [[ -x "$ACFS_BIN_DIR/atuin" ]]
+    [[ -x "$target_home/.local/bin/atuin" ]]
+    [[ ! -L "$ACFS_BIN_DIR/atuin" ]]
+    [[ ! -L "$target_home/.local/bin/atuin" ]]
 
-    run readlink "$ACFS_BIN_DIR/atuin"
-    assert_output "$target_home/.atuin/bin/atuin"
+    run "$ACFS_BIN_DIR/atuin" --version
+    assert_success
+    assert_output "atuin 18.14.1"
 
-    run readlink "$target_home/.local/bin/atuin"
-    assert_output "$target_home/.atuin/bin/atuin"
+    run "$ACFS_BIN_DIR/atuin" search cargo
+    assert_success
+    assert_output "target-home"
+
+    run env CODEX_THREAD_ID=test "$ACFS_BIN_DIR/atuin" history start
+    assert_success
+    assert_output ""
+
+    run bash -c 'printf "%*s" 131072 "" | "$1" hook install codex' _ "$ACFS_BIN_DIR/atuin"
+    assert_success
+    assert_output ""
 }
 
 @test "update_repair_atuin_install: normalizes custom and local shims" {
@@ -2407,14 +2734,18 @@ EOF
     run update_repair_atuin_install
     assert_success
 
-    [[ -L "$ACFS_BIN_DIR/atuin" ]]
-    [[ -L "$HOME/.local/bin/atuin" ]]
+    [[ -x "$ACFS_BIN_DIR/atuin" ]]
+    [[ -x "$HOME/.local/bin/atuin" ]]
+    [[ ! -L "$ACFS_BIN_DIR/atuin" ]]
+    [[ ! -L "$HOME/.local/bin/atuin" ]]
 
-    run readlink "$ACFS_BIN_DIR/atuin"
-    assert_output "$HOME/.atuin/bin/atuin"
+    run "$ACFS_BIN_DIR/atuin" --version
+    assert_success
+    assert_output "atuin 18.14.1"
 
-    run readlink "$HOME/.local/bin/atuin"
-    assert_output "$HOME/.atuin/bin/atuin"
+    run env CODEX_THREAD_ID=test "$HOME/.local/bin/atuin" history end atuin-agent-history-disabled
+    assert_success
+    assert_output ""
 }
 
 @test "update_repair_atuin_install: does not repair from current HOME for different unresolved target" {
@@ -2540,10 +2871,6 @@ EOF
         return 0
     }
 
-    _cli_normalize_atuin_shims() {
-        :
-    }
-
     _cli_run_as_user() {
         CLI_RUN_AS_USER_CALLS=$((CLI_RUN_AS_USER_CALLS + 1))
         mkdir -p "$TARGET_HOME/.atuin/bin"
@@ -2564,6 +2891,16 @@ EOF
 
     [[ "$CLI_RUN_AS_USER_CALLS" -eq 1 ]]
     [[ -x "$TARGET_HOME/.atuin/bin/atuin" ]]
+    [[ -x "$TARGET_HOME/.local/bin/atuin" ]]
+    [[ ! -L "$TARGET_HOME/.local/bin/atuin" ]]
+
+    run "$TARGET_HOME/.local/bin/atuin" --version
+    assert_success
+    assert_output "atuin 18.14.1"
+
+    run env CODEX_THREAD_ID=test "$TARGET_HOME/.local/bin/atuin" history start
+    assert_success
+    assert_output ""
 }
 
 @test "_cli_target_has_command: ignores current-shell-only PATH entries" {
@@ -2590,29 +2927,82 @@ EOF
     assert_failure
 }
 
-@test "acfs.zshrc: loads atuin env before atuin init" {
-    local zshrc="$PROJECT_ROOT/acfs/zsh/acfs.zshrc"
-    local env_line=""
-    local init_line=""
-
-    env_line="$(grep -nF 'source "$HOME/.atuin/bin/env"' "$zshrc" | cut -d: -f1)"
-    init_line="$(grep -nF 'eval "$("$_ACFS_ATUIN_BIN" init zsh)"' "$zshrc" | cut -d: -f1)"
-
-    [[ -n "$env_line" ]]
-    [[ -n "$init_line" ]]
-    (( env_line < init_line ))
-}
-
-@test "acfs.zshrc: resolves atuin binary once for init and bindings" {
+@test "acfs.zshrc: does not load Atuin shell hooks" {
     local zshrc="$PROJECT_ROOT/acfs/zsh/acfs.zshrc"
 
-    run grep -F '_ACFS_ATUIN_BIN=""' "$zshrc"
-    assert_success
+    run grep -F 'source "$HOME/.atuin/bin/env"' "$zshrc"
+    assert_failure
 
     run grep -F 'eval "$("$_ACFS_ATUIN_BIN" init zsh)"' "$zshrc"
+    assert_failure
+
+    run grep -F 'atuin-search' "$zshrc"
+    assert_failure
+}
+
+@test "acfs.zshrc: keeps Atuin behind the guarded shim" {
+    local zshrc="$PROJECT_ROOT/acfs/zsh/acfs.zshrc"
+
+    run grep -F '_ACFS_ATUIN_BIN' "$zshrc"
+    assert_failure
+
+    run grep -F 'guarded shim in ~/.local/bin' "$zshrc"
     assert_success
 
-    run grep -F 'if [[ -n "$_ACFS_ATUIN_BIN" ]]; then' "$zshrc"
+    run grep -F 'bindkey -e' "$zshrc"
+    assert_success
+}
+
+@test "Atuin manifest metadata requires guarded shim" {
+    local manifest="$PROJECT_ROOT/acfs.manifest.yaml"
+    local manifest_index="$PROJECT_ROOT/scripts/generated/manifest_index.sh"
+    local install_tools="$PROJECT_ROOT/scripts/generated/install_tools.sh"
+    local web_manifest="$PROJECT_ROOT/apps/web/lib/generated/manifest-modules.ts"
+
+    run grep -F 'description: Atuin CLI with guarded agent-safe shim' "$manifest"
+    assert_success
+
+    run grep -F 'command: "test -x ~/.atuin/bin/atuin && test -x \"${ACFS_BIN_DIR:-$HOME/.local/bin}/atuin\"' "$manifest"
+    assert_success
+
+    run grep -F 'grep -Fq \"agent hook integration disabled by ACFS\" \"${ACFS_BIN_DIR:-$HOME/.local/bin}/atuin\"' "$manifest"
+    assert_success
+
+    run grep -F '# acfs-summary: install Atuin guard wrapper' "$manifest"
+    assert_success
+
+    run grep -F "['tools.atuin']=\"Atuin CLI with guarded agent-safe shim\"" "$manifest_index"
+    assert_success
+
+    run grep -F "agent hook integration disabled by ACFS" "$manifest_index"
+    assert_success
+
+    run grep -F 'dry-run: install: install Atuin guard wrapper' "$install_tools"
+    assert_success
+
+    run grep -F 'description: "Atuin CLI with guarded agent-safe shim"' "$web_manifest"
+    assert_success
+
+    run grep -F 'Atuin shell history (Ctrl-R superpowers)' "$manifest" "$manifest_index" "$web_manifest"
+    assert_failure
+}
+
+@test "Atuin guard wrappers recognize Antigravity agent contexts" {
+    local agent_contexts='claude|codex|cod|cc|agy|antigravity|agy-locked|gmi|gemini|bun|node'
+
+    run grep -F "$agent_contexts" "$PROJECT_ROOT/acfs.manifest.yaml"
+    assert_success
+
+    run grep -F "$agent_contexts" "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F "$agent_contexts" "$PROJECT_ROOT/scripts/generated/install_tools.sh"
+    assert_success
+
+    run grep -F "$agent_contexts" "$PROJECT_ROOT/scripts/lib/cli_tools.sh"
+    assert_success
+
+    run grep -F "$agent_contexts" "$PROJECT_ROOT/scripts/lib/update.sh"
     assert_success
 }
 
@@ -3559,6 +3949,22 @@ EOF
     assert_failure
 }
 
+@test "services-setup: PostgreSQL service start uses noninteractive sudo" {
+    local services_setup="$PROJECT_ROOT/scripts/services-setup.sh"
+
+    run grep -F 'sudo_cmd=("$sudo_bin" -n)' "$services_setup"
+    assert_success
+
+    run grep -F 'if ! "${sudo_cmd[@]}" "$systemctl_bin" start postgresql; then' "$services_setup"
+    assert_success
+
+    run grep -F 'if ! "${sudo_cmd[@]}" "$systemctl_bin" enable postgresql; then' "$services_setup"
+    assert_success
+
+    run grep -F 'Could not start PostgreSQL without prompting for sudo' "$services_setup"
+    assert_success
+}
+
 @test "services-setup: run_as_user ignores function-poisoned whoami on same-user fast path" {
     local services_setup="$PROJECT_ROOT/scripts/services-setup.sh"
     local current_user
@@ -3677,12 +4083,12 @@ EOF
 
     run run_as_user printf ok
     assert_success
-    assert_output --partial "safe-sudo:"
+    assert_output --partial "safe-sudo:-n -u acfsuser -H"
     [[ ! -e "$marker" ]] || fail "function-poisoned command executed: $(<"$marker")"
 
     run run_as_user_shell 'printf ok'
     assert_success
-    assert_output --partial "safe-sudo:"
+    assert_output --partial "safe-sudo:-n -u acfsuser -H"
     [[ ! -e "$marker" ]] || fail "function-poisoned command executed: $(<"$marker")"
 }
 
@@ -4209,6 +4615,14 @@ EOF
 #!/usr/bin/env bash
 printf '128\n'
 EOF
+    cat > "$STUB_DIR/df" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == "--output=avail /" ]]; then
+    printf 'Avail\n10485760\n'
+else
+    exec /usr/bin/df "$@"
+fi
+EOF
     cat > "$STUB_DIR/awk" <<'EOF'
 #!/usr/bin/env bash
 case "${*: -1}" in
@@ -4216,8 +4630,110 @@ case "${*: -1}" in
     *) exec /usr/bin/awk "$@" ;;
 esac
 EOF
-    chmod +x "$STUB_DIR/id" "$STUB_DIR/getent" "$STUB_DIR/nproc" "$STUB_DIR/awk"
+    chmod +x "$STUB_DIR/id" "$STUB_DIR/getent" "$STUB_DIR/nproc" "$STUB_DIR/df" "$STUB_DIR/awk"
     printf '%s\n' "$STUB_DIR:/usr/bin:/bin"
+}
+
+@test "nightly update state readers ignore PATH-poisoned jq" {
+    local nightly="$PROJECT_ROOT/scripts/lib/nightly_update.sh"
+    local nightly_path
+    local fake_bin
+    local marker
+    local root_home
+    local target_home
+    local poison_home
+    local system_state
+
+    root_home="$(create_temp_dir)"
+    target_home="$(create_temp_dir)"
+    poison_home="$(create_temp_dir)"
+    fake_bin="$(create_temp_dir)"
+    marker="$BATS_TEST_TMPDIR/nightly-fake-jq-used"
+    system_state="$root_home/system-state.json"
+
+    mkdir -p \
+        "$root_home/.acfs/scripts/lib" \
+        "$target_home/.acfs/scripts/lib" \
+        "$target_home/.acfs/logs/updates" \
+        "$target_home/.local/bin" \
+        "$poison_home/.acfs/scripts/lib" \
+        "$poison_home/.acfs/logs/updates" \
+        "$poison_home/.local/bin"
+
+    cat > "$system_state" <<EOF
+{
+  "target_home": "$target_home",
+  "bin_dir": "$target_home/.local/bin"
+}
+EOF
+    cat > "$fake_bin/jq" <<EOF
+#!/usr/bin/env bash
+: > "$marker"
+case "\$*" in
+    *target_home*) printf '%s\n' "$poison_home" ;;
+    *bin_dir*) printf '%s\n' "$poison_home/.local/bin" ;;
+    *) printf '%s\n' "$poison_home" ;;
+esac
+EOF
+    cat > "$target_home/.local/bin/acfs-update" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--help" ]]; then
+  printf '%s\n' 'Usage: acfs-update [--no-self-update]'
+  exit 0
+fi
+printf 'REAL_NIGHTLY HOME=%s TARGET_HOME=%s ACFS_HOME=%s\n' "$HOME" "${TARGET_HOME:-}" "${ACFS_HOME:-}"
+EOF
+    cat > "$poison_home/.local/bin/acfs-update" <<'EOF'
+#!/usr/bin/env bash
+printf 'POISON_NIGHTLY HOME=%s TARGET_HOME=%s ACFS_HOME=%s\n' "$HOME" "${TARGET_HOME:-}" "${ACFS_HOME:-}"
+EOF
+    chmod +x "$fake_bin/jq" "$target_home/.local/bin/acfs-update" "$poison_home/.local/bin/acfs-update"
+
+    nightly_path="$(setup_nightly_update_identity_stubs)"
+    run env -i PATH="$fake_bin:$nightly_path" HOME="$root_home" ACFS_SYSTEM_STATE_FILE="$system_state" bash "$nightly"
+
+    assert_success
+    assert_output --partial "Running: $target_home/.local/bin/acfs-update --yes --quiet --no-self-update"
+    assert_output --partial "REAL_NIGHTLY HOME=$target_home TARGET_HOME=$target_home ACFS_HOME=$target_home/.acfs"
+    refute_output --partial "POISON_NIGHTLY"
+    [[ ! -e "$marker" ]]
+}
+
+@test "nightly update state readers clamp multiline jq strings" {
+    local nightly="$PROJECT_ROOT/scripts/lib/nightly_update.sh"
+    local jq_candidate=""
+    local state_file
+    local target_home
+
+    for jq_candidate in /usr/bin/jq /bin/jq /usr/local/bin/jq; do
+        [[ -x "$jq_candidate" ]] && break
+        jq_candidate=""
+    done
+    [[ -n "$jq_candidate" ]] || skip "system jq required"
+
+    target_home="$(create_temp_dir)"
+    state_file="$BATS_TEST_TMPDIR/nightly-state-multiline.json"
+    mkdir -p "$target_home/.local/bin"
+    cat > "$state_file" <<EOF
+{"target_home":"$target_home\n/tmp/poisoned-home","bin_dir":"$target_home/.local/bin\n/tmp/poisoned-bin"}
+EOF
+
+    run bash -s -- "$nightly" "$state_file" "$target_home" <<'EOF_NIGHTLY_MULTILINE_STATE'
+script="$1"
+state_file="$2"
+target_home="$3"
+
+eval "$(sed -n '/^sanitize_abs_nonroot_path()/,/^}$/p' "$script")"
+eval "$(sed -n '/^system_binary_path()/,/^}$/p' "$script")"
+eval "$(sed -n '/^read_state_string_from_file()/,/^}$/p' "$script")"
+eval "$(sed -n '/^read_bin_dir_from_state_file()/,/^}$/p' "$script")"
+eval "$(sed -n '/^read_target_home_from_state_file()/,/^}$/p' "$script")"
+
+set -euo pipefail
+[[ "$(read_bin_dir_from_state_file "$state_file")" == "$target_home/.local/bin" ]]
+[[ "$(read_target_home_from_state_file "$state_file")" == "$target_home" ]]
+EOF_NIGHTLY_MULTILINE_STATE
+    assert_success
 }
 
 @test "nightly update honors explicit system state and repairs target runtime home" {
@@ -4253,6 +4769,10 @@ EOF
 EOF
     cat > "$target_home/.local/bin/acfs-update" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "--help" ]]; then
+  printf '%s\n' 'Usage: acfs-update [--no-self-update]'
+  exit 0
+fi
 printf 'CHILD_HOME=%s TARGET_HOME=%s ACFS_HOME=%s\n' "$HOME" "${TARGET_HOME:-}" "${ACFS_HOME:-}"
 EOF
     chmod +x "$target_home/.local/bin/acfs-update"
@@ -4297,6 +4817,10 @@ EOF
 EOF
     cat > "$target_home/.acfs/bin/acfs-update" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "--help" ]]; then
+  printf '%s\n' 'Usage: acfs-update [--no-self-update]'
+  exit 0
+fi
 printf 'LIVE_HOME=%s TARGET_HOME=%s ACFS_HOME=%s\n' "$HOME" "${TARGET_HOME:-}" "${ACFS_HOME:-}"
 EOF
     cat > "$stale_home/.local/bin/acfs-update" <<'EOF'
@@ -4347,6 +4871,10 @@ EOF
 EOF
     cat > "$target_home/.acfs/bin/acfs-update" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "--help" ]]; then
+  printf '%s\n' 'Usage: acfs-update [--no-self-update]'
+  exit 0
+fi
 printf 'CHILD_HOME=%s TARGET_HOME=%s ACFS_HOME=%s\n' "$HOME" "${TARGET_HOME:-}" "${ACFS_HOME:-}"
 EOF
     chmod +x "$target_home/.acfs/bin/acfs-update"
@@ -4395,6 +4923,10 @@ EOF
 EOF
     cat > "$target_home/.local/bin/acfs-update" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "--help" ]]; then
+  printf '%s\n' 'Usage: acfs-update [--no-self-update]'
+  exit 0
+fi
 printf 'LIVE_NIGHTLY HOME=%s TARGET_HOME=%s ACFS_HOME=%s\n' "$HOME" "${TARGET_HOME:-}" "${ACFS_HOME:-}"
 EOF
     cat > "$stale_home/.local/bin/acfs-update" <<'EOF'
@@ -4614,6 +5146,49 @@ EOF
     run find_acfs_bin "acfsuser"
     assert_success
     assert_output "$target_home/.local/bin/acfs"
+}
+
+@test "global wrappers clamp multiline state strings from jq" {
+    local label
+    local wrapper
+    local state_file
+    local target_home
+    local jq_candidate=""
+
+    for jq_candidate in /usr/bin/jq /bin/jq /usr/local/bin/jq; do
+        [[ -x "$jq_candidate" ]] && break
+        jq_candidate=""
+    done
+    [[ -n "$jq_candidate" ]] || skip "system jq required"
+
+    target_home="$(create_temp_dir)"
+    state_file="$BATS_TEST_TMPDIR/global-wrapper-multiline-state.json"
+    mkdir -p "$target_home/.local/bin"
+    cat > "$state_file" <<EOF
+{"target_home":"$target_home\n/tmp/poisoned-home","bin_dir":"$target_home/.local/bin\n/tmp/poisoned-bin"}
+EOF
+
+    while IFS='|' read -r label wrapper; do
+        run bash -s -- "$wrapper" "$state_file" "$target_home" <<'EOF_WRAPPER_MULTILINE_STATE'
+script="$1"
+state_file="$2"
+target_home="$3"
+
+eval "$(sed -n '/^sanitize_abs_nonroot_path()/,/^}$/p' "$script")"
+eval "$(sed -n '/^system_binary_path()/,/^}$/p' "$script")"
+eval "$(sed -n '/^read_state_string()/,/^}$/p' "$script")"
+eval "$(sed -n '/^read_target_home_from_state_file()/,/^}$/p' "$script")"
+eval "$(sed -n '/^read_bin_dir_from_state_file()/,/^}$/p' "$script")"
+
+set -euo pipefail
+[[ "$(read_target_home_from_state_file "$state_file")" == "$target_home" ]]
+[[ "$(read_bin_dir_from_state_file "$state_file")" == "$target_home/.local/bin" ]]
+EOF_WRAPPER_MULTILINE_STATE
+        assert_success "$label wrapper leaked a multiline state value"
+    done <<EOF
+acfs-update|$PROJECT_ROOT/scripts/acfs-update
+acfs-global|$PROJECT_ROOT/scripts/acfs-global
+EOF
 }
 
 @test "acfs-update wrapper only promotes system state homes with an update script" {
@@ -4857,6 +5432,76 @@ EOF
         refute_output --partial "ACFS_STATE_FILE=$stale_home/.acfs/state.json"
         refute_output --partial "ACFS_SYSTEM_STATE_FILE=$stale_home/.acfs/state.json"
     done
+}
+
+@test "global wrappers use noninteractive sudo for cross-user re-exec" {
+    local update_wrapper="$PROJECT_ROOT/scripts/acfs-update"
+    local global_wrapper="$PROJECT_ROOT/scripts/acfs-global"
+
+    run grep -F 'exec "$sudo_bin" -n -u "$user" -H "${cmd_with_env[@]}"' "$update_wrapper"
+    assert_success
+    run grep -F 'if ! "$sudo_bin" -n -u "$user" -H "$true_bin" 2>/dev/null; then' "$update_wrapper"
+    assert_success
+    run grep -F 'passwordless sudo is required to run acfs-update as' "$update_wrapper"
+    assert_success
+
+    run grep -F 'exec "$sudo_bin" -n -u "$user" -H "${cmd_with_env[@]}"' "$global_wrapper"
+    assert_success
+    run grep -F 'if ! "$sudo_bin" -n -u "$user" -H "$true_bin" 2>/dev/null; then' "$global_wrapper"
+    assert_success
+    run grep -F 'passwordless sudo is required to run acfs as' "$global_wrapper"
+    assert_success
+    run grep -F 'sudo -n -u <user> -H -- \"$0\" [args...]' "$global_wrapper"
+    assert_success
+}
+
+@test "doctor.sh: exec helper forwards resolved target context after env cleanup" {
+    local target_home
+    local child_script
+    target_home="$(create_temp_dir)"
+
+    mkdir -p "$target_home/.acfs" "$target_home/.local/bin"
+    child_script="$target_home/update-child.sh"
+    cat > "$child_script" <<'EOF'
+#!/usr/bin/env bash
+printf 'TARGET_USER=%s\n' "${TARGET_USER:-}"
+printf 'TARGET_HOME=%s\n' "${TARGET_HOME:-}"
+printf 'ACFS_HOME=%s\n' "${ACFS_HOME:-}"
+printf 'ACFS_BIN_DIR=%s\n' "${ACFS_BIN_DIR:-}"
+printf 'HOME=%s\n' "${HOME:-}"
+EOF
+    chmod +x "$child_script"
+
+    run env PROJECT_ROOT="$PROJECT_ROOT" bash -c '
+        set -euo pipefail
+        doctor_lib="$1"
+        child_script="$2"
+        target_home="$3"
+
+        eval "$(sed -n "/^_acfs_doctor_sanitize_abs_nonroot_path()/,/^}$/p" "$doctor_lib")"
+        eval "$(sed -n "/^_acfs_doctor_system_binary_path()/,/^}$/p" "$doctor_lib")"
+        eval "$(sed -n "/^_acfs_doctor_acfs_home_for_home()/,/^}$/p" "$doctor_lib")"
+        eval "$(sed -n "/^_acfs_doctor_acfs_home_matches_home()/,/^}$/p" "$doctor_lib")"
+        eval "$(sed -n "/^_acfs_doctor_exec_bash_script()/,/^}$/p" "$doctor_lib")"
+
+        export HOME="$target_home"
+        export TARGET_USER="tester"
+        export TARGET_HOME="$target_home"
+        export ACFS_HOME="$target_home/.acfs"
+        export ACFS_BIN_DIR="$target_home/.local/bin"
+        _acfs_doctor_original_home="$target_home"
+        _ACFS_DOCTOR_ENV_ACFS_HOME="$target_home/.acfs"
+        unset _ACFS_DOCTOR_ENV_TARGET_USER _ACFS_DOCTOR_ENV_TARGET_HOME _ACFS_DOCTOR_ENV_BIN_DIR
+
+        _acfs_doctor_exec_bash_script "$child_script"
+    ' _ "$PROJECT_ROOT/scripts/lib/doctor.sh" "$child_script" "$target_home"
+
+    assert_success
+    assert_output --partial "TARGET_USER=tester"
+    assert_output --partial "TARGET_HOME=$target_home"
+    assert_output --partial "ACFS_HOME=$target_home/.acfs"
+    assert_output --partial "ACFS_BIN_DIR=$target_home/.local/bin"
+    assert_output --partial "HOME=$target_home"
 }
 
 @test "ACFS home resolvers honor explicit TARGET_HOME over stale system state" {
@@ -6246,6 +6891,19 @@ EOF_DASHBOARD_TRAP
     [[ ! -e "$marker" ]] || fail "_stack_run_as_user executed target PATH as shell source"
 }
 
+@test "stack fallback CASS installer uses target-owned TMPDIR" {
+    local stack_lib="$PROJECT_ROOT/scripts/lib/stack.sh"
+
+    run grep -F '_stack_run_verified_installer_with_target_tmpdir "$tool" --easy-mode --verify' "$stack_lib"
+    assert_success
+
+    run grep -F 'tmpdir_template="$tmpdir_parent/${tool}.XXXXXX"' "$stack_lib"
+    assert_success
+
+    run grep -F '_stack_run_as_user "mktemp -d $tmpdir_template_q"' "$stack_lib"
+    assert_success
+}
+
 @test "stack helpers can trust explicitly resolved TARGET_HOME for doctor/update repairs" {
     source_lib "stack"
 
@@ -6300,7 +6958,9 @@ EOF
 
     run install_mcp_agent_mail
     assert_success
-    [[ "$(cat "$args_file")" == "mcp_agent_mail AM_INSTALL_SKIP_MCP_SETUP=1 --dest $target_home/mcp_agent_mail --yes" ]]
+    grep -Fq "mcp_agent_mail AM_INSTALL_SKIP_MCP_SETUP=1" "$args_file"
+    grep -Fq "AM_INSTALL_SKIP_REMOTE_HTTP_READINESS=1" "$args_file"
+    grep -Fq -- "--dest $target_home/mcp_agent_mail --yes" "$args_file"
     [[ -f "$target_home/.configured-agent-mail-service" ]]
     [[ -f "$target_home/.waited-agent-mail-health" ]]
 }
@@ -6814,7 +7474,7 @@ EOF
     }
     run _cli_run_as_user "printf ok"
     assert_success
-    assert_output --partial "safe-sudo:"
+    assert_output --partial "safe-sudo:-n -u acfsuser -H"
     [[ ! -e "$marker" ]] || fail "_cli_run_as_user executed function-poisoned helper: $(<"$marker")"
 
     source_lib "agents"
@@ -6830,7 +7490,7 @@ EOF
     }
     run _agent_run_as_user "printf ok"
     assert_success
-    assert_output --partial "safe-sudo:"
+    assert_output --partial "safe-sudo:-n -u acfsuser -H"
     [[ ! -e "$marker" ]] || fail "_agent_run_as_user executed function-poisoned helper: $(<"$marker")"
 
     source_lib "languages"
@@ -6846,7 +7506,7 @@ EOF
     }
     run _lang_run_as_user "printf ok"
     assert_success
-    assert_output --partial "safe-sudo:"
+    assert_output --partial "safe-sudo:-n -u acfsuser -H"
     [[ ! -e "$marker" ]] || fail "_lang_run_as_user executed function-poisoned helper: $(<"$marker")"
 
     source_lib "cloud_db"
@@ -6862,7 +7522,7 @@ EOF
     }
     run _cloud_run_as_user "printf ok"
     assert_success
-    assert_output --partial "safe-sudo:"
+    assert_output --partial "safe-sudo:-n -u acfsuser -H"
     [[ ! -e "$marker" ]] || fail "_cloud_run_as_user executed function-poisoned helper: $(<"$marker")"
 
     source_lib "stack"
@@ -6879,8 +7539,15 @@ EOF
     }
     run _stack_run_as_user "printf ok"
     assert_success
-    assert_output --partial "safe-sudo:"
+    assert_output --partial "safe-sudo:-n -u acfsuser -H"
     [[ ! -e "$marker" ]] || fail "_stack_run_as_user executed function-poisoned helper: $(<"$marker")"
+}
+
+@test "cloud postgres helper uses noninteractive sudo fallback" {
+    local cloud_db="$PROJECT_ROOT/scripts/lib/cloud_db.sh"
+
+    run grep -F '"$sudo_bin" -n -u postgres -H "$bash_bin" -c "$wrapped_cmd"' "$cloud_db"
+    assert_success
 }
 
 @test "helper bin-dir selectors ignore function-poisoned getent passwd streams" {
@@ -8074,6 +8741,74 @@ EOF
     assert_output 'http://127.0.0.1:8765/mcp/'
 }
 
+@test "configure_gemini_settings ignores PATH-poisoned jq" {
+    source_lib "agents"
+
+    local system_jq=""
+    local candidate
+    for candidate in /usr/bin/jq /bin/jq /usr/local/bin/jq /usr/local/sbin/jq /usr/sbin/jq /sbin/jq; do
+        if [[ -x "$candidate" ]]; then
+            system_jq="$candidate"
+            break
+        fi
+    done
+    [[ -n "$system_jq" ]] || skip "system jq required for Gemini settings trust test"
+
+    local target_home="$BATS_TEST_TMPDIR/gemini-trust-home"
+    local settings_dir="$target_home/.gemini"
+    local settings_file="$settings_dir/settings.json"
+    local target_am="$target_home/mcp_agent_mail/am"
+    local fake_bin="$BATS_TEST_TMPDIR/gemini-fake-jq-bin"
+    local marker="$BATS_TEST_TMPDIR/gemini-fake-jq-used"
+    mkdir -p "$settings_dir" "$(dirname "$target_am")" "$fake_bin"
+
+    cat > "$target_am" <<'EOF'
+#!/usr/bin/env bash
+printf 'am 0.2.39\n'
+EOF
+    chmod +x "$target_am"
+
+    cat > "$settings_file" <<'EOF'
+{
+  "selectedType": "gemini-api-key",
+  "tools": {
+    "shell": {
+      "enableInteractiveShell": true
+    }
+  },
+  "mcpServers": {
+    "mcp-agent-mail": {
+      "httpUrl": "http://127.0.0.1:8765/api/"
+    }
+  }
+}
+EOF
+
+    cat > "$fake_bin/jq" <<EOF
+#!/usr/bin/env bash
+: > "$marker"
+exit 1
+EOF
+    cat > "$fake_bin/mv" <<EOF
+#!/usr/bin/env bash
+: > "$marker"
+exit 1
+EOF
+    chmod +x "$fake_bin/jq" "$fake_bin/mv"
+
+    _agent_run_as_user() {
+        PATH="$fake_bin:/usr/bin:/bin" bash -c "$1"
+    }
+
+    run _configure_gemini_settings "$target_home"
+    assert_success
+    [[ ! -e "$marker" ]] || fail "configure_gemini_settings used a PATH-poisoned helper"
+
+    run "$system_jq" -r '.selectedType' "$settings_file"
+    assert_success
+    assert_output 'oauth-personal'
+}
+
 @test "install and update deploy all acfs doctor-dispatched runtime scripts" {
     local installer="$PROJECT_ROOT/install.sh"
     local update="$PROJECT_ROOT/scripts/lib/update.sh"
@@ -8738,6 +9473,10 @@ EOF
 
     run grep -F 'ACFS_BIN_DIR="$(read_bin_dir_from_state_file "$state_candidate" 2>/dev/null || true)"' "$nightly"
     assert_success
+    run grep -F 'command -v jq' "$nightly"
+    assert_failure
+    run grep -F 'jq_bin="$(system_binary_path jq 2>/dev/null || true)"' "$nightly"
+    assert_success
     run grep -F 'ACFS_BIN_DIR="$(sanitize_abs_nonroot_path "${ACFS_BIN_DIR:-}" 2>/dev/null || true)"' "$nightly"
     assert_success
     run grep -F '"$HOME/.acfs/bin/acfs-update"' "$nightly"
@@ -8853,6 +9592,9 @@ EOF
     assert_success
 
     run grep -F 'useradd -m -d "$TARGET_HOME" -s /bin/bash "$TARGET_USER"' "$installer"
+    assert_success
+
+    run grep -F "LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true" "$installer"
     assert_success
 
     run grep -F '_acfs_lock_home="$(acfs_default_home_for_new_user "${TARGET_USER:-ubuntu}" 2>/dev/null || true)"' "$installer"
@@ -9408,7 +10150,7 @@ EOF
     assert_success
 
     run grep -F '"$am_bin" migrate >>"$fallback_log_file" 2>&1' "$installer"
-    assert_success
+    assert_failure
 
     run grep -F '"$am_bin" serve-http --no-tui --host 127.0.0.1 --port 8765 --path "$am_mcp_path"' "$installer"
     assert_success
@@ -9481,14 +10223,14 @@ EOF
     assert_failure
 }
 
-@test "install.sh: Gemini trusted folders creation JSON-escapes target home" {
+@test "install.sh: retired Gemini trust files are not created" {
     local installer="$PROJECT_ROOT/install.sh"
 
     run grep -F 'jq -n --arg home "$1"' "$installer"
-    assert_success
+    assert_failure
 
     run grep -F '{"/data/projects": "TRUST_FOLDER", ($home): "TRUST_FOLDER"}' "$installer"
-    assert_success
+    assert_failure
 
     run grep -F '{"/data/projects": "TRUST_FOLDER", "$TARGET_HOME": "TRUST_FOLDER"}' "$installer"
     assert_failure
@@ -10146,12 +10888,60 @@ JSON
     # shellcheck disable=SC1090
     eval "$(sed -n '/^_agent_has_usable_secret()/,/^}$/p' "$agents_lib")"
     # shellcheck disable=SC1090
+    eval "$(sed -n '/^_agent_system_binary_path()/,/^}$/p' "$agents_lib")"
+    # shellcheck disable=SC1090
+    eval "$(sed -n '/^_agent_json_file_has_usable_jq_value()/,/^}$/p' "$agents_lib")"
+    # shellcheck disable=SC1090
     eval "$(sed -n '/^_agent_json_file_has_usable_string_key()/,/^}$/p' "$agents_lib")"
 
     run _agent_has_usable_secret "your_openai_api_key"
     assert_failure
+    if _agent_system_binary_path jq >/dev/null 2>&1; then
+        run _agent_json_file_has_usable_jq_value "$auth_file" '[.token] | .[]? | strings'
+        assert_success
+    fi
     run _agent_json_file_has_usable_string_key "$auth_file" "token"
     assert_success
+}
+
+@test "agents JSON auth parser ignores PATH-poisoned jq" {
+    local agents_lib="$PROJECT_ROOT/scripts/lib/agents.sh"
+    local auth_file="$BATS_TEST_TMPDIR/agents-auth.json"
+    local fake_bin="$BATS_TEST_TMPDIR/fake-agents-jq-bin"
+    local marker="$BATS_TEST_TMPDIR/fake-agents-jq-used"
+    local system_jq=""
+    local candidate
+
+    for candidate in /usr/bin/jq /bin/jq /usr/local/bin/jq /usr/local/sbin/jq /usr/sbin/jq /sbin/jq; do
+        if [[ -x "$candidate" ]]; then
+            system_jq="$candidate"
+            break
+        fi
+    done
+    [[ -n "$system_jq" ]] || skip "system jq required for agents auth parser trust test"
+
+    cat > "$auth_file" <<'JSON'
+{
+  "token": "your-token-here"
+}
+JSON
+    mkdir -p "$fake_bin"
+    cat > "$fake_bin/jq" <<EOF
+#!/usr/bin/env bash
+: > "$marker"
+printf '%s\n' 'real-token-from-fake-jq'
+EOF
+    chmod +x "$fake_bin/jq"
+
+    run env PATH="$fake_bin:/usr/bin:/bin" bash -s -- "$agents_lib" "$auth_file" <<'EOF_AUTH_PARSER_TRUSTED_JQ'
+set -euo pipefail
+agents_lib="$1"
+auth_file="$2"
+source "$agents_lib"
+! _agent_json_file_has_usable_jq_value "$auth_file" '[.token] | .[]? | strings'
+EOF_AUTH_PARSER_TRUSTED_JQ
+    assert_success
+    [[ ! -e "$marker" ]] || fail "agents auth parser used PATH-poisoned jq"
 }
 
 @test "doctor.sh cloud auth checks scan fallback files after placeholders" {
@@ -10346,6 +11136,236 @@ EOF_HOOK_PARSERS_TRUSTED_JQ
     assert_success
 }
 
+@test "services-setup DCG hook cleanup ignores PATH-poisoned core helpers" {
+    local services_setup="$PROJECT_ROOT/scripts/services-setup.sh"
+    local target_home
+    local settings_file
+    local fake_bin
+    local marker
+    local system_jq=""
+    local candidate
+    local helper
+
+    for candidate in /usr/bin/jq /bin/jq /usr/local/bin/jq /usr/local/sbin/jq /usr/sbin/jq /sbin/jq; do
+        if [[ -x "$candidate" ]]; then
+            system_jq="$candidate"
+            break
+        fi
+    done
+    [[ -n "$system_jq" ]] || skip "system jq required for DCG cleanup trust test"
+
+    target_home="$BATS_TEST_TMPDIR/services-setup-dcg-home"
+    settings_file="$target_home/.claude/settings.json"
+    fake_bin="$BATS_TEST_TMPDIR/services-setup-poison-bin"
+    marker="$BATS_TEST_TMPDIR/services-setup-poison-used"
+    mkdir -p "$target_home/.claude" "$target_home/.local/bin" "$fake_bin"
+
+    for helper in dirname mktemp tee mv rm; do
+        cat > "$fake_bin/$helper" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "$helper" > "$marker"
+exit 99
+EOF
+        chmod +x "$fake_bin/$helper"
+    done
+
+    cat > "$settings_file" <<'EOF'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "dcg guard --source claude"
+          },
+          {
+            "type": "command",
+            "command": "echo keep"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+
+    run env PATH="$fake_bin:/usr/bin:/bin" bash -s -- \
+        "$services_setup" "$target_home" "$settings_file" "$marker" "$system_jq" <<'EOF_DCG_CLEANUP_TRUSTED_HELPERS'
+set -euo pipefail
+
+services_setup="$1"
+target_home="$2"
+settings_file="$3"
+marker="$4"
+system_jq="$5"
+
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_sanitize_abs_nonroot_path()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_valid_target_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_validate_target_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_system_binary_path()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_getent_passwd_entry()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_validate_bin_dir_for_home()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_resolve_current_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^run_as_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^remove_dcg_hook_from_settings()/,/^}$/p' "$services_setup")"
+
+log_error() {
+    printf '%s\n' "$*" >&2
+}
+gum_warn() {
+    printf '%s\n' "$*" >&2
+}
+gum_detail() {
+    printf '%s\n' "$*" >&2
+}
+
+cat() {
+    printf '%s\n' "cat" > "$marker"
+    return 99
+}
+dirname() {
+    printf '%s\n' "dirname" > "$marker"
+    return 99
+}
+rm() {
+    printf '%s\n' "rm" > "$marker"
+    return 99
+}
+
+export TARGET_USER
+TARGET_USER="$(id -un)"
+export TARGET_HOME="$target_home"
+export HOME="$target_home"
+export ACFS_BIN_DIR="$target_home/.local/bin"
+
+remove_dcg_hook_from_settings "$settings_file"
+[[ ! -e "$marker" ]]
+"$system_jq" -e '(.hooks.PreToolUse | length == 1) and (.hooks.PreToolUse[0].hooks | length == 1) and (.hooks.PreToolUse[0].hooks[0].command == "echo keep")' "$settings_file" >/dev/null
+EOF_DCG_CLEANUP_TRUSTED_HELPERS
+    assert_success
+}
+
+@test "services-setup DCG pack config ignores PATH-poisoned core helpers" {
+    local services_setup="$PROJECT_ROOT/scripts/services-setup.sh"
+    local target_home
+    local fake_bin
+    local marker
+    local helper
+
+    target_home="$BATS_TEST_TMPDIR/services-setup-dcg-config-home"
+    fake_bin="$BATS_TEST_TMPDIR/services-setup-dcg-config-poison-bin"
+    marker="$BATS_TEST_TMPDIR/services-setup-dcg-config-poison-used"
+    mkdir -p "$target_home/.local/bin" "$fake_bin"
+
+    cat > "$target_home/.local/bin/dcg" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$target_home/.local/bin/dcg"
+
+    for helper in mkdir tee; do
+        cat > "$fake_bin/$helper" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "$helper" > "$marker"
+exit 99
+EOF
+        chmod +x "$fake_bin/$helper"
+    done
+
+    run env PATH="$fake_bin:/usr/bin:/bin" bash -s -- \
+        "$services_setup" "$target_home" "$marker" <<'EOF_DCG_CONFIG_TRUSTED_HELPERS'
+set -euo pipefail
+
+services_setup="$1"
+target_home="$2"
+marker="$3"
+
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_sanitize_abs_nonroot_path()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_valid_target_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_validate_target_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_system_binary_path()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_getent_passwd_entry()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_validate_bin_dir_for_home()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^services_setup_resolve_current_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^run_as_user()/,/^}$/p' "$services_setup")"
+# shellcheck disable=SC1090
+eval "$(sed -n '/^configure_dcg()/,/^}$/p' "$services_setup")"
+
+log_error() {
+    printf '%s\n' "$*" >&2
+}
+gum_box() {
+    :
+}
+gum_confirm() {
+    return 0
+}
+gum_detail() {
+    printf '%s\n' "$*" >&2
+}
+gum_error() {
+    printf '%s\n' "$*" >&2
+}
+gum_success() {
+    printf '%s\n' "$*" >&2
+}
+gum_warn() {
+    printf '%s\n' "$*" >&2
+}
+
+cleanup_stale_dcg_hook() {
+    :
+}
+dcg_hook_registered() {
+    return 1
+}
+find_user_bin() {
+    case "${1:-}" in
+        dcg) printf '%s\n' "$target_home/.local/bin/dcg" ;;
+        *) return 1 ;;
+    esac
+}
+select_dcg_packs() {
+    printf '%s\n' "database cloud"
+}
+user_command_exists() {
+    return 1
+}
+
+export TARGET_USER
+TARGET_USER="$(id -un)"
+export TARGET_HOME="$target_home"
+export HOME="$target_home"
+export ACFS_BIN_DIR="$target_home/.local/bin"
+export SERVICES_SETUP_NONINTERACTIVE="false"
+
+configure_dcg
+[[ ! -e "$marker" ]]
+grep -F '    "database",' "$target_home/.config/dcg/config.toml" >/dev/null
+grep -F '    "cloud",' "$target_home/.config/dcg/config.toml" >/dev/null
+EOF_DCG_CONFIG_TRUSTED_HELPERS
+    assert_success
+}
+
 @test "legacy stack RCH installer keeps daemon and fleet setup active" {
     run grep -F '_stack_run_installer "$tool" --easy-mode' "$PROJECT_ROOT/scripts/lib/stack.sh"
     assert_success
@@ -10523,6 +11543,10 @@ EOF_HOOK_PARSERS_TRUSTED_JQ
     refute_output --partial "TEST_ENV=ok;touch /tmp/acfs-pwned"
     assert_output --partial "set -o pipefail; source /tmp/acfs\\ stack\\'s\\ dir/security.sh"
     assert_output --partial "bash -s -- --flag"
+
+    run _stack_run_verified_installer_with_env "test_tool" $'FIRST_ENV=one\nSECOND_ENV=two words' "--flag"
+    assert_success
+    assert_output --partial "FIRST_ENV=one SECOND_ENV=two\\ words bash -s -- --flag"
 }
 
 @test "stack verified installer command fails when checksum verifier fails" {
@@ -10579,6 +11603,9 @@ SECURITY
 
     run grep -F 'ExecStart=${am_bin_exec} serve-http' "$stack_lib"
     assert_success
+
+    run grep -F 'ExecStartPre=${am_bin_exec} migrate' "$stack_lib"
+    assert_failure
 }
 
 @test "install.sh Agent Mail unit escapes dynamic systemd values" {
@@ -10610,21 +11637,30 @@ SECURITY
 
     run grep -F 'ExecStart=${am_bin_exec} serve-http' "$installer"
     assert_success
+
+    run grep -F 'ExecStartPre=${am_bin_exec} migrate' "$installer"
+    assert_failure
 }
 
-@test "stack Agent Mail service accepts a healthy existing runtime" {
+@test "stack Agent Mail service migrates fallback runtime to managed service" {
     local stack_lib="$PROJECT_ROOT/scripts/lib/stack.sh"
 
     run grep -F 'agent_mail_endpoint_ready() {' "$stack_lib"
     assert_success
 
     run grep -F 'if agent_mail_endpoint_ready && ! systemctl --user is-active --quiet agent-mail.service >/dev/null 2>&1; then' "$stack_lib"
-    assert_success
+    assert_failure
 
     run grep -F 'systemctl --user reset-failed agent-mail.service >/dev/null 2>&1 || true' "$stack_lib"
-    assert_success
+    assert_failure
 
     run grep -F 'healthy existing runtime detected; skipping managed service restart' "$stack_lib"
+    assert_failure
+
+    run grep -F 'stop_agent_mail_fallback' "$stack_lib"
+    assert_success
+
+    run grep -F 'systemctl --user enable --now agent-mail.service' "$stack_lib"
     assert_success
 }
 
@@ -10651,6 +11687,27 @@ SECURITY
     assert_output --partial "arg=--flag"
 }
 
+@test "update verified installer accepts multiple env assignments" {
+    declare -gA KNOWN_INSTALLERS=([test_tool]="https://example.test/install.sh")
+
+    update_require_security() { return 0; }
+    get_checksum() { printf '%s\n' "abc123"; }
+    verify_checksum() {
+        printf '%s\n' '#!/usr/bin/env bash'
+        printf '%s\n' 'exit 0'
+    }
+    update_run_in_target_context() {
+        printf 'env=%s\n' "$1"
+        printf 'cmd=%s\n' "$2"
+    }
+
+    run update_run_verified_installer_with_env "test_tool" $'FIRST_ENV=one\nSECOND_ENV=two words' "--flag"
+    assert_success
+    assert_output --partial "env=FIRST_ENV=one"
+    assert_output --partial "SECOND_ENV=two words"
+    assert_output --partial "cmd=bash"
+}
+
 @test "update verified installer rejects invalid env assignment names" {
     declare -gA KNOWN_INSTALLERS=([test_tool]="https://example.test/install.sh")
 
@@ -10660,6 +11717,240 @@ SECURITY
     run update_run_verified_installer_with_env "test_tool" "TEST-ENV=value" "--flag"
     assert_failure
     assert_output --partial "Invalid inline env assignment"
+}
+
+@test "update verified installer temp script is target-readable" {
+    local mode_file="$BATS_TEST_TMPDIR/verified-installer-mode"
+    local path_file="$BATS_TEST_TMPDIR/verified-installer-path"
+    local private_tmp="$BATS_TEST_TMPDIR/private-tmp"
+    declare -gA KNOWN_INSTALLERS=([test_tool]="https://example.test/install.sh")
+    mkdir -p "$private_tmp"
+    export TMPDIR="$private_tmp"
+
+    update_require_security() { return 0; }
+    get_checksum() { printf '%s\n' "abc123"; }
+    verify_checksum() {
+        printf '%s\n' '#!/usr/bin/env bash'
+        printf '%s\n' 'exit 0'
+    }
+    update_run_in_target_context() {
+        case "${2:-}" in
+            test)
+                [[ "${3:-}" == "-r" ]] || return 1
+                [[ "${4:-}" != "$private_tmp/"* ]]
+                return $?
+                ;;
+            bash)
+                printf '%s\n' "${3:-}" > "$path_file"
+                stat -c '%a' "${3:-}" > "$mode_file"
+                [[ -r "${3:-}" ]]
+                return $?
+                ;;
+        esac
+        return 1
+    }
+
+    run update_run_verified_installer_with_env "test_tool" "" "--flag"
+    assert_success
+
+    run cat "$path_file"
+    assert_success
+    [[ "$output" != "$private_tmp/"* ]]
+    [[ "$output" == */acfs-update-test_tool.* ]]
+    run cat "$mode_file"
+    assert_success
+    assert_output "755"
+}
+
+@test "update verified installer temp script uses explicit update temp fallback" {
+    local path_file="$BATS_TEST_TMPDIR/verified-installer-fallback-path"
+    local private_tmp="$BATS_TEST_TMPDIR/private-tmp"
+    local shared_tmp="$BATS_TEST_TMPDIR/shared-tmp"
+    declare -gA KNOWN_INSTALLERS=([test_tool]="https://example.test/install.sh")
+    mkdir -p "$private_tmp" "$shared_tmp"
+    export TMPDIR="$private_tmp"
+    export ACFS_UPDATE_TMPDIR="$shared_tmp"
+
+    update_require_security() { return 0; }
+    get_checksum() { printf '%s\n' "abc123"; }
+    verify_checksum() {
+        printf '%s\n' '#!/usr/bin/env bash'
+        printf '%s\n' 'exit 0'
+    }
+    update_run_in_target_context() {
+        case "${2:-}" in
+            test)
+                [[ "${3:-}" == "-r" ]] || return 1
+                [[ "${4:-}" == "$shared_tmp/"* ]]
+                return $?
+                ;;
+            bash)
+                printf '%s\n' "${3:-}" > "$path_file"
+                [[ "${3:-}" == "$shared_tmp/"* ]]
+                return $?
+                ;;
+        esac
+        return 1
+    }
+
+    run update_run_verified_installer_with_env "test_tool" "" "--flag"
+    assert_success
+
+    run cat "$path_file"
+    assert_success
+    [[ "$output" == "$shared_tmp/acfs-update-test_tool."* ]]
+}
+
+@test "update special MCP Agent Mail installer uses target-readable temp helper" {
+    local update="$PROJECT_ROOT/scripts/lib/update.sh"
+
+    run grep -F 'tmp_install="$(update_create_target_readable_temp_file "acfs-install-am" 2>/dev/null)"' "$update"
+    assert_success
+    run grep -F 'candidate_dirs+=("/data/tmp" "/var/tmp" "/tmp")' "$update"
+    assert_success
+    run grep -F 'mktemp "${TMPDIR:-/tmp}/acfs-install-am.XXXXXX"' "$update"
+    assert_failure
+}
+
+@test "update verified installer with target tmpdir prepares target-owned TMPDIR" {
+    TEST_TARGET_HOME="$BATS_TEST_TMPDIR/target-home"
+    TEST_PREPARED_FILE="$BATS_TEST_TMPDIR/prepared-tmpdir"
+    TEST_MKTEMP_TEMPLATE="$BATS_TEST_TMPDIR/mktemp-template"
+    TEST_INSTALLER_ARGS="$BATS_TEST_TMPDIR/installer-args"
+    mkdir -p "$TEST_TARGET_HOME"
+
+    update_target_user() { printf '%s\n' "tester"; }
+    update_target_home() { printf '%s\n' "$TEST_TARGET_HOME"; }
+    update_run_in_target_context() {
+        case "${2:-}" in
+            mkdir)
+                [[ "${1:-}" == "" ]]
+                [[ "${3:-}" == "-p" ]]
+                printf '%s\n' "${4:-}" > "$TEST_PREPARED_FILE"
+                return 0
+                ;;
+            mktemp)
+                [[ "${1:-}" == "" ]]
+                [[ "${3:-}" == "-d" ]]
+                printf '%s\n' "${4:-}" > "$TEST_MKTEMP_TEMPLATE"
+                printf '%s\n' "$TEST_TARGET_HOME/.cache/acfs/installer-tmp/cass.ABC123"
+                return 0
+                ;;
+        esac
+        return 1
+    }
+    update_run_verified_installer_with_env() {
+        printf '%s\n' "$*" > "$TEST_INSTALLER_ARGS"
+        return 0
+    }
+
+    run update_run_verified_installer_with_target_tmpdir "cass" "--easy-mode" "--verify"
+    assert_success
+
+    local prepared_tmpdir
+    prepared_tmpdir="$(cat "$TEST_PREPARED_FILE")"
+    [[ "$prepared_tmpdir" == "$TEST_TARGET_HOME/.cache/acfs/installer-tmp" ]]
+    [[ "$(cat "$TEST_MKTEMP_TEMPLATE")" == "$TEST_TARGET_HOME/.cache/acfs/installer-tmp/cass.XXXXXX" ]]
+    [[ "$(cat "$TEST_INSTALLER_ARGS")" == "cass TMPDIR=$TEST_TARGET_HOME/.cache/acfs/installer-tmp/cass.ABC123 --easy-mode --verify" ]]
+}
+
+@test "update verified installer with target tmpdir skips transient failure when existing cass is healthy" {
+    local attempts_file="$HOME/cass-update-attempts"
+
+    mkdir -p "$HOME/.local/bin"
+    cat > "$HOME/.local/bin/cass" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then
+  printf 'cass 0.4.2\n'
+else
+  printf 'cass 0.4.2\n'
+fi
+EOF
+    chmod +x "$HOME/.local/bin/cass"
+
+    QUIET=true
+    VERBOSE=false
+    DRY_RUN=false
+    ABORT_ON_FAILURE=false
+    ACFS_UPDATE_RETRY_MAX_ATTEMPTS=1
+    UPDATE_LOG_FILE="$HOME/update.log"
+    SUCCESS_COUNT=0
+    FAIL_COUNT=0
+    SKIP_COUNT=0
+
+    update_run_verified_installer_with_target_tmpdir() {
+        local attempts=0
+        if [[ -f "$attempts_file" ]]; then
+            attempts="$(cat "$attempts_file")"
+        fi
+        attempts=$((attempts + 1))
+        printf '%s\n' "$attempts" > "$attempts_file"
+        echo "Error: you have exceeded GitHub's API rate limit. Please try again later." >&2
+        return 7
+    }
+
+    update_run_verified_installer_with_target_tmpdir_or_existing_on_transient "CASS" cass cass cass --easy-mode --verify
+
+    [[ "$(cat "$attempts_file")" == "1" ]]
+    [[ "$SUCCESS_COUNT" -eq 0 ]]
+    [[ "$SKIP_COUNT" -eq 1 ]]
+    [[ "$FAIL_COUNT" -eq 0 ]]
+}
+
+@test "update verified installer with target tmpdir fails when installer exits zero but cass is missing" {
+    QUIET=true
+    VERBOSE=false
+    DRY_RUN=false
+    ABORT_ON_FAILURE=false
+    ACFS_UPDATE_RETRY_MAX_ATTEMPTS=1
+    UPDATE_LOG_FILE="$HOME/update.log"
+    SUCCESS_COUNT=0
+    FAIL_COUNT=0
+    SKIP_COUNT=0
+
+    update_run_verified_installer_with_target_tmpdir() {
+        return 0
+    }
+    update_binary_path() {
+        return 1
+    }
+    get_version() {
+        printf 'unknown\n'
+    }
+
+    run update_run_verified_installer_with_target_tmpdir_or_existing_on_transient "CASS" cass cass cass --easy-mode --verify
+
+    assert_failure
+    run grep -F "Failed: CASS - installer completed but cass verification failed" "$UPDATE_LOG_FILE"
+    assert_success
+}
+
+@test "update verified installer fails when installer exits zero but binary is missing" {
+    QUIET=true
+    VERBOSE=false
+    DRY_RUN=false
+    ABORT_ON_FAILURE=false
+    ACFS_UPDATE_RETRY_MAX_ATTEMPTS=1
+    UPDATE_LOG_FILE="$HOME/update.log"
+    SUCCESS_COUNT=0
+    FAIL_COUNT=0
+    SKIP_COUNT=0
+
+    update_run_verified_installer() {
+        return 0
+    }
+    update_binary_path() {
+        return 1
+    }
+    get_version() {
+        printf 'unknown\n'
+    }
+
+    run update_run_verified_installer_or_existing_on_transient "Meta Skill" ms ms ms --easy-mode
+
+    assert_failure
+    run grep -F "Failed: Meta Skill - installer completed but ms verification failed" "$UPDATE_LOG_FILE"
+    assert_success
 }
 
 @test "update PCR installer uses install repair path and verifies doctor state" {
@@ -10888,7 +12179,7 @@ SECURITY
     run grep -F 'acfs_smoke_install_fix_command lang.bun lang.uv lang.rust lang.go' "$installer"
     assert_success
 
-    run grep -F 'acfs_smoke_install_fix_command agents.claude agents.codex agents.gemini' "$installer"
+    run grep -F 'acfs_smoke_install_fix_command agents.claude agents.codex agents.antigravity' "$installer"
     assert_success
 
     run grep -F 'acfs_smoke_install_fix_command stack.ntm' "$installer"
@@ -11818,6 +13109,11 @@ EOF
 
     cat > "$STUB_DIR/curl" <<'EOF'
 #!/usr/bin/env bash
+case "$*" in
+  *"/health/readiness"*|*"/health"*)
+    printf '%s\n' '{"status":"ready"}'
+    ;;
+esac
 exit 0
 EOF
     cat > "$STUB_DIR/id" <<'EOF'
@@ -12667,17 +13963,94 @@ EOF
     assert_success
 }
 
+@test "install.sh: completion summary reconnects with the ACFS SSH key" {
+    run grep -F 'target_ssh_command="ssh -i ~/.ssh/acfs_ed25519 ${TARGET_USER}@YOUR_SERVER_IP"' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'echo -e "     ${GRAY}$target_ssh_command${NC}"' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'target_ssh_command="ssh ${TARGET_USER}@YOUR_SERVER_IP"' "$PROJECT_ROOT/install.sh"
+    assert_failure
+
+    run grep -F 'echo -e "     ${GRAY}ssh ${TARGET_USER}@YOUR_SERVER_IP${NC}"' "$PROJECT_ROOT/install.sh"
+    assert_failure
+}
+
+@test "install.sh: password-only root summary includes macOS key repair" {
+    run grep -F 'target_user_ssh_repair_command="cat ~/.ssh/acfs_ed25519.pub | ssh ${TARGET_USER}@YOUR_SERVER_IP' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'This uses the $TARGET_USER account and does not ask for the VPS root password.' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'Passwordless sudo for $TARGET_USER is not a login password.' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'If you only have the VPS root password or that cannot connect, use the root fallback:' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'This asks for the VPS root password once, then installs your local' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'ssh-copy-id is optional and only works if you know the $TARGET_USER Linux account password:' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'ssh-copy-id -i ~/.ssh/acfs_ed25519.pub ${TARGET_USER}@YOUR_SERVER_IP' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'cat ~/.ssh/acfs_ed25519.pub | ssh root@YOUR_SERVER_IP' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'if ! grep -qxF' "$PROJECT_ROOT/install.sh"
+    assert_success
+    [[ "$output" == *'acfs_pubkey'* ]]
+
+    run grep -F '\\\"\\\$acfs_pubkey\\\"' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F "printf -v target_ssh_dir_for_summary_q '%q' \"\$target_ssh_dir_for_summary\"" "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'test ! -L $target_ssh_dir_for_summary_q' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'tail -c 1 $target_authorized_keys_for_summary_q' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'local target_ssh_remote_command_q="$target_ssh_remote_command"' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F "printf -v target_ssh_remote_command_q \"'%s'\" \"\$target_ssh_remote_command_q\"" "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'ssh root@YOUR_SERVER_IP $target_ssh_remote_command_q' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'grep -qw 10' "$PROJECT_ROOT/install.sh"
+    assert_success
+
+    run grep -F 'test ! -L $target_home_for_summary/.ssh' "$PROJECT_ROOT/install.sh"
+    assert_failure
+
+    run grep -F '&& cat >> $target_home_for_summary/.ssh/authorized_keys' "$PROJECT_ROOT/install.sh"
+    assert_failure
+
+    run grep -F 'ssh_key_warning_section' "$PROJECT_ROOT/install.sh"
+    assert_success
+}
+
 @test "Agent Mail readiness waits tolerate slow service startup" {
-    run grep -F 'local am_max_wait=90' "$PROJECT_ROOT/install.sh"
+    run grep -F 'local am_max_wait=240' "$PROJECT_ROOT/install.sh"
     assert_success
 
     run grep -F 'active_max_wait=30' "$PROJECT_ROOT/install.sh"
     assert_success
 
-    run grep -F 'local max_wait=90' "$PROJECT_ROOT/scripts/lib/stack.sh"
+    run grep -F 'local max_wait=240' "$PROJECT_ROOT/scripts/lib/stack.sh"
     assert_success
 
-    run grep -F 'max_wait=90' "$PROJECT_ROOT/acfs.manifest.yaml"
+    run grep -F 'max_wait=240' "$PROJECT_ROOT/acfs.manifest.yaml"
     assert_success
 }
 
@@ -12704,6 +14077,58 @@ EOF
 
     run grep -F 'SSH key already present; not adding duplicate' "$PROJECT_ROOT/scripts/lib/user.sh"
     assert_success
+}
+
+@test "user.sh: SSH fallback guidance uses idempotent key commands" {
+    run grep -F 'cat ~/.ssh/acfs_ed25519.pub | ssh ${target}@YOUR_SERVER_IP' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'If that cannot connect, use the root fallback:' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_failure
+
+    run grep -F 'If you only have the VPS root password or that cannot connect,' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'passwordless sudo is not a login password.' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'The root fallback asks for the VPS root password once.' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'ssh-copy-id is optional and only works if you know the ${target}' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F "printf -v target_ssh_dir_q '%q' \"\$target_ssh_dir\"" "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'tail -c 1 $target_authorized_keys_q' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'local root_remote_command_q="$root_remote_command"' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F "printf -v root_remote_command_q \"'%s'\" \"\$root_remote_command_q\"" "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'ssh root@YOUR_SERVER_IP $root_remote_command_q' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'if ! grep -qxF' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+    [[ "$output" == *'acfs_pubkey'* ]]
+    [[ "$output" == *'$target_authorized_keys_q'* ]]
+
+    run grep -F '\\\"\\\$acfs_pubkey\\\"' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_success
+
+    run grep -F 'tail -c 1 ${target_home}/.ssh/authorized_keys' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_failure
+
+    run grep -F 'cat >> ${target_home}/.ssh/authorized_keys' "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_failure
+
+    run grep -F "echo 'your-key-here' >> ~/.ssh/authorized_keys" "$PROJECT_ROOT/scripts/lib/user.sh"
+    assert_failure
 }
 
 @test "user.sh: SSH prompt refuses symlinked key paths" {

@@ -936,7 +936,7 @@ declare -gA LESSON_SUMMARIES=(
     [1]="Navigating with pwd, ls, cd|Creating files and directories|Understanding file paths"
     [2]="SSH key-based authentication|Keeping sessions alive|Remote work best practices"
     [3]="Creating and managing sessions|Window and pane navigation|Session persistence"
-    [4]="Claude Code (cc) workflow|Codex CLI (cod) basics|Gemini CLI (gmi) overview"
+    [4]="Claude Code (cc) workflow|Codex CLI (cod) basics|Antigravity CLI (agy) overview"
     [5]="NTM dashboard navigation|Understanding system status|Quick actions and controls"
     [6]="Using the prompt palette|Common prompts and shortcuts|Customizing your workflow"
     [7]="The agentic development loop|Continuous improvement|Measuring productivity"
@@ -954,7 +954,7 @@ declare -ga AUTH_SERVICES=(
     "tailscale"
     "claude"
     "codex"
-    "gemini"
+    "antigravity"
     "github"
     "vercel"
     "supabase"
@@ -965,7 +965,7 @@ declare -gA AUTH_SERVICE_NAMES=(
     [tailscale]="Tailscale"
     [claude]="Claude Code"
     [codex]="Codex CLI"
-    [gemini]="Gemini CLI"
+    [antigravity]="Antigravity CLI"
     [github]="GitHub"
     [vercel]="Vercel"
     [supabase]="Supabase"
@@ -976,7 +976,7 @@ declare -gA AUTH_SERVICE_DESCRIPTIONS=(
     [tailscale]="Secure VPS access via private network"
     [claude]="Anthropic's AI coding agent"
     [codex]="OpenAI's AI coding agent"
-    [gemini]="Google's AI coding agent"
+    [antigravity]="Google's AI coding agent"
     [github]="Code hosting and version control"
     [vercel]="Frontend deployment platform"
     [supabase]="Database and auth backend"
@@ -987,7 +987,7 @@ declare -gA AUTH_SERVICE_COMMANDS=(
     [tailscale]="sudo tailscale up"
     [claude]="claude"
     [codex]="codex login --device-auth"
-    [gemini]="export GEMINI_API_KEY=\"your-gemini-api-key\""
+    [antigravity]="agy"
     [github]="gh auth login"
     [vercel]="vercel login"
     [supabase]="supabase login --token YOUR_SUPABASE_ACCESS_TOKEN"
@@ -1004,11 +1004,11 @@ Use device auth on a headless VPS. If your account does not offer device auth ye
 use the SSH tunnel fallback from the website wizard so the localhost callback works.
 EOF
             ;;
-        gemini)
+        antigravity)
             cat <<'EOF'
-For a headless VPS, prefer environment-based auth. Add GEMINI_API_KEY to your
-shell config or ~/.gemini/.env, then run `gemini`. If you use Vertex AI instead,
-set GOOGLE_GENAI_USE_VERTEXAI=true plus the required Google Cloud variables.
+Run `agy` and complete the Google authentication flow for Antigravity. ACFS
+launches it through the locked agy policy so the model, permissions, and DCG hook
+stay pinned after login.
 EOF
             ;;
         vercel)
@@ -1245,28 +1245,6 @@ read_configured_var_from_file() {
     return 1
 }
 
-get_configured_value() {
-    local var_name=$1
-    shift
-    local env_value="${!var_name-}"
-    if has_nonblank_value "$env_value" && ! is_placeholder_secret "$env_value"; then
-        normalize_config_value "$env_value"
-        return 0
-    fi
-
-    local file_path=""
-    local configured_value=""
-    for file_path in "$@"; do
-        configured_value="$(read_configured_var_from_file "$var_name" "$file_path" || true)"
-        if has_nonblank_value "$configured_value" && ! is_placeholder_secret "$configured_value"; then
-            printf '%s\n' "$configured_value"
-            return 0
-        fi
-    done
-
-    return 1
-}
-
 get_configured_secret() {
     local var_name=$1
     shift
@@ -1286,19 +1264,6 @@ get_configured_secret() {
         fi
     done
 
-    return 1
-}
-
-configured_truthy_value() {
-    local var_name=$1
-    shift
-    local configured_value=""
-    configured_value="$(get_configured_value "$var_name" "$@" || true)"
-    case "${configured_value,,}" in
-        1|true|yes|on)
-            return 0
-            ;;
-    esac
     return 1
 }
 
@@ -1322,7 +1287,9 @@ progress_file_is_valid() {
     compact="$(compact_progress_json || true)"
     [[ -n "$compact" ]] || return 1
     [[ "$compact" == *'"completed":['* ]] || return 1
-    [[ "$compact" =~ \"current\":[0-9]+ ]] || return 1
+    # Accept null like the jq branch does, or a valid file written while jq
+    # was installed gets flagged malformed and needlessly backed up/reset.
+    [[ "$compact" =~ \"current\":(null|[0-9]+) ]] || return 1
 
     return 0
 }
@@ -1868,71 +1835,17 @@ check_auth_status() {
 
             json_file_has_usable_string_key "$auth_file" "access_token" "accessToken" "OPENAI_API_KEY" && return 0 || return 1
             ;;
-        gemini)
-            local gemini_bin=""
-            gemini_bin="$(onboard_runtime_binary_path "gemini" 2>/dev/null || true)"
-            if [[ -z "$gemini_bin" || ! -x "$gemini_bin" ]]; then
+        antigravity)
+            local agy_bin=""
+            agy_bin="$(onboard_runtime_binary_path "agy" 2>/dev/null || true)"
+            if [[ -z "$agy_bin" || ! -x "$agy_bin" ]]; then
                 return 2
             fi
-            local gemini_home="${GEMINI_CLI_HOME:-$runtime_home}"
-            local gemini_config_files=(
-                "$gemini_home/.gemini/.env"
-                "${shell_config_files[@]}"
-            )
-            if get_configured_secret "GEMINI_API_KEY" "${gemini_config_files[@]}" >/dev/null; then
+            local antigravity_home="${ANTIGRAVITY_HOME:-$runtime_home/.gemini/antigravity-cli}"
+            local token_file="$antigravity_home/antigravity-oauth-token"
+            [[ -s "$token_file" ]] || return 1
+            if has_usable_secret "$(cat "$token_file" 2>/dev/null || true)"; then
                 return 0
-            fi
-            if configured_truthy_value "GOOGLE_GENAI_USE_VERTEXAI" "${gemini_config_files[@]}"; then
-                if get_configured_secret "GOOGLE_API_KEY" "${gemini_config_files[@]}" >/dev/null; then
-                    return 0
-                fi
-
-                local vertex_project=""
-                local vertex_location=""
-                local service_account_path=""
-                local gcloud_bin=""
-                vertex_project="$(get_configured_value "GOOGLE_CLOUD_PROJECT" "${gemini_config_files[@]}" || get_configured_value "GOOGLE_CLOUD_PROJECT_ID" "${gemini_config_files[@]}" || true)"
-                vertex_location="$(get_configured_value "GOOGLE_CLOUD_LOCATION" "${gemini_config_files[@]}" || true)"
-                service_account_path="$(get_configured_value "GOOGLE_APPLICATION_CREDENTIALS" "${gemini_config_files[@]}" || true)"
-                gcloud_bin="$(onboard_runtime_binary_path "gcloud" 2>/dev/null || true)"
-
-                if has_nonblank_value "$vertex_project" && has_nonblank_value "$vertex_location"; then
-                    if has_nonblank_value "$service_account_path" && [[ -f "$service_account_path" ]]; then
-                        return 0
-                    fi
-                    if [[ -n "$gcloud_bin" ]] && timeout 5 "$gcloud_bin" auth application-default print-access-token >/dev/null 2>&1; then
-                        return 0
-                    fi
-                fi
-            fi
-
-            # Gemini CLI also stores browser-login state under ~/.gemini/.
-            local google_accounts_file="$gemini_home/.gemini/google_accounts.json"
-            local oauth_creds_file="$gemini_home/.gemini/oauth_creds.json"
-
-            if command -v jq &>/dev/null; then
-                local gemini_active=""
-                local gemini_access_token=""
-                local gemini_refresh_token=""
-
-                if [[ -f "$google_accounts_file" ]]; then
-                    gemini_active="$(jq -r '.active // empty' "$google_accounts_file" 2>/dev/null || true)"
-                fi
-                if [[ -f "$oauth_creds_file" ]]; then
-                    gemini_access_token="$(jq -r '.access_token // empty' "$oauth_creds_file" 2>/dev/null || true)"
-                    gemini_refresh_token="$(jq -r '.refresh_token // empty' "$oauth_creds_file" 2>/dev/null || true)"
-                fi
-
-                if has_usable_secret "$gemini_active" || has_usable_secret "$gemini_access_token" || has_usable_secret "$gemini_refresh_token"; then
-                    return 0
-                fi
-            else
-                if json_file_has_usable_string_key "$google_accounts_file" "active"; then
-                    return 0
-                fi
-                if json_file_has_usable_string_key "$oauth_creds_file" "access_token" "refresh_token"; then
-                    return 0
-                fi
             fi
             return 1
             ;;
@@ -2312,11 +2225,16 @@ print_header() {
             time_text="All lessons complete!"
         fi
 
+        # Clamp padding at zero: a time_text longer than the box (e.g. the
+        # "No lessons found in <path>" message) would otherwise produce a
+        # negative printf width, which left-justifies and blows out the border.
+        local time_pad=$((27 - ${#time_text}))
+        (( time_pad < 0 )) && time_pad=0
         echo ""
         echo -e "${BOLD}${MAGENTA}╭─────────────────────────────────────────────────────╮${NC}"
         echo -e "${BOLD}${MAGENTA}│${NC}  ${BOLD}📚 ACFS Onboarding${NC}                                   ${BOLD}${MAGENTA}│${NC}"
         echo -e "${BOLD}${MAGENTA}│${NC}  ${CYAN}${bar}${NC} ${GREEN}${completed}/${total}${NC} (${percent}%)            ${BOLD}${MAGENTA}│${NC}"
-        echo -e "${BOLD}${MAGENTA}│${NC}  ${DIM}${time_text}${NC}$(printf '%*s' $((27 - ${#time_text})) '')${BOLD}${MAGENTA}│${NC}"
+        echo -e "${BOLD}${MAGENTA}│${NC}  ${DIM}${time_text}${NC}$(printf '%*s' "$time_pad" '')${BOLD}${MAGENTA}│${NC}"
         echo -e "${BOLD}${MAGENTA}╰─────────────────────────────────────────────────────╯${NC}"
         echo ""
     fi
@@ -2587,7 +2505,7 @@ show_completion_certificate() {
             "$(gum style --foreground "$ACFS_SUCCESS" --bold '🏆 ACFS Onboarding Complete! 🏆')" \
             "" \
             "$(gum style --foreground "$ACFS_PINK" "You have successfully completed all $NUM_LESSONS lessons")" \
-            "$(gum style --foreground "$ACFS_PINK" "of the Agentic Coding Flywheel Setup tutorial.")" \
+            "$(gum style --foreground "$ACFS_PINK" "of the Agents Environment Setup tutorial.")" \
             "" \
             "$(gum style --foreground "$ACFS_TEAL" "Curriculum Highlights:")" \
             "$(gum style --foreground "$ACFS_MUTED" "  • Linux, SSH, tmux, and shell workflow")" \
@@ -2610,7 +2528,7 @@ show_completion_certificate() {
         echo -e "${GREEN}${BOLD}         🏆 ACFS Onboarding Complete! 🏆${NC}"
         echo ""
         echo -e "  You have successfully completed all $NUM_LESSONS lessons"
-        echo -e "  of the Agentic Coding Flywheel Setup tutorial."
+        echo -e "  of the Agents Environment Setup tutorial."
         echo ""
         echo -e "${CYAN}${BOLD}  Curriculum Highlights:${NC}"
         echo -e "    • Linux, SSH, tmux, and shell workflow"

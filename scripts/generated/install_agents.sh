@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 # ============================================================
 # AUTO-GENERATED FROM acfs.manifest.yaml - DO NOT EDIT
 # Regenerate: bun run generate (from packages/manifest)
@@ -254,7 +254,68 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
 
     export TARGET_USER TARGET_HOME MODE ACFS_BIN_DIR
     export ACFS_BOOTSTRAP_DIR ACFS_LIB_DIR ACFS_GENERATED_DIR ACFS_ASSETS_DIR ACFS_CHECKSUMS_YAML ACFS_MANIFEST_YAML
+
+    # Defensive ownership repair (#306): when running as root, make sure the
+    # target user owns their XDG bin dir before the user-space language
+    # installers (uv/rust/bun) write into it. uv installs via an atomic
+    # mktemp+rename inside ~/.local/bin, so a root-owned ~/.local/bin makes its
+    # mktemp fail with "Permission denied (os error 13)" once the installer is
+    # re-exec'd as the (non-root) target user. The ownership repair is
+    # deliberately non-recursive: only the two directories themselves are
+    # touched, never their contents.
+    if [[ $EUID -eq 0 ]] && [[ -n "${TARGET_USER:-}" ]] && [[ "${TARGET_USER}" != "root" ]]; then
+        # SECURITY: never chown through a symlink. If an untrusted target user
+        # pre-staged ~/.local or ~/.local/bin as a symlink (e.g. -> /etc) before
+        # the root install, a chown that follows it would transfer ownership of
+        # the link target to them (local privilege escalation). chown -h /
+        # nofollow is not portable, so refuse the repair entirely when either
+        # path already exists as a symlink.
+        if [[ -L "$TARGET_HOME/.local" ]] || [[ -L "$TARGET_HOME/.local/bin" ]]; then
+            log_warn "Skipping ~/.local ownership repair: $TARGET_HOME/.local or .local/bin is a symlink (refusing to chown through it)"
+        else
+            _acfs_repair_mkdir="$(_acfs_system_binary_path mkdir 2>/dev/null || true)"
+            _acfs_repair_chown="$(_acfs_system_binary_path chown 2>/dev/null || true)"
+            if [[ -n "$_acfs_repair_mkdir" ]] && [[ -n "$_acfs_repair_chown" ]]; then
+                if "$_acfs_repair_mkdir" -p "$TARGET_HOME/.local/bin" 2>/dev/null; then
+                    "$_acfs_repair_chown" "${TARGET_USER}" "$TARGET_HOME/.local" "$TARGET_HOME/.local/bin" 2>/dev/null || true
+                fi
+            fi
+            unset _acfs_repair_mkdir _acfs_repair_chown
+        fi
+    fi
 fi
+
+acfs_generated_ensure_selection() {
+    if [[ "${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        local manifest_index="${ACFS_GENERATED_DIR:-$ACFS_GENERATED_SCRIPT_DIR}/manifest_index.sh"
+        if [[ ! -f "$manifest_index" ]]; then
+            log_error "Manifest index not found: $manifest_index"
+            return 1
+        fi
+        source "$manifest_index"
+        ACFS_MANIFEST_INDEX_LOADED=true
+        export ACFS_MANIFEST_INDEX_LOADED
+    fi
+
+    if [[ "${ACFS_GENERATED_SELECTION_READY:-false}" != "true" ]]; then
+        if ! declare -f acfs_resolve_selection >/dev/null 2>&1; then
+            log_error "Install selection helper not loaded"
+            return 1
+        fi
+        acfs_resolve_selection || return 1
+        ACFS_GENERATED_SELECTION_READY=true
+        export ACFS_GENERATED_SELECTION_READY
+    fi
+
+    return 0
+}
+
+acfs_generated_should_run_module() {
+    local module_id="${1:-}"
+    [[ -n "$module_id" ]] || return 1
+    acfs_generated_ensure_selection || return 1
+    should_run_module "$module_id"
+}
 
 # Source contract validation
 if [[ -f "$ACFS_GENERATED_SCRIPT_DIR/../lib/contract.sh" ]]; then
@@ -289,12 +350,17 @@ acfs_security_init() {
 }
 
 # Category: agents
-# Modules: 5
+# Modules: 6
 
 # Claude Code
 install_agents_claude() {
     local module_id="agents.claude"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping agents.claude (not selected)"
+        return 0
+    fi
     log_step "Installing agents.claude"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -560,6 +626,11 @@ INSTALL_AGENTS_CLAUDE
 install_agents_codex() {
     local module_id="agents.codex"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping agents.codex (not selected)"
+        return 0
+    fi
     log_step "Installing agents.codex"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -772,10 +843,15 @@ INSTALL_AGENTS_CODEX
     log_success "agents.codex installed"
 }
 
-# Google Gemini CLI
+# Legacy Google Gemini CLI (retired; not installed by default)
 install_agents_gemini() {
     local module_id="agents.gemini"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping agents.gemini (not selected)"
+        return 0
+    fi
     log_step "Installing agents.gemini"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -785,8 +861,13 @@ install_agents_gemini() {
 ~/.bun/bin/bun install -g --trust @google/gemini-cli@latest
 INSTALL_AGENTS_GEMINI
         then
-            log_error "agents.gemini: install command failed: ~/.bun/bin/bun install -g --trust @google/gemini-cli@latest"
-            return 1
+            log_warn "agents.gemini: install command failed: ~/.bun/bin/bun install -g --trust @google/gemini-cli@latest"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "agents.gemini" "install command failed: ~/.bun/bin/bun install -g --trust @google/gemini-cli@latest"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "agents.gemini"
+            fi
+            return 0
         fi
     fi
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -963,8 +1044,13 @@ chmod 0755 "$wrapper_tmp"
 acfs_install_executable_into_primary_bin "$wrapper_tmp" "gemini"
 INSTALL_AGENTS_GEMINI
         then
-            log_error "agents.gemini: install command failed: trap 'rm -f \"\$wrapper_tmp\"' EXIT"
-            return 1
+            log_warn "agents.gemini: install command failed: trap 'rm -f \"\$wrapper_tmp\"' EXIT"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "agents.gemini" "install command failed: trap 'rm -f \"\$wrapper_tmp\"' EXIT"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "agents.gemini"
+            fi
+            return 0
         fi
     fi
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1039,8 +1125,13 @@ if ! verify_checksum "$patch_url" "$patch_sha256" "gemini_patch" | bash; then
 fi
 INSTALL_AGENTS_GEMINI
         then
-            log_error "agents.gemini: install command failed: if [[ ! -f \"\$security_lib\" ]]; then"
-            return 1
+            log_warn "agents.gemini: install command failed: if [[ ! -f \"\$security_lib\" ]]; then"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "agents.gemini" "install command failed: if [[ ! -f \"\$security_lib\" ]]; then"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "agents.gemini"
+            fi
+            return 0
         fi
     fi
 
@@ -1053,8 +1144,13 @@ target_bin="${ACFS_BIN_DIR:-$HOME/.local/bin}"
 "$target_bin/gemini" --version || "$target_bin/gemini" --help
 INSTALL_AGENTS_GEMINI
         then
-            log_error "agents.gemini: verify failed: \"\$target_bin/gemini\" --version || \"\$target_bin/gemini\" --help"
-            return 1
+            log_warn "agents.gemini: verify failed: \"\$target_bin/gemini\" --version || \"\$target_bin/gemini\" --help"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "agents.gemini" "verify failed: \"\$target_bin/gemini\" --version || \"\$target_bin/gemini\" --help"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "agents.gemini"
+            fi
+            return 0
         fi
     fi
 
@@ -1065,6 +1161,11 @@ INSTALL_AGENTS_GEMINI
 install_agents_opencode() {
     local module_id="agents.opencode"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping agents.opencode (not selected)"
+        return 0
+    fi
     log_step "Installing agents.opencode"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1154,6 +1255,11 @@ INSTALL_AGENTS_OPENCODE
 install_agents_oh_my_openagent() {
     local module_id="agents.oh_my_openagent"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping agents.oh_my_openagent (not selected)"
+        return 0
+    fi
     log_step "Installing agents.oh_my_openagent"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1205,6 +1311,168 @@ INSTALL_AGENTS_OH_MY_OPENAGENT
     log_success "agents.oh_my_openagent installed"
 }
 
+# Antigravity CLI (agy) — Google, successor to the retired Gemini CLI
+install_agents_antigravity() {
+    local module_id="agents.antigravity"
+    acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping agents.antigravity (not selected)"
+        return 0
+    fi
+    log_step "Installing agents.antigravity"
+
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: verified installer: agents.antigravity"
+    else
+        if ! {
+            # Try security-verified install (no unverified fallback; fail closed)
+            local install_success=false
+
+            if acfs_security_init; then
+                local known_installers_decl=""
+                # Check if KNOWN_INSTALLERS is available as an associative array (declare -A)
+                known_installers_decl="$(declare -p KNOWN_INSTALLERS 2>/dev/null || true)"
+                if [[ "$known_installers_decl" == declare\ -A* ]]; then
+                    local tool="antigravity"
+                    local url=""
+                    local expected_sha256=""
+
+                    # Safe access with explicit empty default
+                    url="${KNOWN_INSTALLERS[$tool]:-}"
+                    if ! expected_sha256="$(get_checksum "$tool")"; then
+                        log_error "agents.antigravity: get_checksum failed for tool '$tool'"
+                        expected_sha256=""
+                    fi
+
+                    if [[ -n "$url" ]] && [[ -n "$expected_sha256" ]]; then
+                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'bash' '-s'; then
+                            install_success=true
+                        else
+                            log_error "agents.antigravity: verify_checksum or installer execution failed"
+                        fi
+                    else
+                        if [[ -z "$url" ]]; then
+                            log_error "agents.antigravity: KNOWN_INSTALLERS[$tool] not found"
+                        fi
+                        if [[ -z "$expected_sha256" ]]; then
+                            log_error "agents.antigravity: checksum for '$tool' not found"
+                        fi
+                    fi
+                else
+                    log_error "agents.antigravity: KNOWN_INSTALLERS array not available"
+                fi
+            else
+                log_error "agents.antigravity: acfs_security_init failed - check security.sh and checksums.yaml"
+            fi
+
+            # Verified install is required - no fallback
+            if [[ "$install_success" = "true" ]]; then
+                true
+            else
+                log_error "Verified install failed for agents.antigravity"
+                false
+            fi
+        }; then
+            log_error "agents.antigravity: verified installer failed"
+            return 1
+        fi
+    fi
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: install agy-locked launchers and prime settings (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_AGENTS_ANTIGRAVITY'
+# acfs-summary: install agy-locked launchers and prime settings
+target_bin="${ACFS_BIN_DIR:-$HOME/.local/bin}"
+source_file=""
+for candidate in \
+  "${ACFS_LIB_DIR:-$HOME/.acfs/scripts/lib}/agy_locked.py" \
+  "$HOME/.acfs/scripts/lib/agy_locked.py"; do
+  if [[ -f "$candidate" ]]; then
+    source_file="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$source_file" ]]; then
+  echo "agents.antigravity: agy locked launcher asset not found" >&2
+  exit 1
+fi
+
+mkdir -p "$target_bin"
+install -m 0755 "$source_file" "$target_bin/agy-locked"
+install -m 0755 "$source_file" "$target_bin/gmi"
+
+if "$target_bin/agy-locked" --acfs-prime-settings; then
+  echo "agents.antigravity: agy locked settings and dcg hook primed" >&2
+else
+  echo "agents.antigravity: warning: settings will be primed on first agy launch" >&2
+fi
+INSTALL_AGENTS_ANTIGRAVITY
+        then
+            log_error "agents.antigravity: install command failed: install agy-locked launchers and prime settings"
+            return 1
+        fi
+    fi
+
+    # Verify
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: verify: verify agy-locked launchers and pinned settings (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_AGENTS_ANTIGRAVITY'
+# acfs-summary: verify agy-locked launchers and pinned settings
+target_bin="${ACFS_BIN_DIR:-$HOME/.local/bin}"
+test -x "$target_bin/agy"
+test -x "$target_bin/agy-locked"
+test -x "$target_bin/gmi"
+python3 - <<'PY'
+import json
+import pathlib
+import sys
+
+settings_path = pathlib.Path.home() / ".gemini" / "antigravity-cli" / "settings.json"
+hook_path = pathlib.Path.home() / ".gemini" / "config" / "hooks" / "dcg-antigravity-hook.py"
+try:
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+except Exception as exc:
+    print(f"invalid or missing Antigravity settings: {settings_path}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+expected = {
+    "model": "Gemini 3.1 Pro (High)",
+    "toolPermission": "always-proceed",
+    "artifactReviewPolicy": "always-proceed",
+    "enableTelemetry": False,
+    "enableTerminalSandbox": False,
+    "allowNonWorkspaceAccess": True,
+    "notifications": False,
+    "showTips": False,
+    "showFeedbackSurvey": False,
+    "useG1Credits": False,
+    "verbosity": "high",
+    "runningLightSpeed": "medium",
+    "colorScheme": "terminal",
+    "editor": "auto",
+    "altScreenMode": "never",
+}
+for key, value in expected.items():
+    if settings.get(key) != value:
+        print(f"Antigravity setting {key} is {settings.get(key)!r}, expected {value!r}", file=sys.stderr)
+        raise SystemExit(1)
+if not hook_path.is_file():
+    print(f"Antigravity dcg hook is missing: {hook_path}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+INSTALL_AGENTS_ANTIGRAVITY
+        then
+            log_error "agents.antigravity: verify failed: verify agy-locked launchers and pinned settings"
+            return 1
+        fi
+    fi
+
+    log_success "agents.antigravity installed"
+}
+
 # Install all agents modules
 install_agents() {
     log_section "Installing agents modules"
@@ -1213,6 +1481,7 @@ install_agents() {
     install_agents_gemini
     install_agents_opencode
     install_agents_oh_my_openagent
+    install_agents_antigravity
 }
 
 # Run if executed directly

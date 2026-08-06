@@ -1154,7 +1154,7 @@ status_main() {
     local -a _warnings=()
     local -a _errors=()
     local -a _CORE_TOOLS=(zsh git tmux bun cargo go rg claude)
-    local -a _OPTIONAL_TOOLS=(codex gemini gh uv fzf zoxide atuin bat lsd ntm bv br cass cm slb ubs dcg)
+    local -a _OPTIONAL_TOOLS=(codex agy gh uv fzf zoxide atuin bat lsd ntm bv br cass cm slb ubs dcg)
     local _tool_count=0
     local _last_update_ts=""
     local _last_update_human=""
@@ -1240,7 +1240,7 @@ status_main() {
         if [[ -n "$_ACFS_HOME" ]] && [[ -f "$_ACFS_HOME/VERSION" ]]; then
             _local_version=$(cat "$_ACFS_HOME/VERSION" 2>/dev/null) || _local_version=""
             _remote_version=$(_status_system_curl -fsSL --connect-timeout 2 --max-time 5 \
-                "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/VERSION" \
+                "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/VERSION" \
                 2>/dev/null) || _remote_version=""
             if [[ -n "$_remote_version" ]] && [[ -n "$_local_version" ]] \
                && [[ "$_remote_version" != "$_local_version" ]]; then

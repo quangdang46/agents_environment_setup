@@ -69,19 +69,25 @@ write_pack() {
     local expires_at="$2"
     local arch="$3"
     local include_artifact="${4:-yes}"
+    local artifact_rel="${5:-artifacts/fixture.module/${TOOL}-install.sh}"
     local output_dir="$TEST_ROOT/$name"
     local pack_root="$output_dir/acfs-offline-pack"
-    local artifact_rel="artifacts/fixture.module/${TOOL}-install.sh"
     local artifact_path="$pack_root/$artifact_rel"
     local artifact_size=""
     local artifacts_json="[]"
 
-    mkdir -p "$pack_root/artifacts/fixture.module"
+    mkdir -p "$pack_root/artifacts"
     write_checksums "$pack_root/checksums.yaml" "$ARTIFACT_SHA"
 
     if [[ "$include_artifact" == "yes" ]]; then
+        mkdir -p "${artifact_path%/*}"
         printf '%s' "$CONTENT" > "$artifact_path"
         artifact_size="$(acfs_security_file_size "$artifact_path")"
+    elif [[ "$include_artifact" == "manifest-only" ]]; then
+        artifact_size="$(printf '%s' "$CONTENT" | wc -c | tr -d '[:space:]')"
+    fi
+
+    if [[ "$include_artifact" == "yes" || "$include_artifact" == "manifest-only" ]]; then
         artifacts_json="$(
             jq -n \
                 --arg id "fixture.module:$TOOL" \
@@ -232,6 +238,19 @@ test_missing_artifact_is_refused() {
     expect_refusal_code "missing_artifact_is_refused" "$pack_root" "pack_unbundled_required_module"
 }
 
+test_symlink_parent_escape_is_refused() {
+    local pack_root=""
+    local outside_dir="$TEST_ROOT/outside-artifacts"
+    local artifact_rel="artifacts/escape-parent/${TOOL}-install.sh"
+
+    pack_root="$(write_pack "symlink-parent-escape" "$FUTURE_EXPIRES" "$CURRENT_ARCH" manifest-only "$artifact_rel")"
+    mkdir -p "$outside_dir"
+    printf '%s' "$CONTENT" > "$outside_dir/${TOOL}-install.sh"
+    ln -s "$outside_dir" "$pack_root/artifacts/escape-parent"
+
+    expect_refusal_code "symlink_parent_escape_is_refused" "$pack_root" "pack_path_escape"
+}
+
 test_unsupported_arch_is_refused() {
     local pack_root=""
 
@@ -301,6 +320,7 @@ run_all_tests() {
     test_stale_pack_is_refused
     test_tampered_artifact_is_refused
     test_missing_artifact_is_refused
+    test_symlink_parent_escape_is_refused
     test_unsupported_arch_is_refused
     test_missing_pack_fails_closed
     test_live_path_still_works_without_pack

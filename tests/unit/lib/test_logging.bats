@@ -111,3 +111,48 @@ teardown() {
     assert_success
     assert_output ""
 }
+
+@test "logging: log_sensitive ignores caller-owned fd 3" {
+    command -v setsid >/dev/null || skip "setsid is required to detach /dev/tty"
+
+    local probe="$BATS_TEST_TMPDIR/fd3-sensitive-probe.txt"
+    local script="$PROJECT_ROOT/scripts/lib/logging.sh"
+
+    run setsid bash -c '
+        source "$1"
+        exec 3>"$2"
+        ACFS_LOG_STDERR_CAPTURED=false
+        ACFS_LOG_ORIGINAL_STDERR_FD=""
+        log_sensitive "Generated password for testuser: secret-value"
+    ' _ "$script" "$probe"
+
+    assert_success
+    assert_output --partial "Generated password for testuser: secret-value"
+    run cat "$probe"
+    assert_success
+    assert_output ""
+}
+
+@test "logging: log_sensitive uses saved stderr fd when capture is active" {
+    local sensitive_out="$BATS_TEST_TMPDIR/sensitive-terminal.txt"
+    local captured_err="$BATS_TEST_TMPDIR/captured-stderr.txt"
+    local script="$PROJECT_ROOT/scripts/lib/logging.sh"
+
+    run bash -c '
+        source "$1"
+        exec {saved_fd}>"$2"
+        ACFS_LOG_STDERR_CAPTURED=true
+        ACFS_LOG_ORIGINAL_STDERR_FD="$saved_fd"
+        log_sensitive "Generated password for testuser: secret-value" 2>"$3"
+        exec {saved_fd}>&-
+    ' _ "$script" "$sensitive_out" "$captured_err"
+
+    assert_success
+    assert_output ""
+    run cat "$sensitive_out"
+    assert_success
+    assert_output --partial "Generated password for testuser: secret-value"
+    run cat "$captured_err"
+    assert_success
+    assert_output ""
+}

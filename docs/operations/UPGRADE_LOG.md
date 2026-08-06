@@ -1,6 +1,6 @@
 # Dependency Upgrade Log
 
-**Date:** 2026-01-24  |  **Project:** agentic_coding_flywheel_setup  |  **Package Manager:** Bun (monorepo)
+**Date:** 2026-01-24  |  **Project:** agents_environment_setup  |  **Package Manager:** Bun (monorepo)
 
 ## Summary
 - **Updated:** 6

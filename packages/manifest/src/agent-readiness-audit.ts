@@ -4,7 +4,7 @@
  */
 
 import { accessSync, constants, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -66,7 +66,7 @@ export interface ComponentResult {
 }
 
 export interface CaamProviderState {
-  provider: 'claude' | 'codex' | 'gemini';
+  provider: 'claude' | 'codex' | 'agy';
   defaultProfile?: string;
   profileCount: number;
   vaultProfileCount: number;
@@ -76,7 +76,7 @@ export interface CaamProviderState {
 }
 
 export interface AgentToolReport {
-  id: 'claude' | 'codex' | 'gemini' | 'caam';
+  id: 'claude' | 'codex' | 'agy' | 'caam';
   displayName: string;
   status: ReadinessStatus;
   docsUrl: string;
@@ -120,10 +120,11 @@ interface AuthFileCandidate {
   label: string;
   path: string;
   json: boolean;
+  validateJson?: (value: unknown) => string | null;
 }
 
 interface ProviderDefinition {
-  id: 'claude' | 'codex' | 'gemini';
+  id: 'claude' | 'codex' | 'agy';
   displayName: string;
   command: string;
   aliases: string[];
@@ -169,13 +170,28 @@ const STATUS_RANK: Record<ReadinessStatus, number> = {
   unknown: 2,
   fail: 3,
 };
-const AGENT_PROVIDERS = ['claude', 'codex', 'gemini'] as const;
+const AGENT_PROVIDERS = ['claude', 'codex', 'agy'] as const;
+
+function directoryEntryKind(entry: { isDirectory(): boolean; isFile(): boolean }): DirectoryEntryResult['kind'] {
+  if (entry.isDirectory()) {
+    return 'directory';
+  }
+  if (entry.isFile()) {
+    return 'file';
+  }
+  return 'other';
+}
 
 class NodeReadinessFileSystem implements AgentReadinessFileSystem {
   stat(path: string): PathStatResult {
     try {
       const stat = statSync(path);
-      const kind = stat.isFile() ? 'file' : stat.isDirectory() ? 'directory' : 'other';
+      let kind: PathStatResult['kind'] = 'other';
+      if (stat.isFile()) {
+        kind = 'file';
+      } else if (stat.isDirectory()) {
+        kind = 'directory';
+      }
       let executable = false;
       if (kind === 'file') {
         try {
@@ -207,7 +223,7 @@ class NodeReadinessFileSystem implements AgentReadinessFileSystem {
     try {
       const entries = readdirSync(path, { withFileTypes: true }).map((entry) => ({
         name: entry.name,
-        kind: entry.isDirectory() ? 'directory' as const : entry.isFile() ? 'file' as const : 'other' as const,
+        kind: directoryEntryKind(entry),
       }));
       return { kind: 'ok', entries };
     } catch (error) {
@@ -297,6 +313,42 @@ function credentialEnvPresent(env: Record<string, string | undefined>, names: st
   return names.filter((name) => Boolean(env[name]?.trim()));
 }
 
+const ANTIGRAVITY_EXPECTED_SETTINGS: Record<string, string | boolean> = {
+  model: 'Gemini 3.1 Pro (High)',
+  toolPermission: 'always-proceed',
+  artifactReviewPolicy: 'always-proceed',
+  enableTelemetry: false,
+  enableTerminalSandbox: false,
+  allowNonWorkspaceAccess: true,
+  notifications: false,
+  showTips: false,
+  showFeedbackSurvey: false,
+  useG1Credits: false,
+  verbosity: 'high',
+  runningLightSpeed: 'medium',
+  colorScheme: 'terminal',
+  editor: 'auto',
+  altScreenMode: 'never',
+};
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function validateAntigravitySettings(value: unknown): string | null {
+  if (!isJsonObject(value)) {
+    return 'settings root must be a JSON object';
+  }
+
+  for (const [key, expected] of Object.entries(ANTIGRAVITY_EXPECTED_SETTINGS)) {
+    if (value[key] !== expected) {
+      return `missing ACFS-pinned ${key}=${JSON.stringify(expected)}`;
+    }
+  }
+
+  return null;
+}
+
 function providerDefinitions(): ProviderDefinition[] {
   return [
     {
@@ -351,28 +403,37 @@ function providerDefinitions(): ProviderDefinition[] {
       ],
     },
     {
-      id: 'gemini',
-      displayName: 'Gemini CLI',
-      command: 'gemini',
-      aliases: ['gmi'],
-      docsUrl: 'https://google-gemini.github.io/gemini-cli/docs/get-started/authentication.html',
+      id: 'agy',
+      displayName: 'Antigravity CLI',
+      command: 'agy',
+      aliases: ['agy-locked', 'gmi'],
+      docsUrl: 'https://github.com/google-antigravity/antigravity-cli',
       authFiles: (context) => {
-        const geminiHome = context.env.GEMINI_HOME ? resolve(context.env.GEMINI_HOME) : join(context.home, '.gemini');
+        const antigravityHome = context.env.ANTIGRAVITY_HOME
+          ? resolve(context.env.ANTIGRAVITY_HOME)
+          : join(context.home, '.gemini', 'antigravity-cli');
         return [
-          { label: 'Gemini settings and OAuth state', path: join(geminiHome, 'settings.json'), json: true },
-          { label: 'Gemini OAuth credentials cache', path: join(geminiHome, 'oauth_creds.json'), json: true },
+          { label: 'Antigravity OAuth token', path: join(antigravityHome, 'antigravity-oauth-token'), json: false },
         ];
       },
       configFiles: (context) => {
-        const geminiHome = context.env.GEMINI_HOME ? resolve(context.env.GEMINI_HOME) : join(context.home, '.gemini');
+        const antigravityHome = context.env.ANTIGRAVITY_HOME
+          ? resolve(context.env.ANTIGRAVITY_HOME)
+          : join(context.home, '.gemini', 'antigravity-cli');
         return [
-          { label: 'Gemini settings', path: join(geminiHome, 'settings.json'), json: true },
+          {
+            label: 'Antigravity settings',
+            path: join(antigravityHome, 'settings.json'),
+            json: true,
+            validateJson: validateAntigravitySettings,
+          },
         ];
       },
-      envCredentials: ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS'],
+      envCredentials: [],
       nextActions: [
-        'Run `gemini` and choose an authentication method, or use `/auth` inside Gemini CLI to change methods.',
-        'Use the Google account tied to a Google AI Pro or Ultra subscription when using Login with Google.',
+        'Run `agy-locked --acfs-prime-settings` to restore ACFS-pinned settings and the DCG hook.',
+        'Run `agy` and complete Google authentication.',
+        'Use the Google account tied to eligible Gemini access for Antigravity.',
       ],
     },
   ];
@@ -495,8 +556,9 @@ function parseJsonProbe(candidate: AuthFileCandidate, fs: AgentReadinessFileSyst
     };
   }
   if (candidate.json) {
+    let parsed: unknown;
     try {
-      JSON.parse(read.content ?? '');
+      parsed = JSON.parse(read.content ?? '');
     } catch (error) {
       return {
         status: 'fail',
@@ -505,6 +567,22 @@ function parseJsonProbe(candidate: AuthFileCandidate, fs: AgentReadinessFileSyst
         exists: true,
       };
     }
+    const validationError = candidate.validateJson?.(parsed);
+    if (validationError) {
+      return {
+        status: 'fail',
+        path: candidate.path,
+        detail: `${candidate.label} failed validation at ${redactPath(candidate.path, home)}: ${validationError}`,
+        exists: true,
+      };
+    }
+  } else if (!(read.content ?? '').trim()) {
+    return {
+      status: 'warn',
+      path: candidate.path,
+      detail: `${candidate.label} is empty at ${redactPath(candidate.path, home)}`,
+      exists: true,
+    };
   }
   return {
     status: 'pass',
@@ -773,7 +851,15 @@ function isSafeCaamSegment(name: string): boolean {
 }
 
 function caamProfileMetadataPath(providerDir: string, profileName: string, metadataFile: string): string {
-  return join(providerDir, basename(profileName), metadataFile);
+  const safeProfileName = basename(profileName);
+  const safeMetadataFile = basename(metadataFile);
+  const profileDir = resolve(providerDir, safeProfileName);
+  const metadataPath = resolve(profileDir, safeMetadataFile);
+  const containment = relative(profileDir, metadataPath);
+  if (containment === '' || containment.startsWith('..') || isAbsolute(containment)) {
+    return resolve(providerDir, '__invalid_profile__', '__invalid_metadata__');
+  }
+  return metadataPath;
 }
 
 function evaluateCaamProviders(
@@ -956,7 +1042,7 @@ function parseArgs(args: string[]): CliOptions {
 function printUsage(): void {
   console.log(`Usage: scripts/agent-readiness-audit.sh [--json] [--quiet] [--no-version] [--home PATH] [--path PATH]
 
-Audits Claude Code, Codex CLI, Gemini CLI, and CAAM account readiness without
+Audits Claude Code, Codex CLI, Antigravity CLI, and CAAM account readiness without
 printing token values or auth file contents.
 
 Options:

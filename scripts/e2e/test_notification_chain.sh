@@ -28,7 +28,7 @@ LOG_DIR="${REPO_ROOT}/target/e2e-logs/notification_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$LOG_DIR"
 
 # Configuration
-ACFS_REPO="${ACFS_REPO:-Dicklesworthstone/agentic_coding_flywheel_setup}"
+ACFS_REPO="${ACFS_REPO:-quangdang46/agents_environment_setup}"
 DRY_RUN="${DRY_RUN:-false}"
 RUN_PR_TESTS="${RUN_PR_TESTS:-false}"
 

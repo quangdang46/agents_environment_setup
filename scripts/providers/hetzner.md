@@ -230,7 +230,7 @@ Take snapshots before major changes:
 Once connected as `ubuntu`, run the ACFS installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh | bash
 ```
 
 ---

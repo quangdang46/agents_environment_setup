@@ -49,7 +49,7 @@ run_landing_json() {
         ACFS_LAND_MAIL_SENT="$mail_sent" \
         ACFS_LAND_GATES_PASSED="$gates_passed" \
         ACFS_LAND_AGENT_NAME="SilentPeak" \
-        ACFS_LAND_PROJECT_KEY="/data/projects/agentic_coding_flywheel_setup" \
+        ACFS_LAND_PROJECT_KEY="/data/projects/agents_environment_setup" \
         bash "$LANDING_PLANE_SH" --json
 }
 

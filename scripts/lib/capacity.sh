@@ -503,7 +503,7 @@ EOF
 
     cat > "$env_file" <<EOF || return 1
 # ACFS opt-in resource profile wrappers.
-# Source this file to add wrapper commands without changing cc/cod/gmi.
+# Source this file to add wrapper commands without changing cc/cod/agy.
 case ":\${PATH:-}:" in
   *":$bin_dir:"*) ;;
   *) export PATH="$bin_dir:\${PATH:-}" ;;
@@ -569,7 +569,7 @@ capacity_emit_resource_profile_human() {
     echo "Safety"
     echo "  Opt-in only:          true"
     echo "  Hard MemoryMax:       not set"
-    echo "  Direct cc/cod/gmi:    unchanged"
+    echo "  Direct cc/cod/agy:    unchanged"
     echo "  RCH build path:       remains preferred"
     echo ""
     echo "Wrappers"
@@ -778,13 +778,13 @@ capacity_emit_json() {
                             else "fail"
                             end;
                         [
-                            {agents: 5, cc: 2, cod: 2, gmi: 1, label: "swarm-5"},
-                            {agents: 10, cc: 4, cod: 4, gmi: 2, label: "swarm-10"},
-                            {agents: 25, cc: 10, cod: 10, gmi: 5, label: "swarm-25"},
-                            {agents: 50, cc: 20, cod: 20, gmi: 10, label: "swarm-50"}
+                            {agents: 5, cc: 2, cod: 2, agy: 1, label: "swarm-5"},
+                            {agents: 10, cc: 4, cod: 4, agy: 2, label: "swarm-10"},
+                            {agents: 25, cc: 10, cod: 10, agy: 5, label: "swarm-25"},
+                            {agents: 50, cc: 20, cod: 20, agy: 10, label: "swarm-50"}
                         ] | map(. + {
                             status: profile_status(.agents),
-                            command: ("ntm spawn myproject --label " + .label + " --cc=" + (.cc | tostring) + " --cod=" + (.cod | tostring) + " --gmi=" + (.gmi | tostring) + " --assign --stagger-mode=smart"),
+                            command: ("ntm spawn myproject --label " + .label + " --cc=" + (.cc | tostring) + " --cod=" + (.cod | tostring) + " --agy=" + (.agy | tostring) + " --assign --stagger-mode=smart"),
                             rch_policy: "Use rch exec -- for cargo build/test/check/clippy/bench/run/doc commands inside every agent pane.",
                             agent_mail: "Register agents, send a start message on the bead thread, and reserve files before edits.",
                             beads: "Use br ready --json and bv --robot-triage for assignment truth; never launch bare bv."
@@ -837,10 +837,10 @@ capacity_emit_human() {
         echo "  Plan:                one coordinator session plus focused worker sessions"
         echo ""
         echo "Launch Profiles"
-        echo "  5 agents:            ntm spawn myproject --label swarm-5 --cc=2 --cod=2 --gmi=1 --assign --stagger-mode=smart"
-        echo "  10 agents:           ntm spawn myproject --label swarm-10 --cc=4 --cod=4 --gmi=2 --assign --stagger-mode=smart"
-        echo "  25 agents:           ntm spawn myproject --label swarm-25 --cc=10 --cod=10 --gmi=5 --assign --stagger-mode=smart"
-        echo "  50 agents:           ntm spawn myproject --label swarm-50 --cc=20 --cod=20 --gmi=10 --assign --stagger-mode=smart"
+        echo "  5 agents:            ntm spawn myproject --label swarm-5 --cc=2 --cod=2 --agy=1 --assign --stagger-mode=smart"
+        echo "  10 agents:           ntm spawn myproject --label swarm-10 --cc=4 --cod=4 --agy=2 --assign --stagger-mode=smart"
+        echo "  25 agents:           ntm spawn myproject --label swarm-25 --cc=10 --cod=10 --agy=5 --assign --stagger-mode=smart"
+        echo "  50 agents:           ntm spawn myproject --label swarm-50 --cc=20 --cod=20 --agy=10 --assign --stagger-mode=smart"
         echo ""
         echo "Coordination"
         echo "  RCH:                 use rch exec -- for CPU-heavy Rust build/test commands"

@@ -363,7 +363,7 @@ _cloud_run_as_user() {
 
     sudo_bin="$(_cloud_system_binary_path sudo 2>/dev/null || true)"
     if [[ -n "$sudo_bin" ]]; then
-        "$sudo_bin" -u "$target_user" -H "$bash_bin" -c "$wrapped_cmd"
+        "$sudo_bin" -n -u "$target_user" -H "$bash_bin" -c "$wrapped_cmd"
         return $?
     fi
 
@@ -420,7 +420,7 @@ _cloud_run_as_postgres() {
         log_error "Unable to locate sudo for postgres command"
         return 1
     }
-    "$sudo_bin" -u postgres -H "$bash_bin" -c "$wrapped_cmd"
+    "$sudo_bin" -n -u postgres -H "$bash_bin" -c "$wrapped_cmd"
 }
 
 # Get bun binary path for target user

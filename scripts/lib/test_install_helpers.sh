@@ -54,6 +54,7 @@ reset_selection() {
 
 reset_generated_flags() {
     unset ACFS_USE_GENERATED \
+        ACFS_GENERATED_MIGRATED_CATEGORIES \
         ACFS_USE_GENERATED_BASE \
         ACFS_USE_GENERATED_USERS \
         ACFS_USE_GENERATED_SHELL \
@@ -66,6 +67,11 @@ reset_generated_flags() {
         ACFS_USE_GENERATED_STACK \
         ACFS_USE_GENERATED_ACFS
     ACFS_GENERATED_DEFAULT_CATEGORIES=()
+    # Clear any plan left over from prior tests so category-flag resolution is
+    # tested in isolation. acfs_use_generated_for_category now also honors a
+    # category that has a module in the effective plan (targeted --only support,
+    # #304), so a stale plan would otherwise leak into these flag tests.
+    ACFS_EFFECTIVE_PLAN=()
 }
 
 # ============================================================
@@ -684,6 +690,73 @@ test_generated_env_var_csv_override() {
     test_fail "$name"
 }
 
+test_generated_default_plan_does_not_imply_migration() {
+    local name="Default resolved plan does not migrate unmigrated categories"
+    reset_selection
+    reset_generated_flags
+
+    if acfs_resolve_selection 2>/dev/null; then
+        if ! acfs_use_generated_category "lang" 2>/dev/null && \
+           ! acfs_use_generated_category "cloud" 2>/dev/null; then
+            test_pass "$name"
+            return
+        fi
+    fi
+    test_fail "$name" "Unmigrated categories should stay legacy during default installs"
+}
+
+test_generated_selection_filters_bypass_unrelated_legacy_categories() {
+    local name="Selection filters use generated dispatch for unrelated categories"
+    reset_selection
+    reset_generated_flags
+    ONLY_MODULES=("agents.antigravity")
+
+    if acfs_resolve_selection 2>/dev/null; then
+        if acfs_use_generated_category "agents" 2>/dev/null && \
+           acfs_use_generated_category "cloud" 2>/dev/null && \
+           acfs_use_generated_category "stack" 2>/dev/null; then
+            test_pass "$name"
+            return
+        fi
+    fi
+    test_fail "$name" "Filtered installs must suppress unrelated legacy phase bodies"
+}
+
+test_generated_selection_filters_keep_users_legacy() {
+    local name="Selection filters do not force generated users category"
+    reset_selection
+    reset_generated_flags
+    ONLY_MODULES=("agents.antigravity")
+
+    if acfs_resolve_selection 2>/dev/null; then
+        if ! acfs_use_generated_category "users" 2>/dev/null; then
+            test_pass "$name"
+            return
+        fi
+    fi
+    test_fail "$name" "users is orchestration-only and should stay legacy"
+}
+
+test_generated_targeted_only_unmigrated_category() {
+    local name="Targeted --only of unmigrated generated category runs generated installer (#304)"
+    reset_selection
+    reset_generated_flags
+    # network is NOT in the default migrated set...
+    ACFS_GENERATED_DEFAULT_CATEGORIES=()
+    # ...but a module of that category is explicitly selected.
+    ONLY_MODULES=("network.ssh_keepalive")
+
+    # Generated path must be chosen for network (plan-present), but not for an
+    # orchestration-only users category.
+    if acfs_resolve_selection 2>/dev/null && \
+       acfs_use_generated_category "network" 2>/dev/null && \
+       ! acfs_use_generated_category "users" 2>/dev/null; then
+        test_pass "$name"
+        return
+    fi
+    test_fail "$name"
+}
+
 # ============================================================
 # Run Tests
 # ============================================================
@@ -750,6 +823,10 @@ test_generated_defaults
 test_generated_global_override
 test_generated_per_category_override
 test_generated_env_var_csv_override
+test_generated_default_plan_does_not_imply_migration
+test_generated_selection_filters_bypass_unrelated_legacy_categories
+test_generated_selection_filters_keep_users_legacy
+test_generated_targeted_only_unmigrated_category
 
 echo ""
 echo "====================================="

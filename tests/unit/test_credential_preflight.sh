@@ -105,7 +105,7 @@ DB_PASSWORD=fake-matrix-password-002
         return 1
     fi
 
-    for category in api_key github_token github_pat vault_token slack_token bearer_token jwt credential_url generic_secret; do
+    for category in api_key github_token github_pat vault_token slack_token bearer_token jwt credential_url password; do
         assert_category_present "$json_output" "$category" || return 1
         grep -Fq "$category" "$human_output" || return 1
     done
@@ -174,6 +174,128 @@ PASSWORD=abc
     grep -Fq "PASS: credential preflight" "$human_output" || return 1
 
     pass "benign_examples_pass"
+}
+
+test_uses_system_path_not_shadowed_tools() {
+    local test_dir="$ARTIFACT_DIR/path-shadow"
+    local fake_bin="$test_dir/bin"
+    local fixture="$test_dir/.env"
+    local output="$test_dir/output.json"
+    local marker="$test_dir/shadowed-tool-ran"
+    local binary_name=""
+
+    mkdir -p "$fake_bin"
+    write_fixture "$fixture" 'GITHUB_TOKEN=your-token-here'
+    for binary_name in date dirname jq; do
+        cat > "$fake_bin/$binary_name" <<'EOF'
+#!/usr/bin/env bash
+printf 'shadowed tool should not run: %s\n' "$0" > "$CRED_PREFLIGHT_POISON_MARKER"
+exit 99
+EOF
+        chmod +x "$fake_bin/$binary_name"
+    done
+
+    CRED_PREFLIGHT_POISON_MARKER="$marker" \
+        PATH="$fake_bin:/usr/bin:/bin" \
+        bash "$CREDENTIAL_PREFLIGHT_SH" --json --file "$fixture" > "$output" || return 1
+
+    [[ ! -e "$marker" ]] || return 1
+    jq -e '.status == "pass" and .summary.files_scanned == 1' "$output" >/dev/null || return 1
+
+    pass "uses_system_path_not_shadowed_tools"
+}
+
+test_detects_hex_encoded_secret_values_under_secret_keys() {
+    local fixture="$ARTIFACT_DIR/hex-secret/.env"
+    local output="$ARTIFACT_DIR/hex-secret.json"
+    local secret="0123456789abcdef0123456789abcdef"
+
+    write_fixture "$fixture" "API_KEY=$secret"
+
+    if bash "$CREDENTIAL_PREFLIGHT_SH" --json --file "$fixture" > "$output"; then
+        return 1
+    fi
+
+    assert_category_present "$output" "generic_secret" || return 1
+    assert_no_raw_secret "$output" "$secret" || return 1
+
+    pass "detects_hex_encoded_secret_values_under_secret_keys"
+}
+
+test_json_secret_value_detection_ignores_unrelated_placeholder_words() {
+    local fixture="$ARTIFACT_DIR/json-value/config.json"
+    local output="$ARTIFACT_DIR/json-value.json"
+    local secret="real-secret-value-12345"
+
+    write_fixture "$fixture" "{\"api_key\":\"$secret\",\"note\":\"example fixture text\"}"
+
+    if bash "$CREDENTIAL_PREFLIGHT_SH" --json --file "$fixture" > "$output"; then
+        return 1
+    fi
+
+    assert_category_present "$output" "generic_secret" || return 1
+    assert_no_raw_secret "$output" "$secret" || return 1
+
+    pass "json_secret_value_detection_ignores_unrelated_placeholder_words"
+}
+
+test_detects_later_secret_pairs_on_same_line() {
+    local fixture="$ARTIFACT_DIR/later-pairs/config.env"
+    local output="$ARTIFACT_DIR/later-pairs.json"
+    local json_secret="real-json-secret-12345"
+    local shell_secret="real-shell-secret-12345"
+
+    write_fixture "$fixture" "{\"note\":\"example fixture text\",\"api_key\":\"$json_secret\"}
+export PATH=/usr/local/bin API_TOKEN=$shell_secret"
+
+    if bash "$CREDENTIAL_PREFLIGHT_SH" --json --file "$fixture" > "$output"; then
+        return 1
+    fi
+
+    jq -e '.summary.findings >= 2' "$output" >/dev/null || return 1
+    assert_category_present "$output" "generic_secret" || return 1
+    assert_no_raw_secret "$output" "$json_secret" || return 1
+    assert_no_raw_secret "$output" "$shell_secret" || return 1
+
+    pass "detects_later_secret_pairs_on_same_line"
+}
+
+test_detects_secret_pair_after_specific_pattern_on_same_line() {
+    local fixture="$ARTIFACT_DIR/specific-and-generic/config.env"
+    local output="$ARTIFACT_DIR/specific-and-generic.json"
+    local api_key="sk-fakeacfscredentialmatrix000001"
+    local password="real-password-value-12345"
+
+    write_fixture "$fixture" "OPENAI_API_KEY=$api_key DB_PASSWORD=$password"
+
+    if bash "$CREDENTIAL_PREFLIGHT_SH" --json --file "$fixture" > "$output"; then
+        return 1
+    fi
+
+    assert_category_present "$output" "api_key" || return 1
+    assert_category_present "$output" "password" || return 1
+    assert_no_raw_secret "$output" "$api_key" || return 1
+    assert_no_raw_secret "$output" "$password" || return 1
+    jq -e '.summary.findings == 2' "$output" >/dev/null || return 1
+
+    pass "detects_secret_pair_after_specific_pattern_on_same_line"
+}
+
+test_password_keys_keep_password_category_after_placeholder_checks() {
+    local fixture="$ARTIFACT_DIR/password-category/.env"
+    local output="$ARTIFACT_DIR/password-category.json"
+    local secret="real-password-value-12345"
+
+    write_fixture "$fixture" "DB_PASSWORD=$secret"
+
+    if bash "$CREDENTIAL_PREFLIGHT_SH" --json --file "$fixture" > "$output"; then
+        return 1
+    fi
+
+    assert_category_present "$output" "password" || return 1
+    assert_no_raw_secret "$output" "$secret" || return 1
+
+    pass "password_keys_keep_password_category_after_placeholder_checks"
 }
 
 test_binary_and_unreadable_files_are_skipped() {
@@ -254,6 +376,12 @@ main() {
     run_test test_secret_matrix_detects_categories_without_value_leaks
     run_test test_detects_private_key_marker
     run_test test_benign_examples_pass
+    run_test test_uses_system_path_not_shadowed_tools
+    run_test test_detects_hex_encoded_secret_values_under_secret_keys
+    run_test test_json_secret_value_detection_ignores_unrelated_placeholder_words
+    run_test test_detects_later_secret_pairs_on_same_line
+    run_test test_detects_secret_pair_after_specific_pattern_on_same_line
+    run_test test_password_keys_keep_password_category_after_placeholder_checks
     run_test test_binary_and_unreadable_files_are_skipped
     run_test test_excluded_paths_are_opted_out
     run_test test_default_scan_covers_shell_history_and_acfs_state

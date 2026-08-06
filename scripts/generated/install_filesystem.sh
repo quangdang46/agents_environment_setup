@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 # ============================================================
 # AUTO-GENERATED FROM acfs.manifest.yaml - DO NOT EDIT
 # Regenerate: bun run generate (from packages/manifest)
@@ -254,7 +254,68 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
 
     export TARGET_USER TARGET_HOME MODE ACFS_BIN_DIR
     export ACFS_BOOTSTRAP_DIR ACFS_LIB_DIR ACFS_GENERATED_DIR ACFS_ASSETS_DIR ACFS_CHECKSUMS_YAML ACFS_MANIFEST_YAML
+
+    # Defensive ownership repair (#306): when running as root, make sure the
+    # target user owns their XDG bin dir before the user-space language
+    # installers (uv/rust/bun) write into it. uv installs via an atomic
+    # mktemp+rename inside ~/.local/bin, so a root-owned ~/.local/bin makes its
+    # mktemp fail with "Permission denied (os error 13)" once the installer is
+    # re-exec'd as the (non-root) target user. The ownership repair is
+    # deliberately non-recursive: only the two directories themselves are
+    # touched, never their contents.
+    if [[ $EUID -eq 0 ]] && [[ -n "${TARGET_USER:-}" ]] && [[ "${TARGET_USER}" != "root" ]]; then
+        # SECURITY: never chown through a symlink. If an untrusted target user
+        # pre-staged ~/.local or ~/.local/bin as a symlink (e.g. -> /etc) before
+        # the root install, a chown that follows it would transfer ownership of
+        # the link target to them (local privilege escalation). chown -h /
+        # nofollow is not portable, so refuse the repair entirely when either
+        # path already exists as a symlink.
+        if [[ -L "$TARGET_HOME/.local" ]] || [[ -L "$TARGET_HOME/.local/bin" ]]; then
+            log_warn "Skipping ~/.local ownership repair: $TARGET_HOME/.local or .local/bin is a symlink (refusing to chown through it)"
+        else
+            _acfs_repair_mkdir="$(_acfs_system_binary_path mkdir 2>/dev/null || true)"
+            _acfs_repair_chown="$(_acfs_system_binary_path chown 2>/dev/null || true)"
+            if [[ -n "$_acfs_repair_mkdir" ]] && [[ -n "$_acfs_repair_chown" ]]; then
+                if "$_acfs_repair_mkdir" -p "$TARGET_HOME/.local/bin" 2>/dev/null; then
+                    "$_acfs_repair_chown" "${TARGET_USER}" "$TARGET_HOME/.local" "$TARGET_HOME/.local/bin" 2>/dev/null || true
+                fi
+            fi
+            unset _acfs_repair_mkdir _acfs_repair_chown
+        fi
+    fi
 fi
+
+acfs_generated_ensure_selection() {
+    if [[ "${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        local manifest_index="${ACFS_GENERATED_DIR:-$ACFS_GENERATED_SCRIPT_DIR}/manifest_index.sh"
+        if [[ ! -f "$manifest_index" ]]; then
+            log_error "Manifest index not found: $manifest_index"
+            return 1
+        fi
+        source "$manifest_index"
+        ACFS_MANIFEST_INDEX_LOADED=true
+        export ACFS_MANIFEST_INDEX_LOADED
+    fi
+
+    if [[ "${ACFS_GENERATED_SELECTION_READY:-false}" != "true" ]]; then
+        if ! declare -f acfs_resolve_selection >/dev/null 2>&1; then
+            log_error "Install selection helper not loaded"
+            return 1
+        fi
+        acfs_resolve_selection || return 1
+        ACFS_GENERATED_SELECTION_READY=true
+        export ACFS_GENERATED_SELECTION_READY
+    fi
+
+    return 0
+}
+
+acfs_generated_should_run_module() {
+    local module_id="${1:-}"
+    [[ -n "$module_id" ]] || return 1
+    acfs_generated_ensure_selection || return 1
+    should_run_module "$module_id"
+}
 
 # Source contract validation
 if [[ -f "$ACFS_GENERATED_SCRIPT_DIR/../lib/contract.sh" ]]; then
@@ -295,6 +356,11 @@ acfs_security_init() {
 install_base_filesystem() {
     local module_id="base.filesystem"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping base.filesystem (not selected)"
+        return 0
+    fi
     log_step "Installing base.filesystem"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -315,24 +381,6 @@ chown -h "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" /data /data/projects /d
 INSTALL_BASE_FILESYSTEM
         then
             log_error "base.filesystem: install command failed: for p in /data /data/projects /data/cache; do"
-            return 1
-        fi
-    fi
-    if [[ "${DRY_RUN:-false}" = "true" ]]; then
-        log_info "dry-run: install: if curl --help all 2>/dev/null | grep -q -- '--proto'; then (root)"
-    else
-        if ! run_as_root_shell <<'INSTALL_BASE_FILESYSTEM'
-# Install AGENTS.md template to workspace root for agent guidance
-ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${ACFS_REF:-main}}"
-CURL_ARGS=(-fsSL)
-if curl --help all 2>/dev/null | grep -q -- '--proto'; then
-  CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
-fi
-curl "${CURL_ARGS[@]}" -o /data/projects/AGENTS.md "${ACFS_RAW}/acfs/AGENTS.md" || true
-chown "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" /data/projects/AGENTS.md 2>/dev/null || true
-INSTALL_BASE_FILESYSTEM
-        then
-            log_error "base.filesystem: install command failed: if curl --help all 2>/dev/null | grep -q -- '--proto'; then"
             return 1
         fi
     fi
@@ -512,6 +560,25 @@ fi
 
 mkdir -p "$target_home/.acfs"
 chown -hR "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" "$target_home/.acfs"
+
+# Save the workspace AGENTS.md template into ACFS-owned storage.
+# ACFS may freely refresh this canonical copy on every install/update.
+ACFS_RAW="${ACFS_RAW:-https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${ACFS_REF:-main}}"
+CURL_ARGS=(-fsSL)
+if curl --help all 2>/dev/null | grep -q -- '--proto'; then
+  CURL_ARGS=(--proto '=https' --proto-redir '=https' -fsSL)
+fi
+mkdir -p "$target_home/.acfs/docs"
+curl "${CURL_ARGS[@]}" -o "$target_home/.acfs/docs/AGENTS.workspace.md" "${ACFS_RAW}/acfs/AGENTS.md" || true
+chown -R "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" "$target_home/.acfs/docs" 2>/dev/null || true
+
+# Seed /data/projects/AGENTS.md ONLY when absent. An existing file
+# may contain user-authored rules and is never overwritten; use
+# `acfs agents install` for explicit, non-overwriting deployment.
+if [[ -f "$target_home/.acfs/docs/AGENTS.workspace.md" && ! -e /data/projects/AGENTS.md ]]; then
+  cp "$target_home/.acfs/docs/AGENTS.workspace.md" /data/projects/AGENTS.md
+  chown "${TARGET_USER:-ubuntu}:${TARGET_USER:-ubuntu}" /data/projects/AGENTS.md 2>/dev/null || true
+fi
 INSTALL_BASE_FILESYSTEM
         then
             log_error "base.filesystem: install command failed: if [[ -n \"\$explicit_target_home\" ]]; then"
@@ -528,17 +595,6 @@ test -d /data/projects
 INSTALL_BASE_FILESYSTEM
         then
             log_error "base.filesystem: verify failed: test -d /data/projects"
-            return 1
-        fi
-    fi
-    if [[ "${DRY_RUN:-false}" = "true" ]]; then
-        log_info "dry-run: verify: test -f /data/projects/AGENTS.md (root)"
-    else
-        if ! run_as_root_shell <<'INSTALL_BASE_FILESYSTEM'
-test -f /data/projects/AGENTS.md
-INSTALL_BASE_FILESYSTEM
-        then
-            log_error "base.filesystem: verify failed: test -f /data/projects/AGENTS.md"
             return 1
         fi
     fi
@@ -712,6 +768,7 @@ if [[ -z "$target_home" ]] || [[ "$target_home" == "/" ]] || [[ "$target_home" !
   exit 1
 fi
 test -d "$target_home/.acfs"
+test -f "$target_home/.acfs/docs/AGENTS.workspace.md"
 INSTALL_BASE_FILESYSTEM
         then
             log_error "base.filesystem: verify failed: if [[ -n \"\$explicit_target_home\" ]]; then"

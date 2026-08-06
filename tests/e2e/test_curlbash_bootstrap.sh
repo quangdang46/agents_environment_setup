@@ -64,7 +64,7 @@ ARCHIVE_DIR="$WORK_DIR/serve"
 mkdir -p "$ARCHIVE_DIR"
 
 # Create the archive mimicking GitHub's format: repo-ref/ prefix
-ARCHIVE_PREFIX="agentic_coding_flywheel_setup-test"
+ARCHIVE_PREFIX="agents_environment_setup-test"
 STAGING="$WORK_DIR/$ARCHIVE_PREFIX"
 mkdir -p "$STAGING"
 

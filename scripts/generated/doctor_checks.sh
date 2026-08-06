@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 # ============================================================
 # AUTO-GENERATED FROM acfs.manifest.yaml - DO NOT EDIT
 # Regenerate: bun run generate (from packages/manifest)
@@ -254,7 +254,68 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
 
     export TARGET_USER TARGET_HOME MODE ACFS_BIN_DIR
     export ACFS_BOOTSTRAP_DIR ACFS_LIB_DIR ACFS_GENERATED_DIR ACFS_ASSETS_DIR ACFS_CHECKSUMS_YAML ACFS_MANIFEST_YAML
+
+    # Defensive ownership repair (#306): when running as root, make sure the
+    # target user owns their XDG bin dir before the user-space language
+    # installers (uv/rust/bun) write into it. uv installs via an atomic
+    # mktemp+rename inside ~/.local/bin, so a root-owned ~/.local/bin makes its
+    # mktemp fail with "Permission denied (os error 13)" once the installer is
+    # re-exec'd as the (non-root) target user. The ownership repair is
+    # deliberately non-recursive: only the two directories themselves are
+    # touched, never their contents.
+    if [[ $EUID -eq 0 ]] && [[ -n "${TARGET_USER:-}" ]] && [[ "${TARGET_USER}" != "root" ]]; then
+        # SECURITY: never chown through a symlink. If an untrusted target user
+        # pre-staged ~/.local or ~/.local/bin as a symlink (e.g. -> /etc) before
+        # the root install, a chown that follows it would transfer ownership of
+        # the link target to them (local privilege escalation). chown -h /
+        # nofollow is not portable, so refuse the repair entirely when either
+        # path already exists as a symlink.
+        if [[ -L "$TARGET_HOME/.local" ]] || [[ -L "$TARGET_HOME/.local/bin" ]]; then
+            log_warn "Skipping ~/.local ownership repair: $TARGET_HOME/.local or .local/bin is a symlink (refusing to chown through it)"
+        else
+            _acfs_repair_mkdir="$(_acfs_system_binary_path mkdir 2>/dev/null || true)"
+            _acfs_repair_chown="$(_acfs_system_binary_path chown 2>/dev/null || true)"
+            if [[ -n "$_acfs_repair_mkdir" ]] && [[ -n "$_acfs_repair_chown" ]]; then
+                if "$_acfs_repair_mkdir" -p "$TARGET_HOME/.local/bin" 2>/dev/null; then
+                    "$_acfs_repair_chown" "${TARGET_USER}" "$TARGET_HOME/.local" "$TARGET_HOME/.local/bin" 2>/dev/null || true
+                fi
+            fi
+            unset _acfs_repair_mkdir _acfs_repair_chown
+        fi
+    fi
 fi
+
+acfs_generated_ensure_selection() {
+    if [[ "${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        local manifest_index="${ACFS_GENERATED_DIR:-$ACFS_GENERATED_SCRIPT_DIR}/manifest_index.sh"
+        if [[ ! -f "$manifest_index" ]]; then
+            log_error "Manifest index not found: $manifest_index"
+            return 1
+        fi
+        source "$manifest_index"
+        ACFS_MANIFEST_INDEX_LOADED=true
+        export ACFS_MANIFEST_INDEX_LOADED
+    fi
+
+    if [[ "${ACFS_GENERATED_SELECTION_READY:-false}" != "true" ]]; then
+        if ! declare -f acfs_resolve_selection >/dev/null 2>&1; then
+            log_error "Install selection helper not loaded"
+            return 1
+        fi
+        acfs_resolve_selection || return 1
+        ACFS_GENERATED_SELECTION_READY=true
+        export ACFS_GENERATED_SELECTION_READY
+    fi
+
+    return 0
+}
+
+acfs_generated_should_run_module() {
+    local module_id="${1:-}"
+    [[ -n "$module_id" ]] || return 1
+    acfs_generated_ensure_selection || return 1
+    should_run_module "$module_id"
+}
 
 # Source contract validation
 if [[ -f "$ACFS_GENERATED_SCRIPT_DIR/../lib/contract.sh" ]]; then
@@ -301,8 +362,7 @@ declare -a MANIFEST_CHECKS=(
     "users.ubuntu.1	Ensure target user + passwordless sudo + ssh keys	id \"\${TARGET_USER:-ubuntu}\"	required	root"
     "users.ubuntu.2	Ensure target user + passwordless sudo + ssh keys	[[ \"\${MODE:-vibe}\" != \"vibe\" ]] || runuser -u \"\${TARGET_USER:-ubuntu}\" -- sudo -n true	required	root"
     "base.filesystem.1	Create workspace and ACFS directories	test -d /data/projects	required	root"
-    "base.filesystem.2	Create workspace and ACFS directories	test -f /data/projects/AGENTS.md	required	root"
-    "base.filesystem.3	Create workspace and ACFS directories	# Resolve TARGET_HOME using generated helper functions. Doctor\\n# injects these helpers for manifest checks that reference\\n# acfs_generated_* functions, so this stays consistent with\\n# installer target-home resolution and avoids inherited HOME leaks.\\nexplicit_target_home=\"\${TARGET_HOME:-}\"\\nif [[ -n \"\$explicit_target_home\" ]]; then\\n  explicit_target_home=\"\${explicit_target_home%/}\"\\nfi\\ntarget_home=\"\"\\nif [[ \"\${TARGET_USER:-ubuntu}\" == \"root\" ]]; then\\n  target_home=\"/root\"\\nelse\\n  _acfs_passwd_entry=\"\$(acfs_generated_getent_passwd_entry \"\${TARGET_USER:-ubuntu}\" 2>/dev/null || true)\"\\n  if [[ -n \"\$_acfs_passwd_entry\" ]]; then\\n    target_home=\"\$(acfs_generated_passwd_home_from_entry \"\$_acfs_passwd_entry\" 2>/dev/null || true)\"\\n  else\\n    current_user=\"\$(acfs_generated_resolve_current_user 2>/dev/null || true)\"\\n    current_home=\"\${HOME:-}\"\\n    if [[ -n \"\$current_home\" ]]; then\\n      current_home=\"\${current_home%/}\"\\n    fi\\n    if [[ -n \"\$current_user\" ]] && [[ \"\$current_user\" == \"\${TARGET_USER:-ubuntu}\" ]] && [[ -n \"\$current_home\" ]] && [[ \"\$current_home\" == /* ]] && [[ \"\$current_home\" != \"/\" ]] && { [[ -z \"\$explicit_target_home\" ]] || [[ \"\$current_home\" == \"\$explicit_target_home\" ]]; }; then\\n      target_home=\"\$current_home\"\\n    fi\\n    unset current_user current_home\\n  fi\\n  unset _acfs_passwd_entry\\nfi\\nunset explicit_target_home\\nif [[ -z \"\$target_home\" ]] || [[ \"\$target_home\" == \"/\" ]] || [[ \"\$target_home\" != /* ]]; then\\n  echo \"ERROR: Unable to resolve TARGET_HOME for '\${TARGET_USER:-ubuntu}'; export TARGET_HOME explicitly (got: '\${target_home:-<empty>}')\" >&2\\n  exit 1\\nfi\\ntest -d \"\$target_home/.acfs\"	required	root"
+    "base.filesystem.2	Create workspace and ACFS directories	# Resolve TARGET_HOME using generated helper functions. Doctor\\n# injects these helpers for manifest checks that reference\\n# acfs_generated_* functions, so this stays consistent with\\n# installer target-home resolution and avoids inherited HOME leaks.\\nexplicit_target_home=\"\${TARGET_HOME:-}\"\\nif [[ -n \"\$explicit_target_home\" ]]; then\\n  explicit_target_home=\"\${explicit_target_home%/}\"\\nfi\\ntarget_home=\"\"\\nif [[ \"\${TARGET_USER:-ubuntu}\" == \"root\" ]]; then\\n  target_home=\"/root\"\\nelse\\n  _acfs_passwd_entry=\"\$(acfs_generated_getent_passwd_entry \"\${TARGET_USER:-ubuntu}\" 2>/dev/null || true)\"\\n  if [[ -n \"\$_acfs_passwd_entry\" ]]; then\\n    target_home=\"\$(acfs_generated_passwd_home_from_entry \"\$_acfs_passwd_entry\" 2>/dev/null || true)\"\\n  else\\n    current_user=\"\$(acfs_generated_resolve_current_user 2>/dev/null || true)\"\\n    current_home=\"\${HOME:-}\"\\n    if [[ -n \"\$current_home\" ]]; then\\n      current_home=\"\${current_home%/}\"\\n    fi\\n    if [[ -n \"\$current_user\" ]] && [[ \"\$current_user\" == \"\${TARGET_USER:-ubuntu}\" ]] && [[ -n \"\$current_home\" ]] && [[ \"\$current_home\" == /* ]] && [[ \"\$current_home\" != \"/\" ]] && { [[ -z \"\$explicit_target_home\" ]] || [[ \"\$current_home\" == \"\$explicit_target_home\" ]]; }; then\\n      target_home=\"\$current_home\"\\n    fi\\n    unset current_user current_home\\n  fi\\n  unset _acfs_passwd_entry\\nfi\\nunset explicit_target_home\\nif [[ -z \"\$target_home\" ]] || [[ \"\$target_home\" == \"/\" ]] || [[ \"\$target_home\" != /* ]]; then\\n  echo \"ERROR: Unable to resolve TARGET_HOME for '\${TARGET_USER:-ubuntu}'; export TARGET_HOME explicitly (got: '\${target_home:-<empty>}')\" >&2\\n  exit 1\\nfi\\ntest -d \"\$target_home/.acfs\"\\ntest -f \"\$target_home/.acfs/docs/AGENTS.workspace.md\"	required	root"
     "shell.zsh	Zsh shell package	zsh --version	required	root"
     "shell.omz.1	Oh My Zsh + Powerlevel10k + plugins + ACFS config	test -d ~/.oh-my-zsh	required	target_user"
     "shell.omz.2	Oh My Zsh + Powerlevel10k + plugins + ACFS config	test -f ~/.acfs/zsh/acfs.zshrc	required	target_user"
@@ -330,14 +390,15 @@ declare -a MANIFEST_CHECKS=(
     "lang.rust.2	Rust nightly + cargo	~/.cargo/bin/rustup show | grep -q nightly	required	target_user"
     "lang.go	Go toolchain	go version	required	root"
     "lang.nvm	nvm + latest Node.js	export NVM_DIR=\"\$HOME/.nvm\"\\n[ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"\\nnode --version	required	target_user"
-    "tools.atuin	Atuin shell history (Ctrl-R superpowers)	~/.atuin/bin/atuin --version	required	target_user"
+    "tools.atuin	Atuin CLI with guarded agent-safe shim	~/.atuin/bin/atuin --version	required	target_user"
     "tools.zoxide	Zoxide (better cd)	command -v zoxide	required	target_user"
     "tools.ast_grep	ast-grep (used by UBS for syntax-aware scanning)	sg --version	required	target_user"
     "agents.claude	Claude Code	target_bin=\"\${ACFS_BIN_DIR:-\$HOME/.local/bin}\"\\n\"\$target_bin/claude\" --version || \"\$target_bin/claude\" --help	required	target_user"
     "agents.codex	OpenAI Codex CLI	target_bin=\"\${ACFS_BIN_DIR:-\$HOME/.local/bin}\"\\n\"\$target_bin/codex\" --version || \"\$target_bin/codex\" --help	required	target_user"
-    "agents.gemini	Google Gemini CLI	target_bin=\"\${ACFS_BIN_DIR:-\$HOME/.local/bin}\"\\n\"\$target_bin/gemini\" --version || \"\$target_bin/gemini\" --help	required	target_user"
+    "agents.gemini	Legacy Google Gemini CLI (retired; not installed by default)	target_bin=\"\${ACFS_BIN_DIR:-\$HOME/.local/bin}\"\\n\"\$target_bin/gemini\" --version || \"\$target_bin/gemini\" --help	optional	target_user"
     "agents.opencode	OpenCode (multi-provider agent harness)	opencode --version || opencode --help	optional	target_user"
     "agents.oh_my_openagent	oh-my-openagent (OpenCode plugin / multi-provider config helper)	export PATH=\"\$HOME/.bun/bin:\$PATH\"\\nbunx --yes oh-my-openagent doctor 2>&1 | head -20	optional	target_user"
+    "agents.antigravity	Antigravity CLI (agy) — Google, successor to the retired Gemini CLI	# acfs-summary: verify agy-locked launchers and pinned settings\\ntarget_bin=\"\${ACFS_BIN_DIR:-\$HOME/.local/bin}\"\\ntest -x \"\$target_bin/agy\"\\ntest -x \"\$target_bin/agy-locked\"\\ntest -x \"\$target_bin/gmi\"\\npython3 - <<'PY'\\nimport json\\nimport pathlib\\nimport sys\\n\\nsettings_path = pathlib.Path.home() / \".gemini\" / \"antigravity-cli\" / \"settings.json\"\\nhook_path = pathlib.Path.home() / \".gemini\" / \"config\" / \"hooks\" / \"dcg-antigravity-hook.py\"\\ntry:\\n    settings = json.loads(settings_path.read_text(encoding=\"utf-8\"))\\nexcept Exception as exc:\\n    print(f\"invalid or missing Antigravity settings: {settings_path}: {exc}\", file=sys.stderr)\\n    raise SystemExit(1)\\n\\nexpected = {\\n    \"model\": \"Gemini 3.1 Pro (High)\",\\n    \"toolPermission\": \"always-proceed\",\\n    \"artifactReviewPolicy\": \"always-proceed\",\\n    \"enableTelemetry\": False,\\n    \"enableTerminalSandbox\": False,\\n    \"allowNonWorkspaceAccess\": True,\\n    \"notifications\": False,\\n    \"showTips\": False,\\n    \"showFeedbackSurvey\": False,\\n    \"useG1Credits\": False,\\n    \"verbosity\": \"high\",\\n    \"runningLightSpeed\": \"medium\",\\n    \"colorScheme\": \"terminal\",\\n    \"editor\": \"auto\",\\n    \"altScreenMode\": \"never\",\\n}\\nfor key, value in expected.items():\\n    if settings.get(key) != value:\\n        print(f\"Antigravity setting {key} is {settings.get(key)!r}, expected {value!r}\", file=sys.stderr)\\n        raise SystemExit(1)\\nif not hook_path.is_file():\\n    print(f\"Antigravity dcg hook is missing: {hook_path}\", file=sys.stderr)\\n    raise SystemExit(1)\\nPY	required	target_user"
     "tools.vault	HashiCorp Vault CLI	vault --version	optional	root"
     "db.postgres18.1	PostgreSQL 18	psql --version	optional	root"
     "db.postgres18.2	PostgreSQL 18	systemctl status postgresql --no-pager	optional	root"
@@ -346,7 +407,7 @@ declare -a MANIFEST_CHECKS=(
     "cloud.vercel	Vercel CLI	vercel --version	optional	target_user"
     "stack.ntm	Named tmux manager (agent cockpit)	ntm --help	required	target_user"
     "stack.mcp_agent_mail.1	Like gmail for coding agents; MCP HTTP server + token; installs beads tools	command -v am	required	target_user"
-    "stack.mcp_agent_mail.2	Like gmail for coding agents; MCP HTTP server + token; installs beads tools	agent_mail_service_curl() {\\n  local curl_bin=\"\"\\n  local candidate=\"\"\\n\\n  for candidate in /usr/bin/curl /bin/curl /usr/local/bin/curl /usr/local/sbin/curl /usr/sbin/curl /sbin/curl; do\\n    [[ -x \"\$candidate\" ]] || continue\\n    curl_bin=\"\$candidate\"\\n    break\\n  done\\n\\n  [[ -n \"\$curl_bin\" ]] || return 127\\n  \"\$curl_bin\" \"\$@\"\\n}\\n\\nruntime_dir=\"/run/user/\$(id -u)\"\\nif [[ -d \"\$runtime_dir\" ]]; then\\n  export XDG_RUNTIME_DIR=\"\$runtime_dir\"\\n  export DBUS_SESSION_BUS_ADDRESS=\"unix:path=\$runtime_dir/bus\"\\nfi\\nif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\\n  systemctl --user is-active --quiet agent-mail.service >/dev/null 2>&1 || exit 1\\nfi\\nagent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null	required	target_user"
+    "stack.mcp_agent_mail.2	Like gmail for coding agents; MCP HTTP server + token; installs beads tools	agent_mail_service_curl() {\\n  local curl_bin=\"\"\\n  local candidate=\"\"\\n\\n  for candidate in /usr/bin/curl /bin/curl /usr/local/bin/curl /usr/local/sbin/curl /usr/sbin/curl /sbin/curl; do\\n    [[ -x \"\$candidate\" ]] || continue\\n    curl_bin=\"\$candidate\"\\n    break\\n  done\\n\\n  [[ -n \"\$curl_bin\" ]] || return 127\\n  \"\$curl_bin\" \"\$@\"\\n}\\n\\nagent_mail_readiness_ready() {\\n  local readiness_body=\"\"\\n  local readiness_url=\"\"\\n\\n  for readiness_url in \\\\\\n    http://127.0.0.1:8765/health/readiness \\\\\\n    http://127.0.0.1:8765/health\\n  do\\n    readiness_body=\"\$(agent_mail_service_curl -fsS --max-time 10 \"\$readiness_url\" 2>/dev/null)\" || continue\\n    if printf '%s\\\\n' \"\$readiness_body\" | grep -Eq '\"status\"[[:space:]]*:[[:space:]]*\"ready\"([[:space:]]*[,}])'; then\\n      return 0\\n    fi\\n  done\\n\\n  return 1\\n}\\n\\nruntime_dir=\"/run/user/\$(id -u)\"\\nif [[ -d \"\$runtime_dir\" ]]; then\\n  export XDG_RUNTIME_DIR=\"\$runtime_dir\"\\n  export DBUS_SESSION_BUS_ADDRESS=\"unix:path=\$runtime_dir/bus\"\\nfi\\nif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then\\n  systemctl --user is-active --quiet agent-mail.service >/dev/null 2>&1 || exit 1\\nfi\\nagent_mail_service_curl -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null\\nagent_mail_readiness_ready	required	target_user"
     "stack.meta_skill.1	Local-first knowledge management with hybrid semantic search (ms)	ms --version	required	target_user"
     "stack.meta_skill.2	Local-first knowledge management with hybrid semantic search (ms)	ms doctor	optional	target_user"
     "stack.automated_plan_reviser.1	Automated iterative spec refinement with extended AI reasoning (apr)	apr --help	optional	target_user"
@@ -385,7 +446,7 @@ declare -a MANIFEST_CHECKS=(
     "utils.toon_rust	toon_rust (tru) - Token-optimized notation format for LLM context efficiency	tru --help || tru --version	optional	target_user"
     "utils.rano	rano - Network observer for AI CLIs with request/response logging	rano --help || rano --version	optional	target_user"
     "utils.mdwb	markdown_web_browser (mdwb) - Convert websites to Markdown for LLM consumption	mdwb --help || mdwb --version	optional	target_user"
-    "utils.s2p	source_to_prompt_tui (s2p) - Code to LLM prompt generator with TUI	s2p --help || s2p --version	optional	target_user"
+    "utils.s2p	source_to_prompt_tui (s2p) - Code to LLM prompt generator with TUI	s2p --help	optional	target_user"
     "utils.rust_proxy	rust_proxy - Transparent proxy routing for debugging network traffic	rust_proxy --help || rust_proxy --version	optional	target_user"
     "utils.aadc	aadc - ASCII diagram corrector for fixing malformed ASCII art	aadc --help || aadc --version	optional	target_user"
     "utils.caut	coding_agent_usage_tracker (caut) - LLM provider usage tracker	caut --help || caut --version	optional	target_user"

@@ -156,4 +156,4 @@ onboard 22
 
 ---
 
-*The Agentic Coding Flywheel Setup - https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup*
+*The Agents Environment Setup - https://github.com/quangdang46/agents_environment_setup*

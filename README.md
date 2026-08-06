@@ -1,16 +1,15 @@
-# Agentic Coding Flywheel Setup (ACFS)
+# Agents Environment Setup (ACFS)
 
 <div align="center">
-  <img src="docs/assets/acfs_illustration.webp" alt="Agentic Coding Flywheel Setup (ACFS) - From zero to fully-configured agentic coding VPS in 30 minutes">
+  <img src="docs/assets/acfs_illustration.webp" alt="Agents Environment Setup (ACFS) - From zero to fully-configured agentic coding VPS in 30 minutes">
 </div>
 
-![Version](https://img.shields.io/badge/Version-0.1.0-bd93f9?style=for-the-badge)
+![Version](https://img.shields.io/badge/Version-0.7.0-bd93f9?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-Ubuntu%2025.10-6272a4?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT%2BOpenAI%2FAnthropic%20Rider-blue?style=for-the-badge)
 ![Shell](https://img.shields.io/badge/Shell-Bash-ff79c6?style=for-the-badge)
 
 <p align="center">
-  <strong>🌐 <a href="https://agent-flywheel.com">agent-flywheel.com</a></strong> — Interactive setup wizard for beginners
 </p>
 
 > **From zero to fully-configured agentic coding VPS in 30 minutes.**
@@ -52,7 +51,7 @@ The installer is **idempotent**—if interrupted, simply re-run it. It will auto
 **ACFS** is a complete system for bootstrapping agentic coding environments:
 
 **Why you'd care:**
-- **Zero to Hero:** Takes complete beginners from "I have a laptop" to "I have Claude/Codex/Gemini agents writing code for me on a VPS"
+- **Zero to Hero:** Takes complete beginners from "I have a laptop" to "I have Claude/Codex/Antigravity agents writing code for me on a VPS"
 - **One-Liner Magic:** A single `curl | bash` command installs 30+ tools, configures everything, and sets up three AI coding agents
 - **Vibe Mode:** Pre-configured for maximum velocity—passwordless sudo, dangerous agent flags enabled, optimized shell environment
 - **Battle-Tested Stack:** Includes the complete Dicklesworthstone stack (10 tools + utilities) for agent orchestration, coordination, and safety
@@ -60,7 +59,7 @@ The installer is **idempotent**—if interrupted, simply re-run it. It will auto
 **What you get:**
 - Modern shell (zsh + oh-my-zsh + powerlevel10k)
 - All language runtimes (bun, uv/Python, Rust, Go)
-- Three AI coding agents (Claude Code, Codex CLI, Gemini CLI)
+- Three AI coding agents (Claude Code, Codex CLI, Antigravity CLI)
 - Agent coordination tools (NTM, MCP Agent Mail, SLB)
 - Cloud CLIs (Vault, Wrangler, Supabase, Vercel)
 - And 20+ more developer tools
@@ -91,7 +90,7 @@ graph LR
     subgraph agents ["AI Agents"]
         CLAUDE["Claude Code"]
         CODEX["Codex CLI"]
-        GEMINI["Gemini CLI"]
+        AGY["Antigravity CLI"]
     end
 
     LAPTOP --> BROWSER
@@ -101,7 +100,7 @@ graph LR
     INSTALLER --> CONFIGURED
     CONFIGURED --> CLAUDE
     CONFIGURED --> CODEX
-    CONFIGURED --> GEMINI
+    CONFIGURED --> AGY
 
     classDef user fill:#e3f2fd,stroke:#90caf9,stroke-width:2px
     classDef wizard fill:#fff8e1,stroke:#ffcc80,stroke-width:2px
@@ -111,19 +110,10 @@ graph LR
     class LAPTOP,BROWSER user
     class STEPS wizard
     class UBUNTU,INSTALLER,CONFIGURED vps
-    class CLAUDE,CODEX,GEMINI agent
+    class CLAUDE,CODEX,AGY agent
 ```
 
 ### For Beginners
-ACFS includes a **step-by-step wizard website** at [agent-flywheel.com](https://agent-flywheel.com) that guides complete beginners through:
-1. Installing a terminal on their local machine
-2. Generating SSH keys (for secure access later)
-3. Renting a VPS from providers like OVH or Contabo
-4. Connecting via SSH with a password (initial setup)
-5. Running the installer (which sets up key-based access)
-6. Reconnecting securely with your SSH key
-7. Starting to code with AI agents
-
 ### For Developers
 ACFS is a **one-liner** that transforms any fresh Ubuntu VPS into a fully-configured development environment with modern tooling and three AI coding agents ready to go.
 
@@ -146,7 +136,7 @@ flowchart TB
     Terminal["Terminal / SSH client"]
   end
 
-  subgraph W["Wizard Website (Next.js 16) — apps/web"]
+  subgraph W["Interactive installer CLI"]
     Wizard["Wizard UI (/wizard/*)"]
     InstallRoute["GET /install (302 redirect to raw install.sh)"]
     WebState["State: URL params + localStorage"]
@@ -171,7 +161,7 @@ flowchart TB
     AcfsHome["~/.acfs/<br/>configs + scripts + state.json"]
     Commands["Commands<br/>acfs doctor / acfs update / acfs services-setup / onboard"]
     Tools["Installed tools<br/>bun/uv/rust/go + tmux/rg/gh + vault + ..."]
-    Agents["Agent CLIs<br/>claude / codex / gemini"]
+    Agents["Agent CLIs<br/>claude / codex / agy"]
     Stack["Stack tools<br/>ntm / mcp_agent_mail / ubs / bv / cass / cm / caam / slb / dcg / ru"]
   end
 
@@ -218,8 +208,8 @@ flowchart TB
 ┌───────────────────────────────────┐   ┌───────────────────────────────────┐
 │        CODE GENERATION            │   │        WIZARD WEBSITE             │
 │  ┌─────────────────────────────┐  │   │  ┌─────────────────────────────┐  │
-│  │ TypeScript Parser (Zod)     │  │   │  │ apps/web/ (Next.js 16)      │  │
-│  │ generate.ts                 │  │   │  │ agent-flywheel.com          │  │
+│  │ TypeScript Parser (Zod)     │  │   │  │ acfs CLI + checkbox UI       │  │
+│  │ generate.ts                 │  │   │  │ one-liner install           │  │
 │  └─────────────────────────────┘  │   │  └─────────────────────────────┘  │
 └───────────────────────────────────┘   └───────────────────────────────────┘
                     │
@@ -266,7 +256,7 @@ flowchart TB
 |-----------|------|------------|---------|
 | **Manifest** | `acfs.manifest.yaml` | YAML | Single source of truth for all tools |
 | **Generator** | `packages/manifest/src/generate.ts` | TypeScript/Bun | Produces installer scripts from manifest |
-| **Website** | `apps/web/` | Next.js 16 + Tailwind 4 | Step-by-step wizard for beginners |
+| **Installer** | `install.sh` + `scripts/` | Bash + gum | One-liner installer with checkbox UI |
 | **Installer** | `install.sh` | Bash | One-liner bootstrap script |
 | **Lib Scripts** | `scripts/lib/` | Bash | Modular installer functions |
 | **Generated Scripts** | `scripts/generated/` | Bash | Auto-generated category installers (sourced by `install.sh`; execution is feature-flagged) |
@@ -286,7 +276,7 @@ flowchart TB
 version: "1.0"
 meta:
   name: "ACFS"
-  description: "Agentic Coding Flywheel Setup"
+  description: "Agents Environment Setup"
   version: "0.1.0"
 
 modules:
@@ -466,7 +456,7 @@ graph TD
     C["Phase 3: Shell Setup<br/><small>zsh, oh-my-zsh, powerlevel10k</small>"]
     D["Phase 4: CLI Tools<br/><small>ripgrep, fzf, lazygit, etc.</small>"]
     E["Phase 5: Language Runtimes<br/><small>bun, uv, rust, go</small>"]
-    F["Phase 6: AI Agents<br/><small>claude, codex, gemini</small>"]
+    F["Phase 6: AI Agents<br/><small>claude, codex, agy</small>"]
     G["Phase 7: Cloud Tools<br/><small>vault, wrangler, supabase, vercel</small>"]
     H["Phase 8: Dicklesworthstone Stack<br/><small>ntm, dcg, ru, ubs, mcp_agent_mail, etc.</small>"]
     I["Phase 9: Configuration<br/><small>Deploy acfs.zshrc, tmux.conf</small>"]
@@ -636,7 +626,8 @@ acfs-update --bootstrap-self-update
 | **Runtime** | uv (Python) | `uv self update` |
 | **Runtime** | Go | `apt upgrade` (if apt-managed) |
 | **Agents** | Claude Code | `claude update --channel latest` |
-| **Agents** | Codex, Gemini | `bun install -g @latest` |
+| **Agents** | Codex | `bun install -g @latest` |
+| **Agents** | Antigravity | `agy update` (or verified installer with `--force`) |
 | **Cloud** | Wrangler, Vercel | `bun install -g @latest` |
 | **Cloud** | Supabase | GitHub release tarball (sha256 checksums) |
 | **Stack** | ntm, slb, ubs, dcg, ru, etc. | Re-run upstream installers |
@@ -706,6 +697,8 @@ acfs cheatsheet              # Discover installed aliases
 acfs dashboard generate      # Generate HTML status page
 acfs doctor                  # Health checks
 acfs newproj                 # Create a new project (TUI or CLI)
+acfs agents update           # Regenerate the agent guide (ACFS-owned)
+acfs agents install --help   # Explicitly deploy the guide (never overwrites)
 acfs update                  # Update all tools
 acfs services-setup          # Configure agent credentials
 acfs continue                # View upgrade progress after reboot
@@ -743,7 +736,7 @@ The wizard guides you through:
     ║     ██║  ██║╚██████╗ ██║      ███████║                ║
     ║     ╚═╝  ╚═╝ ╚═════╝ ╚═╝      ╚══════╝                ║
     ║                                                       ║
-    ║          Agentic Coding Flywheel Setup                ║
+    ║          Agents Environment Setup                ║
     ║                                                       ║
     ╚═══════════════════════════════════════════════════════╝
 
@@ -809,6 +802,33 @@ Notes:
 - Minimum terminal size: 60x15.
 - CLI mode skips existing AGENTS.md; the wizard overwrites it, so move it aside if you want to keep the old one.
 
+### `acfs agents` — Flywheel Agent Guide
+
+ACFS generates a machine-wide agent guide (installed tools with live versions, workflows, safety rules). The guide lives **only** in ACFS-owned storage, and ACFS refreshes it there on install/update:
+
+```text
+~/.acfs/docs/AGENTS.workspace.md  # canonical, freely regenerated by ACFS
+~/.acfs/docs/AGENTS.workspace.md        # workspace AGENTS.md template (canonical copy)
+```
+
+ACFS never automatically writes `/AGENTS.md`, `~/.codex/AGENTS.md`, or a project's `AGENTS.md` — those files can contain user-authored rules and belong to you. (`/data/projects/AGENTS.md` is seeded once on a fresh install only when absent, and is never overwritten afterward.) Deploying the guide into a real instruction surface is an explicit step:
+
+```bash
+acfs agents update                       # regenerate the canonical guide
+acfs agents path                         # print the canonical path
+acfs agents install --codex-global       # deploy to ~/.codex/AGENTS.md (Codex global scope)
+acfs agents install --project DIR        # deploy to DIR/AGENTS.md (project scope)
+acfs agents install --workspace          # deploy to /data/projects/AGENTS.md
+acfs agents install --root               # deploy to /AGENTS.md (legacy; not auto-discovered)
+acfs agents install --to PATH            # deploy anywhere else
+```
+
+Deployment creates the destination only when it is absent. If the destination already exists with different content, the deploy refuses, leaves your file untouched, and writes a merge candidate next to it (`<dest>.acfs-new`) so you can diff and merge manually. Redeploying identical content is an idempotent no-op.
+
+Discovery scopes worth knowing: Codex reads global guidance from `~/.codex/AGENTS.md` and project guidance from the project root down to the working directory; filesystem-root `/AGENTS.md` is **not** automatically read by any major harness, which is exactly why ACFS no longer writes it.
+
+Tool detection always runs in the target user's context (including under `sudo`, resolved via `SUDO_USER` with `~/.local/bin`, `~/go/bin`, etc. on PATH), so user-local tools are reported accurately.
+
 ### `acfs info` — System Overview
 
 Displays installation status in under 1 second by reading cached state (no verification).
@@ -833,7 +853,7 @@ Example output:
 ║  Quick Commands:                                              ║
 ║    cc    → Claude Code (dangerous mode)                       ║
 ║    cod   → Codex CLI (dangerous mode)                         ║
-║    gmi   → Gemini CLI (yolo mode)                             ║
+║    agy   → Antigravity CLI (Gemini 3.1 Pro High)              ║
 ║    ntm   → Named Tmux Manager                                 ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
@@ -864,7 +884,7 @@ Example output:
 ║  Agents                                                        ║
 ║    cc   → claude --dangerously-skip-permissions                ║
 ║    cod  → codex --dangerously-bypass-approvals-and-sandbox     ║
-║    gmi  → gemini --yolo                                        ║
+║    agy  → agy --model 'Gemini 3.1 Pro (High)'                  ║
 ║                                                                ║
 ║  Git                                                           ║
 ║    gs   → git status                                           ║
@@ -909,7 +929,7 @@ acfs services-setup          # Run full setup wizard
 Guides you through:
 - **Claude Code**: API key configuration
 - **Codex CLI**: ChatGPT account login
-- **Gemini CLI**: Google account authentication
+- **Antigravity CLI**: Google account authentication
 - **GitHub CLI**: `gh auth login`
 - **Cloud CLIs**: Wrangler, Supabase, Vercel authentication
 
@@ -933,7 +953,7 @@ Displays:
 
 ## Learning Hub (Web)
 
-In addition to the terminal-based onboarding, ACFS provides a comprehensive web-based Learning Hub at [agent-flywheel.com/learn](https://agent-flywheel.com/learn).
+In addition to the terminal-based onboarding, ACFS ships interactive lessons in `acfs/onboard/lessons/` (run `onboard` to start the tutorial).
 
 ### Web Lessons
 
@@ -947,7 +967,7 @@ The Learning Hub provides interactive lessons with progress tracking:
 | 3 | tmux Basics | 7 min | Sessions, windows, panes, survival |
 | 4 | Git Essentials | 10 min | Version control, dangerous operations |
 | 5 | GitHub CLI | 8 min | Issues, PRs, releases via `gh` |
-| 6 | Agent Commands | 10 min | Claude, Codex, Gemini usage |
+| 6 | Agent Commands | 10 min | Claude, Codex, Antigravity usage |
 | 7 | NTM Command Center | 8 min | Session orchestration |
 | 8 | NTM Prompt Palette | 6 min | Quick command access |
 | 9 | The Flywheel Loop | 8 min | How all 10 tools work together |
@@ -960,11 +980,11 @@ The Learning Hub provides interactive lessons with progress tracking:
 
 ### Command Reference
 
-The [Command Reference](https://agent-flywheel.com/learn/commands) documents every installed tool:
+The command reference (`acfs help` and `acfs info`) documents every installed tool:
 
 | Category | Commands |
 |----------|----------|
-| **Agents** | `cc`, `cod`, `gmi` |
+| **Agents** | `cc`, `cod`, `agy` |
 | **Search** | `rg`, `fd`, `sg`, `fzf` |
 | **Git** | `lg`, `gh`, `git-lfs` |
 | **System** | `z`, `bat`, `lsd`, `atuin`, `tmux` |
@@ -974,7 +994,7 @@ The [Command Reference](https://agent-flywheel.com/learn/commands) documents eve
 
 ### Technical Glossary
 
-The [Glossary](https://agent-flywheel.com/glossary) defines 100+ technical terms with:
+The glossary (`acfs info --terms`) defines 100+ technical terms with:
 
 - **One-liner**: Quick tooltip definition
 - **Full explanation**: Plain language description
@@ -994,7 +1014,7 @@ RAM (Random Access Memory)
 
 ### Flywheel Visualization
 
-The [Flywheel page](https://agent-flywheel.com/flywheel) visualizes tool interactions:
+The tool interaction map (in the onboard lessons) visualizes tool interactions:
 
 ```
 Plan (Beads) ──> Coordinate (Agent Mail) ──> Execute (NTM + Agents)
@@ -1014,7 +1034,7 @@ Plan (Beads) ──> Coordinate (Agent Mail) ──> Execute (NTM + Agents)
 
 ### Tool Status Page
 
-The [Tool Status page](https://agent-flywheel.com/tools) provides a searchable catalog of all installed tools:
+`acfs doctor` provides a live status catalog of all installed tools:
 
 - **Search & Filter**: Find tools by name, CLI command, features, or tech stack
 - **Category Browsing**: Filter by "Flywheel Stack" (core agentic tools) or "Utilities"
@@ -1127,7 +1147,7 @@ onboard --reset        # Alias for reset
 
 ### Lessons
 
-Run `onboard --help` to see the currently discovered lesson list. The curriculum currently spans Linux basics, SSH, tmux, agent login, NTM, the flywheel workflow, updating, Beads, RCH, and other ACFS tools. Because lessons are discovered by filename, adding a new `NN_name.md` file automatically extends the tutorial.
+Run `onboard --help` to see the currently discovered lesson list. The curriculum currently spans Linux basics, SSH, tmux, agent login, NTM, the tool workflow, updating, Beads, RCH, and other ACFS tools. Because lessons are discovered by filename, adding a new `NN_name.md` file automatically extends the tutorial.
 
 ### Progress Tracking
 
@@ -1230,7 +1250,8 @@ Benefits for agentic workflows:
 |-------|---------|-------------------|
 | **Claude Code** | `claude` | `cc` (dangerous mode) |
 | **Codex CLI** | `codex` | `cod` (dangerous mode) |
-| **Gemini CLI** | `gemini` | `gmi` (dangerous mode) |
+| **Antigravity CLI** | `agy` | `agy` (model-pinned, dangerous mode) |
+| **Gemini CLI** (legacy) | `gemini` | `gmi` (retired 2026-06-18; routes to locked `agy`) |
 
 **Vibe Mode Aliases:**
 ```bash
@@ -1240,8 +1261,9 @@ alias cc='NODE_OPTIONS="--max-old-space-size=32768" claude --dangerously-skip-pe
 # Codex with bypass and dangerous filesystem access
 alias cod='codex --dangerously-bypass-approvals-and-sandbox'
 
-# Gemini with yolo mode
-alias gmi='gemini --yolo'
+# Antigravity CLI, model/settings/DCG locked by the ACFS launcher
+alias agy='$HOME/.local/bin/agy-locked'
+alias gmi='$HOME/.local/bin/agy-locked'
 ```
 
 **Installation & Updates:**
@@ -1249,7 +1271,7 @@ Claude Code should be installed and updated using its native mechanisms:
 - **Install:** ACFS uses the official native installer (`claude.ai/install.sh`), checksum-verified via `checksums.yaml` (installs to `~/.local/bin/claude`)
 - **Update:** Use `claude update --channel latest` (built-in) or run `acfs update --agents-only`
 
-This ensures proper authentication handling and avoids issues with alternative package manager builds. For Codex and Gemini, ACFS uses standard bun global package updates.
+This ensures proper authentication handling and avoids issues with alternative package manager builds. ACFS updates Codex with Bun global package updates and Antigravity with its native `agy update` path.
 
 ### Cloud & Database
 
@@ -1327,7 +1349,7 @@ $ acfs doctor
 ║ Agents                                                        ║
 ║   ✔ claude 1.0.24                                             ║
 ║   ✔ codex 0.1.2504252326                                      ║
-║   ✔ gemini 0.1.12                                             ║
+║   ✔ agy 1.0.12                                                ║
 ║                                                               ║
 ║ Cloud                                                         ║
 ║   ✔ vault 1.18.3                                              ║
@@ -1390,7 +1412,7 @@ The `--deep` flag runs functional tests beyond binary existence:
 
 | Category | Checks |
 |----------|--------|
-| **Agent Auth** | Claude config, Codex OAuth, Gemini credentials |
+| **Agent Auth** | Claude config, Codex OAuth, Antigravity credentials |
 | **Database** | PostgreSQL connection, ubuntu role exists |
 | **Cloud CLIs** | `gh auth status`, `wrangler whoami`, Supabase/Vercel tokens |
 | **Vault** | `VAULT_ADDR` configured |
@@ -1570,7 +1592,7 @@ Next.js 16 (App Router)
 
 **No backend required.** All state is stored in:
 - URL query parameters
-- localStorage (`agent-flywheel-user-os`, `agent-flywheel-vps-ip`, `agent-flywheel-wizard-completed-steps`)
+- persistent state in `~/.acfs/state.json`
 
 ### Wizard State Management
 
@@ -1680,8 +1702,10 @@ export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/.bun/bin:$PATH"
-export PATH="$HOME/.atuin/bin:$PATH"
 ```
+
+Atuin is still installed, but ACFS keeps it behind the guarded `~/.local/bin/atuin`
+shim instead of putting `~/.atuin/bin` at the front of interactive shell `PATH`.
 
 **Modern CLI Aliases:**
 ```bash
@@ -1696,9 +1720,6 @@ alias lg='lazygit'
 
 **Tool Integrations:**
 ```bash
-# Atuin (better shell history)
-eval "$(atuin init zsh)"
-
 # Zoxide (smarter cd)
 eval "$(zoxide init zsh)"
 
@@ -1721,18 +1742,13 @@ source /usr/share/doc/fzf/examples/key-bindings.zsh
 | `Ctrl+Delete` | Delete word forward | Fast deletion |
 | `Home` | Beginning of line | Works in all terminals |
 | `End` | End of line | Works in all terminals |
-| `Ctrl+R` | Atuin history search | Interactive fuzzy search |
+| `Ctrl+R` | Shell history search | Uses the active shell/editor binding |
 
 **Atuin History Bindings:**
-The config forces Atuin bindings to load last (after OMZ plugins) ensuring `Ctrl+R` triggers Atuin's fuzzy history search rather than zsh's default:
-
-```bash
-# Forced at end of zshrc
-bindkey -e  # Emacs mode
-bindkey -M emacs '^R' atuin-search
-bindkey -M viins '^R' atuin-search-viins
-bindkey -M vicmd '^R' atuin-search-vicmd
-```
+ACFS intentionally does not enable Atuin's zsh preexec/precmd integration by
+default. Atuin's searchable CLI remains available as `atuin search`, but the
+automatic shell hook can record every coding-agent command and grow the Atuin
+database fast enough to make shells laggy.
 
 ### `~/.acfs/tmux/tmux.conf`
 
@@ -1847,7 +1863,7 @@ Component update logic with version tracking and logging:
 ```bash
 update_apt()       # apt update/upgrade with lock detection
 update_bun()       # bun upgrade with version tracking
-update_agents()    # Claude, Codex, Gemini (version before/after)
+update_agents()    # Claude, Codex, Antigravity (version before/after)
 update_cloud()     # Wrangler, Supabase, Vercel (Supabase uses verified release tarball)
 update_rust()      # rustup update stable
 update_uv()        # uv self update
@@ -1973,7 +1989,7 @@ interface SessionExport {
   schema_version: 1;
   exported_at: string;              // ISO8601
   session_id: string;
-  agent: "claude-code" | "codex" | "gemini";
+  agent: "claude-code" | "codex" | "agy";
   model: string;
   summary: string;
   duration_minutes: number;
@@ -2121,7 +2137,7 @@ Safe variants are allowlisted:
 ### Installation
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh?$(date +%s)" | bash
+acfs update --stack-only
 ```
 
 ### Claude Code Configuration
@@ -2366,7 +2382,7 @@ The release doctor composes the maintainer checks that are easy to forget:
 - `shellcheck install.sh scripts/**/*.sh`
 - manifest/generated/checksum drift via `scripts/check-manifest-drift.sh --json --quiet`
 - verified-installer checksum candidate review with `--network=check`
-- website `type-check`, `lint`, and production build when `apps/web` changed or `--full` is set
+- shellcheck + bats coverage when scripts changed or `--full` is set
 
 The checksum candidate check uses the canonical updater output. If the generated body differs from `checksums.yaml`, review the diff before release; if only the timestamp header differs, leave `checksums.yaml` unchanged. The default `--network=skip` keeps routine runs offline, and `--web=auto` runs website checks only when web files changed unless `--full` or `--web=always` is provided.
 
@@ -2390,7 +2406,7 @@ bash scripts/agent-readiness-audit.sh
 bash scripts/agent-readiness-audit.sh --json
 ```
 
-The audit checks Claude Code, Codex CLI, Gemini CLI, and `caam` without printing token values or auth file contents. It reports CLI presence, version availability, parseable auth/config files, CAAM default profile consistency, and stale CAAM defaults that point at missing profiles.
+The audit checks Claude Code, Codex CLI, Antigravity CLI, and `caam` without printing token values or auth file contents. It reports CLI presence, version availability, parseable auth/config files, CAAM default profile consistency, and stale CAAM defaults that point at missing profiles.
 
 Useful options:
 
@@ -2434,7 +2450,7 @@ triggers:
    - `ACFS_MANIFEST_SHA256` mismatches
    - internal script checksum drift (`scripts/generated/internal_checksums.sh`)
    - generated installer and web metadata drift via `bun run generate:diff`
-   - semantic manifest contract drift across `scripts/generated/doctor_checks.sh`, `apps/web/lib/generated`, `acfs/onboard/lessons`, README snippets, and `checksums.yaml`
+   - semantic manifest contract drift across `scripts/generated/doctor_checks.sh`, `acfs/onboard/lessons`, README snippets, and `checksums.yaml`
 2. **Auto-Repair Drift**: If drift is detected, runs `--fix` (regenerate + commit + push)
 3. **Verify Current Upstream Checksums**: Downloads all upstream installers, calculates SHA256
 4. **Detect Upstream Changes**: Compares against `checksums.yaml`
@@ -2573,7 +2589,7 @@ tests:
 
 ## VPS Providers
 
-ACFS works on any Ubuntu VPS with SSH key login. Here are recommended providers optimized for multi-agent workloads.
+ACFS works on any Ubuntu VPS with SSH access and either root password login or a provider console that lets you become root for the first install. Here are recommended providers optimized for multi-agent workloads.
 
 > **Why 48-64GB RAM?** Each AI coding agent uses ~2GB RAM. To run 10-20+ agents simultaneously, you need 48GB+ RAM. Don't bottleneck a $400+/month AI investment to save $20 on hosting.
 
@@ -2613,7 +2629,7 @@ After installation, run `acfs capacity --profile 25-agents --recommend-ntm` on t
 
 ### Other Providers
 
-Any provider with Ubuntu VPS and SSH key login works. The wizard at [agent-flywheel.com](https://agent-flywheel.com) has step-by-step guides.
+Any provider with an Ubuntu VPS, SSH access, and a first-login root password or root console works.
 
 ### Provider Setup Guides
 
@@ -2621,15 +2637,15 @@ ACFS includes detailed step-by-step guides for each supported provider in `scrip
 
 | Provider | Guide | Key Sections |
 |----------|-------|--------------|
-| **Contabo** | `contabo.md` | Account creation, plan selection, data center choice, SSH key setup |
-| **OVH** | `ovh.md` | Control panel navigation, instance configuration, networking |
+| **Contabo** | `contabo.md` | Account creation, plan selection, data center choice, root password setup |
+| **OVH** | `ovh.md` | Control panel navigation, password authentication, instance configuration, networking |
 | **Hetzner** | `hetzner.md` | Project setup, firewall rules, console access |
 
 Each guide includes:
 - **Screenshots** for every step (in `scripts/providers/screenshots/`)
 - **Pricing breakdowns** with recommendations
 - **Region selection** guidance (latency, privacy)
-- **SSH key** configuration specific to that provider
+- Password-first login guidance and post-install SSH key recovery specific to that provider
 - **Troubleshooting** for common provisioning issues
 
 **Provider Comparison:**
@@ -2653,7 +2669,7 @@ Each guide includes:
 ## Project Structure
 
 ```
-agentic_coding_flywheel_setup/
+agents_environment_setup/
 ├── README.md                     # This file
 ├── AGENTS.md                     # Development guidelines
 ├── VERSION                       # Current version (0.7.0)
@@ -2709,7 +2725,7 @@ agentic_coding_flywheel_setup/
 │   │   ├── install_agents.sh     # AI coding agents
 │   │   ├── install_cloud.sh      # Cloud CLIs
 │   │   ├── install_stack.sh      # Dicklesworthstone stack
-│   │   ├── install_all.sh        # Master installer
+│   │   ├── install_all.sh        # Top-level installer
 │   │   └── doctor_checks.sh      # Verification checks
 │   ├── providers/                # VPS provider guides
 │   │   ├── ovh.md
@@ -2737,7 +2753,7 @@ agentic_coding_flywheel_setup/
 ### Website Development
 
 ```bash
-cd apps/web
+cd packages/manifest
 bun install           # Install dependencies
 bun run dev           # Dev server at http://localhost:3000
 bun run build         # Production build
@@ -2901,7 +2917,7 @@ All sync scripts use the security library for HTTPS enforcement and content hash
 
 ### Website Design System
 
-The website uses a comprehensive design system (`apps/web/lib/design-tokens.ts`):
+The installer uses a consistent terminal UI system (`scripts/lib/gum_ui.sh`):
 
 **Color Tokens (OKLCH Color Space):**
 ```typescript
@@ -3008,7 +3024,7 @@ Currently, ACFS installs the full suite. Future versions will support:
 
 ### The Problem: The Agentic Coding Barrier
 
-The rise of AI coding agents (Claude Code, Codex CLI, Gemini CLI) has created a new paradigm in software development. These agents can write code, debug issues, and even architect solutions—but only if they have the right environment.
+The rise of AI coding agents (Claude Code, Codex CLI, Antigravity CLI) has created a new paradigm in software development. These agents can write code, debug issues, and even architect solutions—but only if they have the right environment.
 
 **The barrier isn't the agents themselves.** It's the **hours of setup** required to create an environment where agents can actually be productive:
 
@@ -3047,7 +3063,7 @@ For experienced developers, the setup is tedious but doable. For beginners—the
 - How do I connect to a remote server?
 - What are all these tools and why do I need them?
 
-The [wizard website at agent-flywheel.com](https://agent-flywheel.com) solves this by providing:
+The setup wizard solves this by providing:
 
 1. **Absolute beginner guidance** — Explains every concept in plain English
 2. **OS-specific instructions** — Detects Mac vs Windows, shows the right commands
@@ -3078,7 +3094,7 @@ ACFS isn't just a collection of tools—it's a **carefully curated system** wher
 ├─────────────────┤         ├─────────────────┤         ├─────────────────┤
 │ • zsh + p10k    │────────▶│ • Claude Code   │────────▶│ • Agent Mail    │
 │ • tmux          │         │ • Codex CLI     │         │ • NTM           │
-│ • Modern CLI    │         │ • Gemini CLI    │         │ • SLB + DCG     │
+│ • Modern CLI    │         │ • Antigravity   │         │ • SLB + DCG     │
 │ • Language VMs  │         │                 │         │ • Beads Viewer  │
 └─────────────────┘         └─────────────────┘         └─────────────────┘
          │                             │                             │
@@ -3118,7 +3134,7 @@ A single agent with basic tooling is useful. Three agents with:
 
 Tip: run `acfs services-setup` to configure logins, and enable DCG for destructive-command protection.
 
-**This is the flywheel effect in action.** Better tools → more capable agents → more code shipped → better understanding of what tools are needed → better tools.
+**This is the compounding effect in action.** Better tools → more capable agents → more code shipped → better understanding of what tools are needed → better tools.
 
 ---
 
@@ -3228,7 +3244,7 @@ scripts/generated/
 ├── install_network.sh     # Tailscale
 ├── install_lang.sh        # bun, uv, rust, go
 ├── install_tools.sh       # ast-grep, atuin, zoxide
-├── install_agents.sh      # claude, codex, gemini
+├── install_agents.sh      # claude, codex, agy
 ├── install_db.sh          # PostgreSQL 18, Vault
 ├── install_cloud.sh       # wrangler, supabase, vercel
 ├── install_stack.sh       # Dicklesworthstone 10-tool stack + utilities
@@ -3433,7 +3449,7 @@ tmux session: acfs-swarm
 ├── agent-2: Claude working on api
 ├── agent-3: Claude working on tests
 ├── agent-4: Codex reviewing PRs
-├── agent-5: Gemini writing docs
+├── agent-5: Antigravity writing docs
 └── ...
 ```
 
@@ -3506,9 +3522,9 @@ Beads, or Agent Mail.
 
 ## Philosophy
 
-### The Flywheel
+### The Core Loop
 
-The "Agentic Coding Flywheel" is a virtuous cycle:
+A better environment compounds:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -3520,7 +3536,7 @@ The "Agentic Coding Flywheel" is a virtuous cycle:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-ACFS kicks off this flywheel by providing the **best possible starting environment** for agentic coding.
+ACFS kicks off this loop by providing the **best possible starting environment** for agentic coding.
 
 ### Design Principles
 
@@ -3583,7 +3599,7 @@ One agent is useful. Three agents working in parallel are transformative.
 Vibe coding assumes you'll run multiple agents simultaneously:
 - Claude for complex reasoning and architecture
 - Codex for rapid prototyping and refactoring
-- Gemini for documentation and research
+- Antigravity for documentation and research
 
 ACFS provides the coordination layer (Agent Mail, NTM, SLB) that makes this practical.
 
@@ -4170,13 +4186,13 @@ codex --version
 codex  # Follow first-run sign-in prompts
 ```
 
-**Gemini CLI**:
+**Antigravity CLI**:
 ```bash
 # Check auth status
-gemini --version
+agy --version
 
 # Re-authenticate
-gemini  # Follow Google login flow, or use /auth inside Gemini CLI
+agy  # Follow Google login flow
 ```
 
 ### "Command Not Found" After Install
@@ -4308,9 +4324,9 @@ Doctor checks are generated directly from the manifest, so they verify the exact
 4. **Reinstall if binary is missing**:
    ```bash
    which dcg  # Should return a path
-   # If missing, reinstall:
-   curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh" | bash
-   dcg install  # Register hook after reinstall
+   # If missing, reinstall through the ACFS verified installer path:
+   acfs update --stack-only
+   dcg install --force  # Register hook after reinstall
    ```
 
 ### Complete Reset
@@ -4419,7 +4435,7 @@ Vibe mode (`--mode vibe`) enables:
 - Passwordless sudo for ubuntu user
 - `--dangerously-skip-permissions` for Claude
 - `--dangerously-bypass-approvals-and-sandbox` for Codex
-- `--yolo` for Gemini
+- Always-proceed tool permission for Antigravity (`agy`)
 
 This is **intentionally insecure for velocity**. Use only on:
 - Throwaway VPS you don't care about
@@ -4797,15 +4813,45 @@ MIT License (with OpenAI/Anthropic Rider). See [LICENSE](LICENSE) for details.
 
 ## Links
 
-- **Website:** [agent-flywheel.com](https://agent-flywheel.com) — Interactive wizard for beginners
 - **GitHub:** [quangdang46/agents_environment_setup](https://github.com/quangdang46/agents_environment_setup)
-- **Related Projects:**
+- **Dicklesworthstone Stack:**
   - [ntm](https://github.com/Dicklesworthstone/ntm) - Named Tmux Manager
-  - [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) - Task management TUI
   - [mcp_agent_mail_rust](https://github.com/Dicklesworthstone/mcp_agent_mail_rust) - Agent coordination
+  - [ultimate_bug_scanner](https://github.com/Dicklesworthstone/ultimate_bug_scanner) - Bug scanning with guardrails
+  - [beads_rust](https://github.com/Dicklesworthstone/beads_rust) - Issue tracking (br)
+  - [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) - Task management TUI
   - [cass](https://github.com/Dicklesworthstone/coding_agent_session_search) - Agent session search
+  - [cass_memory_system](https://github.com/Dicklesworthstone/cass_memory_system) - Procedural memory (cm)
+  - [coding_agent_account_manager](https://github.com/Dicklesworthstone/coding_agent_account_manager) - Agent auth switching
+  - [simultaneous_launch_button](https://github.com/Dicklesworthstone/simultaneous_launch_button) - Two-person rule (slb)
   - [dcg](https://github.com/Dicklesworthstone/destructive_command_guard) - Destructive Command Guard
-  - [ru](https://github.com/Dicklesworthstone/repo_updater) - Repo Updater
+  - [repo_updater](https://github.com/Dicklesworthstone/repo_updater) - Repo Updater
+  - [automated_plan_reviser_pro](https://github.com/Dicklesworthstone/automated_plan_reviser_pro) - Plan reviser (apr)
+  - [process_triage](https://github.com/Dicklesworthstone/process_triage) - Process triage (pt)
+  - [brenner_bot](https://github.com/Dicklesworthstone/brenner_bot) - Research sessions
+  - [remote_compilation_helper](https://github.com/Dicklesworthstone/remote_compilation_helper) - RCH offload
+  - [wezterm_automata](https://github.com/Dicklesworthstone/wezterm_automata) - WezTerm automation (wa)
+  - [system_resource_protection_script](https://github.com/Dicklesworthstone/system_resource_protection_script) - SRPS
+  - [frankensearch](https://github.com/Dicklesworthstone/frankensearch) - Hybrid search (fsfs)
+  - [storage_ballast_helper](https://github.com/Dicklesworthstone/storage_ballast_helper) - SBH
+  - [cross_agent_session_resumer](https://github.com/Dicklesworthstone/cross_agent_session_resumer) - CASR
+  - [doodlestein_self_releaser](https://github.com/Dicklesworthstone/doodlestein_self_releaser) - DSR releases
+  - [agent_settings_backup_script](https://github.com/Dicklesworthstone/agent_settings_backup_script) - ASB
+  - [post_compact_reminder](https://github.com/Dicklesworthstone/post_compact_reminder) - PCR
+  - [giil](https://github.com/Dicklesworthstone/giil) - Download cloud images
+  - [csctf](https://github.com/Dicklesworthstone/csctf) - Chat share → Markdown/HTML
+  - [xf](https://github.com/Dicklesworthstone/xf) - X post archive search
+  - [toon_rust](https://github.com/Dicklesworthstone/toon_rust) - Token-optimized notation
+  - [rano](https://github.com/Dicklesworthstone/rano) - Rano
+  - [markdown_web_browser](https://github.com/Dicklesworthstone/markdown_web_browser) - MDWB
+  - [source_to_prompt_tui](https://github.com/Dicklesworthstone/source_to_prompt_tui) - S2P
+  - [rust_proxy](https://github.com/Dicklesworthstone/rust_proxy) - Rust proxy
+  - [aadc](https://github.com/Dicklesworthstone/aadc) - AADC
+  - [coding_agent_usage_tracker](https://github.com/Dicklesworthstone/coding_agent_usage_tracker) - CAUT
+- **User tools:**
+  - [ms](https://github.com/quangdang46/ms) - Meta Skill (fork)
+  - [openproxy](https://github.com/quangdang46/openproxy) - Lightweight HTTP/HTTPS proxy
+  - [fast_file_search](https://github.com/quangdang46/fast_file_search) - Rapid file discovery
 
 ---
 

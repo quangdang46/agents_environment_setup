@@ -8,24 +8,24 @@
 # Used by check-manifest-drift.sh to detect unauthorized changes.
 
 declare -gA ACFS_INTERNAL_CHECKSUMS=(
-  [scripts/lib/security.sh]="259ed8b628107b1c3f7b467b7824be88a73af99d28e8a88020e106054d8fd83e"
-  [scripts/lib/agents.sh]="66fac24c48c9ce7d17ae213ff2f8669a1902e77f01266f4eeaccdcef09e02856"
-  [scripts/lib/update.sh]="51fbefcfa36c09dd9b244517d27a518b1ccb99a34e7a6647eaa21b90cbf0373a"
-  [scripts/lib/doctor.sh]="eb1474990b5661c4c58883530358e23d8b1206ae9a59bcbe6ebfad5a8a45034f"
-  [scripts/lib/doctor_fix.sh]="b8170255b210e10afb82e0d9f297abdae259e534cf807bf95ef00e8a27992d31"
-  [scripts/lib/offline_artifact_pack.sh]="38c6c2821044e2ac197b686403902419d73859f5eb370244f27e2ae54a5f1db1"
+  [scripts/lib/security.sh]="1a9a5a55ef8e1b283ea8e848626ce8623c0f4d0829a6853ae78a0854f797ef8b"
+  [scripts/lib/agents.sh]="ae0cec5811a00648983c39ecf27e6ec477f3dd616f65dff3db27c154a4ff7304"
+  [scripts/lib/update.sh]="def4cfd93f877212a5df7c983afba8dcfa09a3556d426b09d82be3a5035dbc24"
+  [scripts/lib/doctor.sh]="fe8c69f7a903f6be14941359abf4c054b86f714f8685c97987d225991a4e0778"
+  [scripts/lib/doctor_fix.sh]="53cdb32557f8c71fe13b6e76dcff7b5b6ebad816651fa4119f48f85b837255d9"
+  [scripts/lib/offline_artifact_pack.sh]="5f6fa7e5a9e115904656a627853b2c7d556183532a3d8fd42a0363bf3570c7eb"
   [scripts/lib/autofix.sh]="0468d4889d304a404f161778ddf393a71fa7657317f88f692a47442760ed78d9"
-  [scripts/lib/install_helpers.sh]="7fb952755e0401bec1c2a20b247d35809eab73ce51a1de1c2b6d725be9431481"
-  [scripts/lib/logging.sh]="af95380f740a905f990e68a627508eb6dbaa6f83e03014c8eea2b69c2750dabe"
-  [scripts/lib/state.sh]="008dee6719f0ed1a13efee9313e29b402d2301cf139a2415cbebbd138c77593c"
-  [scripts/lib/session.sh]="d2d2b26109a6eb0fad6620c68fdc0bd5d1a75ae453a6c35112bd5665484c94f1"
+  [scripts/lib/install_helpers.sh]="d401c94ef9e3d807ecdf8f4512933230ef6e49ee17417abca2a25c4975e9a4a3"
+  [scripts/lib/logging.sh]="890d8e6e44332bede591e462b277a903ae8d8679adebd8cc4fc76face078f6be"
+  [scripts/lib/state.sh]="3ce715176330459b2d9ce341f491fd6d4aabf81c54d94e3d76b01a0fb58dc8bf"
+  [scripts/lib/session.sh]="8a2ab64a67006c62ac0db8d89ea6d71d160f3f2efd2cb99ffe6ea0857abde3e5"
   [scripts/lib/os_detect.sh]="5cc5c182d212d7ea76fd345f97e97d808aad5d7e8cb29736b03f88e2ad115889"
-  [scripts/lib/errors.sh]="3ce3d904e6e9fb5648fec89ee25426bc261ecddd5c6a4ea20393331bb3661b5e"
-  [scripts/lib/user.sh]="78dc2bccb72a4e797ed7663269230f839c181d5bb15b8c0113cd187c3d590df0"
+  [scripts/lib/errors.sh]="79825975511e1f8d0f2ce27518929eea4c6bc5d8f776dedf97b418ff285f1964"
+  [scripts/lib/user.sh]="38cc269fcf42ab0be66944126b88a5672156a21f3c5e74d0687c953febc50bc8"
   [scripts/lib/tools.sh]="e2d48e800888b759245e66cc9d86d097d83bf10f6d3bd2fcd17ec4bddfec94e0"
   [scripts/lib/export-config.sh]="6280123436223b5708f506b0a18b83c64891f8ee55af93c5c513f7fb202b97e3"
-  [scripts/acfs-global]="593829bc77d2f2e65f012fa09446937ae4620e0d85e3d5534f499bc7f507b596"
-  [scripts/acfs-update]="3ab9578caa95e7866a706c543bc8af9302ccf20538b716cca621e5c037ee24b0"
+  [scripts/acfs-global]="08480a09fa6699cef325937351e9f937904f82f8bdb8f88381ec95bd18c5c56f"
+  [scripts/acfs-update]="178ab5f2af97f8c1584aa298aef350b28fe5b8dafd95e85c28af3be27e05f816"
 )
 
 ACFS_INTERNAL_CHECKSUMS_COUNT=18

@@ -56,8 +56,8 @@ print_banner() {
     ║    ██║  ██║╚██████╗██║     ███████║                          ║
     ║    ╚═╝  ╚═╝ ╚═════╝╚═╝     ╚══════╝                          ║
     ║                                                               ║
-    ║    Agentic Coding Flywheel Setup                             ║
-    ║    github.com/Dicklesworthstone/agentic_coding_flywheel_setup║
+    ║    Agents Environment Setup                             ║
+    ║    github.com/quangdang46/agents_environment_setup║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
 '
@@ -81,12 +81,12 @@ print_compact_banner() {
             --align center \
             --width 50 \
             "$(gum style --foreground "$ACFS_ACCENT" --bold 'ACFS')
-$(gum style --foreground "$ACFS_MUTED" 'Agentic Coding Flywheel Setup')"
+$(gum style --foreground "$ACFS_MUTED" 'Agents Environment Setup')"
     else
         echo ""
         echo "╔════════════════════════════════════════════╗"
         echo "║           ACFS v${ACFS_VERSION:-0.1.0}                       ║"
-        echo "║   Agentic Coding Flywheel Setup            ║"
+        echo "║   Agents Environment Setup            ║"
         echo "╚════════════════════════════════════════════╝"
         echo ""
     fi

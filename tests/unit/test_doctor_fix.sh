@@ -2284,6 +2284,163 @@ test_fix_verified_install_dry_run() {
     return 0
 }
 
+test_dispatch_fix_routes_cass_with_target_tmpdir() {
+    setup_test_env
+    export TARGET_HOME="$ACFS_STATE_DIR/target-home"
+    mkdir -p "$TARGET_HOME/.local/bin"
+    export PATH="$TARGET_HOME/.local/bin:$PATH"
+
+    local original_doctor_fix_run_verified_installer_with_env=""
+    local installer_signal="$ACFS_STATE_DIR/cass-installer.env"
+    original_doctor_fix_run_verified_installer_with_env="$(declare -f doctor_fix_run_verified_installer_with_env)"
+
+    start_autofix_session >/dev/null || {
+        echo "  Failed to start autofix session"
+        cleanup_test_env
+        return 1
+    }
+
+    doctor_fix_run_verified_installer_with_env() {
+        local tool="$1"
+        local env_assignment="$2"
+        shift 2
+
+        printf '%s\n%s\n%s\n' "$tool" "$env_assignment" "$*" > "$installer_signal"
+        [[ "$tool" == "cass" ]] || return 1
+        case "$env_assignment" in
+            "TMPDIR=$TARGET_HOME/.cache/acfs/installer-tmp/cass."*) ;;
+            *) return 1 ;;
+        esac
+        [[ -d "${env_assignment#TMPDIR=}" ]] || return 1
+        [[ "$*" == "--easy-mode --verify" ]] || return 1
+
+        cat > "$TARGET_HOME/.local/bin/cass" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+        chmod +x "$TARGET_HOME/.local/bin/cass"
+        return 0
+    }
+
+    if ! dispatch_fix "stack.cass" "fail" "install cass" >/dev/null 2>&1; then
+        echo "  dispatch_fix should route stack.cass through the target TMPDIR verified installer"
+        eval "$original_doctor_fix_run_verified_installer_with_env"
+        cleanup_test_env
+        return 1
+    fi
+
+    if [[ ! -s "$installer_signal" ]]; then
+        echo "  stack.cass did not invoke the verified installer"
+        eval "$original_doctor_fix_run_verified_installer_with_env"
+        cleanup_test_env
+        return 1
+    fi
+
+    if [[ ! -x "$TARGET_HOME/.local/bin/cass" ]]; then
+        echo "  stack.cass repair did not install cass in TARGET_HOME"
+        eval "$original_doctor_fix_run_verified_installer_with_env"
+        cleanup_test_env
+        return 1
+    fi
+
+    eval "$original_doctor_fix_run_verified_installer_with_env"
+    cleanup_test_env
+    return 0
+}
+
+test_doctor_fix_build_runtime_env_args_accepts_multiple_env_assignments() {
+    setup_test_env
+    export TARGET_HOME="$ACFS_STATE_DIR/target-home"
+    mkdir -p "$TARGET_HOME/.local/bin"
+
+    local -a env_args=()
+    if ! doctor_fix_build_runtime_env_args env_args $'FIRST_ENV=one\nSECOND_ENV=two words'; then
+        echo "  runtime env builder should accept newline-separated installer env assignments"
+        cleanup_test_env
+        return 1
+    fi
+
+    if [[ " ${env_args[*]} " != *" TARGET_HOME=$TARGET_HOME "* ]]; then
+        echo "  runtime env args should include TARGET_HOME"
+        cleanup_test_env
+        return 1
+    fi
+
+    if [[ " ${env_args[*]} " != *" FIRST_ENV=one "* ]]; then
+        echo "  runtime env args should include FIRST_ENV"
+        cleanup_test_env
+        return 1
+    fi
+
+    if [[ " ${env_args[*]} " != *" SECOND_ENV=two words "* ]]; then
+        echo "  runtime env args should include SECOND_ENV with spaces preserved"
+        cleanup_test_env
+        return 1
+    fi
+
+    cleanup_test_env
+    return 0
+}
+
+test_fix_verified_install_ignores_gcloud_bv_shadow() {
+    setup_test_env
+    mkdir -p "$HOME/google-cloud-sdk/bin" "$HOME/.local/bin"
+    export PATH="$HOME/google-cloud-sdk/bin:$PATH"
+
+    local original_doctor_fix_run_verified_installer=""
+    local installer_signal="$ACFS_STATE_DIR/bv-installer-invoked"
+    original_doctor_fix_run_verified_installer="$(declare -f doctor_fix_run_verified_installer)"
+
+    cat > "$HOME/google-cloud-sdk/bin/bv" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$HOME/google-cloud-sdk/bin/bv"
+
+    start_autofix_session >/dev/null || {
+        echo "  Failed to start autofix session"
+        cleanup_test_env
+        return 1
+    }
+
+    doctor_fix_run_verified_installer() {
+        local tool="$1"
+        : > "$installer_signal"
+        [[ "$tool" == "bv" ]] || return 1
+        cat > "$HOME/.local/bin/bv" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+        chmod +x "$HOME/.local/bin/bv"
+        return 0
+    }
+
+    if ! fix_verified_install "stack.bv" "bv" "bv" >/dev/null 2>&1; then
+        echo "  fix_verified_install should repair a gcloud-shadowed bv"
+        eval "$original_doctor_fix_run_verified_installer"
+        cleanup_test_env
+        return 1
+    fi
+
+    if [[ ! -f "$installer_signal" ]]; then
+        echo "  fix_verified_install incorrectly treated gcloud's bv as the Beads Viewer install"
+        eval "$original_doctor_fix_run_verified_installer"
+        cleanup_test_env
+        return 1
+    fi
+
+    if [[ ! -x "$HOME/.local/bin/bv" ]]; then
+        echo "  fix_verified_install did not create the target Beads Viewer binary"
+        eval "$original_doctor_fix_run_verified_installer"
+        cleanup_test_env
+        return 1
+    fi
+
+    eval "$original_doctor_fix_run_verified_installer"
+    cleanup_test_env
+    return 0
+}
+
 test_fix_verified_install_ms_arm64_fallback_uses_cargo() {
     setup_test_env
     export TARGET_HOME="$ACFS_STATE_DIR/target-home"
@@ -2427,6 +2584,8 @@ EOF
 test_fix_ssh_server_records_change_when_enabling_service() {
     setup_test_env
     local created_systemd_dir=false
+    local original_resolver=""
+    local temp_bin=""
 
     if [[ ! -d /run/systemd/system ]]; then
         mkdir -p /run/systemd/system || {
@@ -2444,17 +2603,35 @@ test_fix_ssh_server_records_change_when_enabling_service() {
         return 1
     }
 
-    sshd() { return 0; }
-    sudo() { "$@"; }
-    systemctl() {
+    original_resolver="$(declare -f doctor_fix_system_binary_path)"
+    temp_bin="$ACFS_STATE_DIR/bin"
+    mkdir -p "$temp_bin"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$temp_bin/sshd"
+    cat > "$temp_bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+    is-active) exit 1 ;;
+    enable) exit 0 ;;
+    *) exit 0 ;;
+esac
+EOF
+    cat > "$temp_bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-n" ]] || exit 42
+shift
+exec "$@"
+EOF
+    chmod +x "$temp_bin/sshd" "$temp_bin/systemctl" "$temp_bin/sudo"
+
+    doctor_fix_system_binary_path() {
         case "${1:-}" in
-            is-active) return 1 ;;
-            enable) return 0 ;;
-            *) return 0 ;;
+            sshd|systemctl|sudo) printf '%s\n' "$temp_bin/${1:-}" ;;
+            *) command -v -- "${1:-}" 2>/dev/null || return 1 ;;
         esac
     }
 
     if ! fix_ssh_server "network.ssh_server" >/dev/null 2>&1; then
+        eval "$original_resolver"
         echo "  fix_ssh_server should succeed when systemctl enable/start succeeds"
         if [[ "$created_systemd_dir" == "true" ]]; then rmdir /run/systemd/system 2>/dev/null || true; fi
         cleanup_test_env
@@ -2462,12 +2639,14 @@ test_fix_ssh_server_records_change_when_enabling_service() {
     fi
 
     if ! jq -e 'select(.description == "Enabled and started SSH server")' "$ACFS_CHANGES_FILE" >/dev/null 2>&1; then
+        eval "$original_resolver"
         echo "  fix_ssh_server did not record the SSH enable/start change"
         if [[ "$created_systemd_dir" == "true" ]]; then rmdir /run/systemd/system 2>/dev/null || true; fi
         cleanup_test_env
         return 1
     fi
 
+    eval "$original_resolver"
     if [[ "$created_systemd_dir" == "true" ]]; then rmdir /run/systemd/system 2>/dev/null || true; fi
     cleanup_test_env
     return 0
@@ -2476,6 +2655,8 @@ test_fix_ssh_server_records_change_when_enabling_service() {
 test_fix_ssh_server_fails_when_service_enable_fails() {
     setup_test_env
     local created_systemd_dir=false
+    local original_resolver=""
+    local temp_bin=""
 
     if [[ ! -d /run/systemd/system ]]; then
         mkdir -p /run/systemd/system || {
@@ -2493,17 +2674,35 @@ test_fix_ssh_server_fails_when_service_enable_fails() {
         return 1
     }
 
-    sshd() { return 0; }
-    sudo() { "$@"; }
-    systemctl() {
+    original_resolver="$(declare -f doctor_fix_system_binary_path)"
+    temp_bin="$ACFS_STATE_DIR/bin"
+    mkdir -p "$temp_bin"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$temp_bin/sshd"
+    cat > "$temp_bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+    is-active) exit 1 ;;
+    enable) exit 1 ;;
+    *) exit 1 ;;
+esac
+EOF
+    cat > "$temp_bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-n" ]] || exit 42
+shift
+exec "$@"
+EOF
+    chmod +x "$temp_bin/sshd" "$temp_bin/systemctl" "$temp_bin/sudo"
+
+    doctor_fix_system_binary_path() {
         case "${1:-}" in
-            is-active) return 1 ;;
-            enable) return 1 ;;
-            *) return 1 ;;
+            sshd|systemctl|sudo) printf '%s\n' "$temp_bin/${1:-}" ;;
+            *) command -v -- "${1:-}" 2>/dev/null || return 1 ;;
         esac
     }
 
     if fix_ssh_server "network.ssh_server" >/dev/null 2>&1; then
+        eval "$original_resolver"
         echo "  fix_ssh_server should fail when systemctl enable/start fails"
         if [[ "$created_systemd_dir" == "true" ]]; then rmdir /run/systemd/system 2>/dev/null || true; fi
         cleanup_test_env
@@ -2511,12 +2710,14 @@ test_fix_ssh_server_fails_when_service_enable_fails() {
     fi
 
     if [[ -s "$ACFS_CHANGES_FILE" ]]; then
+        eval "$original_resolver"
         echo "  fix_ssh_server should not record a change when enable/start fails"
         if [[ "$created_systemd_dir" == "true" ]]; then rmdir /run/systemd/system 2>/dev/null || true; fi
         cleanup_test_env
         return 1
     fi
 
+    eval "$original_resolver"
     if [[ "$created_systemd_dir" == "true" ]]; then rmdir /run/systemd/system 2>/dev/null || true; fi
     cleanup_test_env
     return 0
@@ -2524,6 +2725,8 @@ test_fix_ssh_server_fails_when_service_enable_fails() {
 
 test_fix_ssh_keepalive_applies_and_records_change() {
     setup_test_env
+    local original_resolver=""
+    local temp_bin=""
 
     export DOCTOR_FIX_SSHD_CONFIG="$ACFS_STATE_DIR/sshd_config"
     printf 'Port 22\n' > "$DOCTOR_FIX_SSHD_CONFIG"
@@ -2534,33 +2737,58 @@ test_fix_ssh_keepalive_applies_and_records_change() {
         return 1
     }
 
-    sudo() { "$@"; }
-    systemctl() { return 0; }
+    original_resolver="$(declare -f doctor_fix_system_binary_path)"
+    temp_bin="$ACFS_STATE_DIR/bin"
+    mkdir -p "$temp_bin"
+    cat > "$temp_bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    cat > "$temp_bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-n" ]] || exit 42
+shift
+exec "$@"
+EOF
+    chmod +x "$temp_bin/systemctl" "$temp_bin/sudo"
+
+    doctor_fix_system_binary_path() {
+        case "${1:-}" in
+            systemctl|sudo) printf '%s\n' "$temp_bin/${1:-}" ;;
+            *) command -v -- "${1:-}" 2>/dev/null || return 1 ;;
+        esac
+    }
 
     if ! fix_ssh_keepalive "network.ssh_keepalive" >/dev/null 2>&1; then
+        eval "$original_resolver"
         echo "  fix_ssh_keepalive should succeed against an override sshd_config path"
         cleanup_test_env
         return 1
     fi
 
     if ! grep -q 'ClientAliveInterval 60' "$DOCTOR_FIX_SSHD_CONFIG"; then
+        eval "$original_resolver"
         echo "  fix_ssh_keepalive did not append ClientAliveInterval"
         cleanup_test_env
         return 1
     fi
 
     if ! jq -e --arg path "$DOCTOR_FIX_SSHD_CONFIG" 'select(.description == ("Configured SSH keepalive in " + $path))' "$ACFS_CHANGES_FILE" >/dev/null 2>&1; then
+        eval "$original_resolver"
         echo "  fix_ssh_keepalive did not record the keepalive change"
         cleanup_test_env
         return 1
     fi
 
+    eval "$original_resolver"
     cleanup_test_env
     return 0
 }
 
 test_fix_ssh_keepalive_restores_file_when_backup_and_record_change_fail() {
     setup_test_env
+    local original_resolver=""
+    local temp_bin=""
 
     export DOCTOR_FIX_SSHD_CONFIG="$ACFS_STATE_DIR/sshd_config"
     printf 'Port 22\n' > "$DOCTOR_FIX_SSHD_CONFIG"
@@ -2579,10 +2807,30 @@ test_fix_ssh_keepalive_restores_file_when_backup_and_record_change_fail() {
 
     create_backup() { return 1; }
     record_change() { return 1; }
-    sudo() { "$@"; }
-    systemctl() { return 0; }
+    original_resolver="$(declare -f doctor_fix_system_binary_path)"
+    temp_bin="$ACFS_STATE_DIR/bin"
+    mkdir -p "$temp_bin"
+    cat > "$temp_bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    cat > "$temp_bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-n" ]] || exit 42
+shift
+exec "$@"
+EOF
+    chmod +x "$temp_bin/systemctl" "$temp_bin/sudo"
+
+    doctor_fix_system_binary_path() {
+        case "${1:-}" in
+            systemctl|sudo) printf '%s\n' "$temp_bin/${1:-}" ;;
+            *) command -v -- "${1:-}" 2>/dev/null || return 1 ;;
+        esac
+    }
 
     if fix_ssh_keepalive "network.ssh_keepalive" >/dev/null 2>&1; then
+        eval "$original_resolver"
         eval "$original_create_backup"
         eval "$original_record_change"
         echo "  fix_ssh_keepalive unexpectedly succeeded when backup and journaling failed"
@@ -2591,6 +2839,7 @@ test_fix_ssh_keepalive_restores_file_when_backup_and_record_change_fail() {
         return 1
     fi
 
+    eval "$original_resolver"
     eval "$original_create_backup"
     eval "$original_record_change"
 
@@ -2867,8 +3116,8 @@ EOF
         return 1
     fi
 
-    if ! grep -Fq 'Environment="HTTP_PATH=/mcp/"' "$TARGET_HOME/.config/systemd/user/agent-mail.service"; then
-        echo "  Agent Mail unit did not use the Rust /mcp/ endpoint"
+    if ! grep -Fq 'Environment="HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED=true"' "$TARGET_HOME/.config/systemd/user/agent-mail.service"; then
+        echo "  Agent Mail unit did not allow localhost unauthenticated HTTP"
         cleanup_test_env
         return 1
     fi
@@ -2907,7 +3156,7 @@ EOF
 
     local unit_file="$TARGET_HOME/.config/systemd/user/agent-mail.service"
     local storage_root="$TARGET_HOME/.mcp_agent_mail_git_mailbox_repo"
-    local db_url="sqlite+aiosqlite:///${storage_root}/storage.sqlite3"
+    local db_url="sqlite:///${storage_root}/storage.sqlite3"
     local expected_working_dir=""
     local expected_storage_env=""
     local expected_db_env=""
@@ -2938,8 +3187,14 @@ EOF
         return 1
     fi
 
-    if ! grep -Fxq "ExecStart=${expected_am_bin} serve-http --host 127.0.0.1 --port 8765 --path ${expected_mcp_path} --no-auth --no-tui" "$unit_file"; then
+    if ! grep -Fxq "ExecStart=${expected_am_bin} serve-http --no-tui --host 127.0.0.1 --port 8765 --path ${expected_mcp_path}" "$unit_file"; then
         echo "  Agent Mail unit did not quote ExecStart arguments for systemd"
+        cleanup_test_env
+        return 1
+    fi
+
+    if grep -Fq "ExecStartPre=" "$unit_file"; then
+        echo "  Agent Mail unit should not block serve-http startup behind a pre-start migration"
         cleanup_test_env
         return 1
     fi
@@ -3608,6 +3863,9 @@ main() {
     run_test test_fix_verified_install_applies
     run_test test_fix_verified_install_uses_target_runtime_home
     run_test test_fix_verified_install_dry_run
+    run_test test_dispatch_fix_routes_cass_with_target_tmpdir
+    run_test test_doctor_fix_build_runtime_env_args_accepts_multiple_env_assignments
+    run_test test_fix_verified_install_ignores_gcloud_bv_shadow
     run_test test_fix_verified_install_ms_arm64_fallback_uses_cargo
     run_test test_fix_verified_install_removes_binary_when_record_change_fails
     run_test test_fix_ssh_server_records_change_when_enabling_service

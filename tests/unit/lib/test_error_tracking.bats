@@ -177,6 +177,40 @@ EOF
     assert_output --partial "canonical-resume phase=stack step=MCP Agent Mail"
 }
 
+@test "report log sudo fallback is noninteractive" {
+    local fake_sudo
+    local sudo_log
+    fake_sudo="$BATS_TEST_TMPDIR/fake-sudo"
+    sudo_log="$BATS_TEST_TMPDIR/sudo.log"
+
+    cat > "$fake_sudo" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$TEST_REPORT_SUDO_LOG"
+[[ "${1:-}" == "-n" ]] || exit 77
+exit 1
+EOF
+    chmod +x "$fake_sudo"
+
+    run env -i PATH="/usr/bin:/bin" \
+        ACFS_LOG_FILE="/proc/acfs-report-test/install.log" \
+        TEST_REPORT_FAKE_SUDO="$fake_sudo" \
+        TEST_REPORT_SUDO_LOG="$sudo_log" \
+        /usr/bin/bash -c '
+            set -euo pipefail
+            source "$1"
+            _acfs_report_sudo_binary_path() {
+                printf "%s\n" "$TEST_REPORT_FAKE_SUDO"
+            }
+            _acfs_append_log_entry "{\"type\":\"test\"}"
+        ' _ "$PROJECT_ROOT/scripts/lib/report.sh"
+
+    assert_success
+
+    run cat "$sudo_log"
+    assert_success
+    assert_output --partial "-n mkdir -p /proc/acfs-report-test"
+}
+
 @test "report_failure fallback preserves pinned ref and install flags" {
     local report_log
     local pinned_ref

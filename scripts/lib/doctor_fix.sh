@@ -103,6 +103,42 @@ doctor_fix_system_binary_path() {
     return 1
 }
 
+doctor_fix_root_prefix() {
+    local ref_name="${1:-}"
+
+    [[ -n "$ref_name" ]] || return 1
+
+    local -n _root_prefix_ref="$ref_name"
+    _root_prefix_ref=()
+
+    if [[ $EUID -eq 0 ]]; then
+        return 0
+    fi
+
+    local sudo_bin=""
+    sudo_bin="$(doctor_fix_system_binary_path sudo 2>/dev/null || true)"
+    [[ -n "$sudo_bin" ]] || return 1
+    _root_prefix_ref=("$sudo_bin" -n)
+}
+
+doctor_fix_root_display_prefix() {
+    local sudo_bin=""
+    local display_prefix=""
+
+    if [[ $EUID -eq 0 ]]; then
+        printf '%s' ""
+        return 0
+    fi
+
+    sudo_bin="$(doctor_fix_system_binary_path sudo 2>/dev/null || true)"
+    if [[ -n "$sudo_bin" ]]; then
+        printf -v display_prefix '%q -n ' "$sudo_bin"
+    else
+        display_prefix="sudo -n "
+    fi
+    printf '%s' "$display_prefix"
+}
+
 doctor_fix_getent_passwd_entry() {
     local user="${1-}"
     local getent_bin=""
@@ -459,8 +495,8 @@ doctor_fix_source_stack_lib() {
     candidates+=(
         "$runtime_stack_lib"
         "$repo_stack_lib"
-        "/data/projects/agentic_coding_flywheel_setup/scripts/lib/stack.sh"
-        "/dp/agentic_coding_flywheel_setup/scripts/lib/stack.sh"
+        "/data/projects/agents_environment_setup/scripts/lib/stack.sh"
+        "/dp/agents_environment_setup/scripts/lib/stack.sh"
     )
 
     for candidate in "${candidates[@]}"; do
@@ -753,6 +789,18 @@ doctor_fix_files_json() {
     autofix_files_json "$@"
 }
 
+doctor_fix_backups_json_array() {
+    local backup_json="${1:-[]}"
+    local jq_bin=""
+
+    jq_bin="$(doctor_fix_system_binary_path jq 2>/dev/null || true)"
+    if [[ -n "$jq_bin" ]]; then
+        printf '%s\n' "${backup_json:-[]}" | "$jq_bin" -c 'if type == "object" then [.] else . end' 2>/dev/null && return 0
+    fi
+
+    printf '[]\n'
+}
+
 doctor_fix_require_security() {
     if [[ "${DOCTOR_FIX_SECURITY_READY:-false}" == "true" ]]; then
         return 0
@@ -779,27 +827,140 @@ doctor_fix_require_security() {
     return 0
 }
 
-doctor_fix_run_verified_installer() {
-    local tool="$1"
+doctor_fix_parse_env_assignment() {
+    local assignment="${1:-}"
+    local -n _name_ref="$2"
+    local -n _value_ref="$3"
+
+    _name_ref=""
+    _value_ref=""
+    [[ -n "$assignment" ]] || return 0
+
+    if [[ "$assignment" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+        _name_ref="${BASH_REMATCH[1]}"
+        _value_ref="${BASH_REMATCH[2]}"
+        return 0
+    fi
+
+    doctor_fix_log WARN "Invalid installer environment assignment: $assignment"
+    return 1
+}
+
+doctor_fix_build_runtime_env_args() {
+    local -n _env_args_ref="$1"
+    local extra_env_assignment="${2:-}"
+    local env_name=""
+    local env_value=""
+    local runtime_home=""
+    local runtime_path=""
+    local runtime_user=""
+
+    _env_args_ref=()
+    runtime_home="$(doctor_fix_runtime_home 2>/dev/null || true)"
+    runtime_path="$(doctor_fix_runtime_path 2>/dev/null || true)"
+    runtime_user="$(doctor_fix_runtime_user 2>/dev/null || true)"
+    if [[ -z "$runtime_home" || -z "$runtime_path" || -z "$runtime_user" ]]; then
+        doctor_fix_log WARN "Unable to resolve runtime environment for verified installer"
+        return 1
+    fi
+    doctor_fix_is_valid_username "$runtime_user" || [[ "$runtime_user" == "root" ]] || {
+        doctor_fix_log WARN "Invalid runtime user for verified installer: $runtime_user"
+        return 1
+    }
+
+    _env_args_ref=(
+        "TARGET_USER=$runtime_user" \
+        "TARGET_HOME=$runtime_home" \
+        "HOME=$runtime_home" \
+        "PATH=$runtime_path"
+    )
+    if [[ -n "$extra_env_assignment" ]]; then
+        local env_assignment=""
+        while IFS= read -r env_assignment || [[ -n "$env_assignment" ]]; do
+            [[ -n "$env_assignment" ]] || continue
+            doctor_fix_parse_env_assignment "$env_assignment" env_name env_value || return $?
+            if [[ -n "$env_name" ]]; then
+                _env_args_ref+=("$env_name=$env_value")
+            fi
+        done <<< "$extra_env_assignment"
+    fi
+}
+
+doctor_fix_run_in_runtime_context() {
+    local extra_env_assignment="${1:-}"
     shift
+    local env_bin=""
+    local runuser_bin=""
+    local runtime_user=""
+    local sudo_bin=""
+    local current_user=""
+    local -a env_args=()
+
+    [[ $# -gt 0 ]] || {
+        doctor_fix_log WARN "doctor_fix_run_in_runtime_context requires a command"
+        return 1
+    }
+
+    env_bin="$(doctor_fix_system_binary_path env 2>/dev/null || true)"
+    [[ -n "$env_bin" ]] || {
+        doctor_fix_log WARN "Unable to locate env for target-user command"
+        return 1
+    }
+
+    doctor_fix_build_runtime_env_args env_args "$extra_env_assignment" || return $?
+
+    runtime_user="${env_args[0]#TARGET_USER=}"
+    current_user="$(doctor_fix_current_user 2>/dev/null || true)"
+    if [[ "$current_user" == "$runtime_user" ]]; then
+        "$env_bin" "${env_args[@]}" "$@"
+        return $?
+    fi
+
+    runuser_bin="$(doctor_fix_system_binary_path runuser 2>/dev/null || true)"
+    if [[ $EUID -eq 0 && -n "$runuser_bin" ]]; then
+        "$runuser_bin" -u "$runtime_user" -- "$env_bin" "${env_args[@]}" "$@"
+        return $?
+    fi
+
+    sudo_bin="$(doctor_fix_system_binary_path sudo 2>/dev/null || true)"
+    if [[ -n "$sudo_bin" ]]; then
+        "$sudo_bin" -n -u "$runtime_user" "$env_bin" "${env_args[@]}" "$@"
+        return $?
+    fi
+
+    doctor_fix_log WARN "Unable to run command as $runtime_user without passwordless sudo or root runuser"
+    return 1
+}
+
+doctor_fix_run_verified_installer_with_env() {
+    if [[ $# -lt 1 ]]; then
+        doctor_fix_log WARN "doctor_fix_run_verified_installer_with_env requires a tool name"
+        return 1
+    fi
+
+    local tool="$1"
+    local installer_env_assignment=""
+    shift
+    if [[ $# -gt 0 ]]; then
+        installer_env_assignment="$1"
+        shift
+    fi
+    local bash_bin=""
     local ms_arch=""
     ms_arch="$(uname -m 2>/dev/null || true)"
 
     if [[ "$tool" == "ms" ]] && [[ "$(uname -s 2>/dev/null)" == "Linux" ]] && [[ "$ms_arch" == "aarch64" || "$ms_arch" == "arm64" ]]; then
         local cargo_bin=""
-        local runtime_home=""
-        local runtime_path=""
 
         cargo_bin="$(doctor_fix_binary_path cargo 2>/dev/null || true)"
-        runtime_home="$(doctor_fix_runtime_home)"
-        runtime_path="$(doctor_fix_runtime_path 2>/dev/null || true)"
-        if [[ -z "$cargo_bin" || -z "$runtime_home" || -z "$runtime_path" ]]; then
+        if [[ -z "$cargo_bin" ]]; then
             doctor_fix_log WARN "meta_skill ARM64 Linux fallback requires cargo for the runtime home"
             return 1
         fi
 
         doctor_fix_log INFO "meta_skill: Linux ARM64 detected, rebuilding from source via cargo"
-        env HOME="$runtime_home" PATH="$runtime_path" "$cargo_bin" install --git https://github.com/quangdang46/ms --force
+        doctor_fix_run_in_runtime_context "$installer_env_assignment" \
+            "$cargo_bin" install --git https://github.com/quangdang46/ms --force
         return $?
     fi
 
@@ -816,7 +977,73 @@ doctor_fix_run_verified_installer() {
         return 1
     fi
 
-    fetch_and_run "$url" "$expected_sha256" "$tool" "$@"
+    bash_bin="$(acfs_security_required_binary_path bash)" || return $?
+
+    (
+        set -o pipefail
+        verify_checksum "$url" "$expected_sha256" "$tool" | \
+            doctor_fix_run_in_runtime_context "$installer_env_assignment" "$bash_bin" -s -- "$@"
+    )
+}
+
+doctor_fix_run_verified_installer() {
+    if [[ $# -lt 1 ]]; then
+        doctor_fix_log WARN "doctor_fix_run_verified_installer requires a tool name"
+        return 1
+    fi
+
+    local tool="$1"
+    shift
+
+    doctor_fix_run_verified_installer_with_env "$tool" "" "$@"
+}
+
+doctor_fix_prepare_target_installer_tmpdir() {
+    local tool="${1:-}"
+    local runtime_home=""
+    local tmpdir=""
+    local tmpdir_parent=""
+    local tmpdir_template=""
+
+    [[ -n "$tool" ]] || {
+        doctor_fix_log WARN "doctor_fix_prepare_target_installer_tmpdir requires a tool name"
+        return 1
+    }
+    case "$tool" in
+        .|..|*[!A-Za-z0-9._+-]*)
+            doctor_fix_log WARN "Invalid tool name for installer TMPDIR: $tool"
+            return 1
+            ;;
+    esac
+
+    runtime_home="$(doctor_fix_runtime_home 2>/dev/null || true)"
+    if [[ -z "$runtime_home" || "$runtime_home" != /* || "$runtime_home" == "/" ]]; then
+        doctor_fix_log WARN "Cannot prepare installer TMPDIR without a valid runtime home"
+        return 1
+    fi
+
+    tmpdir_parent="$runtime_home/.cache/acfs/installer-tmp"
+    tmpdir_template="$tmpdir_parent/${tool}.XXXXXX"
+    case "$tmpdir_template" in
+        *[[:space:]]*)
+            doctor_fix_log WARN "Cannot prepare installer TMPDIR template with whitespace: $tmpdir_template"
+            return 1
+            ;;
+    esac
+
+    doctor_fix_run_in_runtime_context "" mkdir -p "$tmpdir_parent" || {
+        doctor_fix_log WARN "Failed to prepare installer TMPDIR parent: $tmpdir_parent"
+        return 1
+    }
+
+    tmpdir="$(doctor_fix_run_in_runtime_context "" mktemp -d "$tmpdir_template" 2>/dev/null)" || tmpdir=""
+    if [[ -n "$tmpdir" ]]; then
+        printf '%s\n' "$tmpdir"
+        return 0
+    fi
+
+    doctor_fix_log WARN "Failed to create installer TMPDIR from template: $tmpdir_template"
+    return 1
 }
 
 # ============================================================
@@ -902,7 +1129,7 @@ fix_path_ordering() {
         false \
         "path" "Added PATH ordering to $target_file" \
         "${restore_command:-if [[ -f '$target_file' ]]; then sed -i '/$marker/,+1d' '$target_file'; fi}" \
-        false "info" "$(doctor_fix_files_json "$target_file")" "$(echo "${backup_json:-[]}" | jq -c 'if type == \"object\" then [.] else . end' 2>/dev/null || echo '[]')" "[]"; then
+        false "info" "$(doctor_fix_files_json "$target_file")" "$(doctor_fix_backups_json_array "${backup_json:-[]}")" "[]"; then
         FIX_FAILED=$((FIX_FAILED + 1))
         return 1
     fi
@@ -992,6 +1219,7 @@ fix_config_copy() {
 dcg_hook_already_installed() {
     local doctor_json=""
     local dcg_bin=""
+    local jq_bin=""
     local runtime_home=""
     local runtime_path=""
 
@@ -1003,8 +1231,9 @@ dcg_hook_already_installed() {
     doctor_json="$(env HOME="$runtime_home" PATH="$runtime_path" "$dcg_bin" doctor --format json 2>/dev/null)" || return 1
     [[ -n "$doctor_json" ]] || return 1
 
-    if command -v jq &>/dev/null; then
-        printf '%s' "$doctor_json" | jq -e '
+    jq_bin="$(doctor_fix_system_binary_path jq 2>/dev/null || true)"
+    if [[ -n "$jq_bin" ]]; then
+        printf '%s' "$doctor_json" | "$jq_bin" -e '
             (.hook_installed == true) or
             any(.checks[]?; .id == "hook_wiring" and .status == "ok")
         ' >/dev/null 2>&1
@@ -1091,8 +1320,12 @@ fix_symlink_create() {
         return 1
     fi
 
-    # Guard: Symlink must not exist
-    if [[ -e "$symlink" ]]; then
+    # Guard: nothing must exist at the target path. Test -L as well as -e so a
+    # pre-existing *broken* user symlink (which -e reports as absent) is left
+    # untouched: otherwise `ln -s` below fails with "File exists" and its
+    # failure rollback would `rm -f` a symlink this fixer never created,
+    # violating the "never deletes user files" guarantee with no backup.
+    if [[ -e "$symlink" || -L "$symlink" ]]; then
         doctor_fix_log INFO "Symlink already exists: $symlink"
         return 0
     fi
@@ -1280,7 +1513,7 @@ fix_acfs_sourcing() {
         false \
         "config" "Added ACFS sourcing to .zshrc" \
         "${restore_command:-if [[ -f '$zshrc' ]]; then sed -i '/$marker/,+1d' '$zshrc'; fi}" \
-        false "info" "$(doctor_fix_files_json "$zshrc")" "$(echo "${backup_json:-[]}" | jq -c 'if type == \"object\" then [.] else . end' 2>/dev/null || echo '[]')" "[]"; then
+        false "info" "$(doctor_fix_files_json "$zshrc")" "$(doctor_fix_backups_json_array "${backup_json:-[]}")" "[]"; then
         FIX_FAILED=$((FIX_FAILED + 1))
         return 1
     fi
@@ -1339,6 +1572,49 @@ dispatch_fix() {
         stack.mcp_agent_mail*)
             fix_mcp_agent_mail "$check_id"
             ;;
+        stack.ntm)
+            fix_verified_install "$check_id" "ntm" "ntm"
+            ;;
+        stack.ubs|stack.ultimate_bug_scanner|stack.ultimate_bug_scanner.*)
+            fix_verified_install "$check_id" "ubs" "ubs" --easy-mode
+            ;;
+        stack.beads_viewer|stack.bv)
+            fix_verified_install "$check_id" "bv" "bv"
+            ;;
+        stack.beads_rust|stack.beads_rust.*)
+            fix_verified_install "$check_id" "br" "br"
+            ;;
+        stack.cass)
+            fix_verified_install_with_target_tmpdir "$check_id" "cass" "cass" --easy-mode --verify
+            ;;
+        stack.cm|stack.cm.*)
+            fix_verified_install "$check_id" "cm" "cm" --easy-mode --verify
+            ;;
+        stack.caam)
+            fix_verified_install "$check_id" "caam" "caam"
+            ;;
+        stack.ru)
+            fix_verified_install_with_env "$check_id" "ru" "ru" "RU_NON_INTERACTIVE=1"
+            ;;
+        stack.rch)
+            fix_verified_install "$check_id" "rch" "rch" --easy-mode
+            ;;
+        stack.dcg|stack.dcg.*)
+            local claude_fix_hint="Install Claude Code first, then re-run acfs doctor --fix"
+            if ! doctor_fix_binary_path dcg >/dev/null 2>&1; then
+                fix_verified_install "$check_id" "dcg" "dcg" --easy-mode || return $?
+            fi
+            if doctor_fix_binary_path claude >/dev/null 2>&1; then
+                fix_dcg_hook "$check_id"
+            else
+                if declare -f fix_for_module >/dev/null 2>&1; then
+                    claude_fix_hint="$(fix_for_module "agents.claude")"
+                fi
+                FIXES_MANUAL+=("$check_id|Install Claude Code before registering the DCG hook|$claude_fix_hint")
+                FIX_MANUAL=$((FIX_MANUAL + 1))
+                return 0
+            fi
+            ;;
 
         # Symlinks
         symlink.br)
@@ -1383,6 +1659,9 @@ dispatch_fix() {
         agent.codex)
             fix_stack_install "$check_id" "codex" \
                 "bun install -g --trust @openai/codex@latest"
+            ;;
+        agent.antigravity)
+            fix_verified_install "$check_id" "agy" "antigravity"
             ;;
         agent.gemini)
             fix_stack_install "$check_id" "gemini" \
@@ -1484,6 +1763,83 @@ fix_stack_install() {
     return 1
 }
 
+fix_verified_install_with_env() {
+    local check_id="$1"
+    local binary_name="$2"
+    local tool="$3"
+    local installer_env_assignment="$4"
+    shift 4
+    local args=("$@")
+    local args_display="${args[*]:-}"
+    local dry_run_env_display=""
+    local installed_path=""
+    local rollback_command=""
+
+    installed_path="$(doctor_fix_binary_path "$binary_name" 2>/dev/null || true)"
+    if [[ -n "$installed_path" ]]; then
+        if [[ "$binary_name" == "bv" && "$installed_path" == *"/google-cloud-sdk/"* ]]; then
+            installed_path=""
+        else
+            doctor_fix_log INFO "$binary_name already installed"
+            return 0
+        fi
+    fi
+
+    if [[ "$DOCTOR_FIX_DRY_RUN" == "true" ]]; then
+        [[ -n "$installer_env_assignment" ]] && dry_run_env_display="${installer_env_assignment} "
+        FIXES_DRY_RUN+=("fix.stack.$binary_name|Install $binary_name via verified installer|~/.local/bin/$binary_name|verified:$tool ${dry_run_env_display}${args_display}")
+        doctor_fix_log DRY "Install $binary_name via verified installer"
+        return 0
+    fi
+
+    if doctor_fix_run_verified_installer_with_env "$tool" "$installer_env_assignment" "${args[@]}" >/dev/null 2>&1; then
+        hash -r
+        installed_path="$(doctor_fix_binary_path "$binary_name" 2>/dev/null || true)"
+        if [[ -n "$installed_path" ]]; then
+            rollback_command="$(doctor_fix_build_remove_binary_rollback "$installed_path")"
+            if ! doctor_fix_record_change_or_rollback \
+                "$rollback_command" \
+                false \
+                "install" "Installed $binary_name via verified installer" \
+                "# Manual rollback required: remove $binary_name if undesired" \
+                false "info" "$(doctor_fix_files_json "$installed_path")" "[]" "[]"; then
+                hash -r
+                FIX_FAILED=$((FIX_FAILED + 1))
+                return 1
+            fi
+
+            doctor_fix_log INFO "Installed $binary_name via verified installer"
+            FIXES_APPLIED+=("fix.stack.$binary_name|Installed $binary_name via verified installer")
+            FIX_APPLIED=$((FIX_APPLIED + 1))
+            return 0
+        fi
+    fi
+
+    doctor_fix_log ERROR "Failed to install $binary_name via verified installer"
+    FIX_FAILED=$((FIX_FAILED + 1))
+    return 1
+}
+
+fix_verified_install_with_target_tmpdir() {
+    local check_id="$1"
+    local binary_name="$2"
+    local tool="$3"
+    shift 3
+    local installer_tmpdir=""
+
+    if [[ "$DOCTOR_FIX_DRY_RUN" == "true" ]]; then
+        installer_tmpdir="$(doctor_fix_runtime_home)/.cache/acfs/installer-tmp/${tool}.XXXXXX"
+    else
+        installer_tmpdir="$(doctor_fix_prepare_target_installer_tmpdir "$tool")" || {
+            doctor_fix_log ERROR "Failed to prepare installer TMPDIR for $binary_name"
+            FIX_FAILED=$((FIX_FAILED + 1))
+            return 1
+        }
+    fi
+
+    fix_verified_install_with_env "$check_id" "$binary_name" "$tool" "TMPDIR=$installer_tmpdir" "$@"
+}
+
 fix_verified_install() {
     local check_id="$1"
     local binary_name="$2"
@@ -1496,8 +1852,12 @@ fix_verified_install() {
 
     installed_path="$(doctor_fix_binary_path "$binary_name" 2>/dev/null || true)"
     if [[ -n "$installed_path" ]]; then
-        doctor_fix_log INFO "$binary_name already installed"
-        return 0
+        if [[ "$binary_name" == "bv" && "$installed_path" == *"/google-cloud-sdk/"* ]]; then
+            installed_path=""
+        else
+            doctor_fix_log INFO "$binary_name already installed"
+            return 0
+        fi
     fi
 
     if [[ "$DOCTOR_FIX_DRY_RUN" == "true" ]]; then
@@ -1541,31 +1901,44 @@ fix_verified_install() {
 # Install and enable SSH server
 fix_ssh_server() {
     local check_id="$1"
-    local sudo_cmd=""
-    [[ $EUID -ne 0 ]] && command -v sudo &>/dev/null && sudo_cmd="sudo"
+    local apt_get_bin=""
+    local root_display=""
+    local sshd_bin=""
+    local systemctl_bin=""
+    local -a root_cmd=()
+
+    root_display="$(doctor_fix_root_display_prefix)"
+    sshd_bin="$(doctor_fix_system_binary_path sshd 2>/dev/null || true)"
+    systemctl_bin="$(doctor_fix_system_binary_path systemctl 2>/dev/null || true)"
 
     # Guard: Check if already installed
-    if command -v sshd &>/dev/null || [[ -f /etc/ssh/sshd_config ]]; then
+    if [[ -n "$sshd_bin" ]] || [[ -f /etc/ssh/sshd_config ]]; then
         # Check if running
-        if command -v systemctl &>/dev/null && [[ -d /run/systemd/system ]]; then
-            if systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
+        if [[ -n "$systemctl_bin" && -d /run/systemd/system ]]; then
+            if "$systemctl_bin" is-active --quiet ssh 2>/dev/null || "$systemctl_bin" is-active --quiet sshd 2>/dev/null; then
                 doctor_fix_log INFO "SSH server already installed and running"
                 return 0
             fi
 
             # Installed but not running - enable and start
             if [[ "$DOCTOR_FIX_DRY_RUN" == "true" ]]; then
-                FIXES_DRY_RUN+=("fix.ssh.server|Enable and start SSH server|/etc/ssh/sshd_config|$sudo_cmd systemctl enable --now ssh")
+                FIXES_DRY_RUN+=("fix.ssh.server|Enable and start SSH server|/etc/ssh/sshd_config|${root_display}systemctl enable --now ssh")
                 doctor_fix_log DRY "Enable and start SSH server"
                 return 0
             fi
 
-            if $sudo_cmd systemctl enable --now ssh 2>/dev/null || $sudo_cmd systemctl enable --now sshd 2>/dev/null; then
+            if ! doctor_fix_root_prefix root_cmd; then
+                doctor_fix_log ERROR "Cannot start SSH server without root or passwordless sudo"
+                FIX_FAILED=$((FIX_FAILED + 1))
+                return 1
+            fi
+
+            if "${root_cmd[@]}" "$systemctl_bin" enable --now ssh 2>/dev/null || "${root_cmd[@]}" "$systemctl_bin" enable --now sshd 2>/dev/null; then
                 if ! doctor_fix_record_change_or_rollback \
-                    "$sudo_cmd systemctl disable --now ssh 2>/dev/null || $sudo_cmd systemctl disable --now sshd 2>/dev/null || true" \
+                    "$(printf '%q disable --now ssh 2>/dev/null || %q disable --now sshd 2>/dev/null || true' "$systemctl_bin" "$systemctl_bin")" \
                     true \
                     "service" "Enabled and started SSH server" \
-                    "$sudo_cmd systemctl disable --now ssh 2>/dev/null || $sudo_cmd systemctl disable --now sshd 2>/dev/null || true" \
+                    "$(printf '%q disable --now ssh 2>/dev/null || %q disable --now sshd 2>/dev/null || true' "$systemctl_bin" "$systemctl_bin")" \
                     true "info" "[\"/etc/ssh/sshd_config\"]" "[]" "[]"; then
                     FIX_FAILED=$((FIX_FAILED + 1))
                     return 1
@@ -1586,13 +1959,30 @@ fix_ssh_server() {
 
     # Not installed - install it
     if [[ "$DOCTOR_FIX_DRY_RUN" == "true" ]]; then
-        FIXES_DRY_RUN+=("fix.ssh.server|Install openssh-server|/etc/ssh/sshd_config|$sudo_cmd apt-get install -y openssh-server")
+        FIXES_DRY_RUN+=("fix.ssh.server|Install openssh-server|/etc/ssh/sshd_config|${root_display}apt-get install -y openssh-server")
         doctor_fix_log DRY "Install openssh-server"
         return 0
     fi
 
-    if $sudo_cmd apt-get install -y openssh-server 2>/dev/null; then
-        if ! ($sudo_cmd systemctl enable --now ssh 2>/dev/null || $sudo_cmd systemctl enable --now sshd 2>/dev/null); then
+    apt_get_bin="$(doctor_fix_system_binary_path apt-get 2>/dev/null || true)"
+    if [[ -z "$apt_get_bin" ]]; then
+        doctor_fix_log ERROR "apt-get not found; cannot install openssh-server"
+        FIX_FAILED=$((FIX_FAILED + 1))
+        return 1
+    fi
+    if [[ -z "$systemctl_bin" ]]; then
+        doctor_fix_log ERROR "systemctl not found; cannot enable SSH server"
+        FIX_FAILED=$((FIX_FAILED + 1))
+        return 1
+    fi
+    if ! doctor_fix_root_prefix root_cmd; then
+        doctor_fix_log ERROR "Cannot install openssh-server without root or passwordless sudo"
+        FIX_FAILED=$((FIX_FAILED + 1))
+        return 1
+    fi
+
+    if "${root_cmd[@]}" env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 "$apt_get_bin" install -y openssh-server 2>/dev/null; then
+        if ! ("${root_cmd[@]}" "$systemctl_bin" enable --now ssh 2>/dev/null || "${root_cmd[@]}" "$systemctl_bin" enable --now sshd 2>/dev/null); then
             doctor_fix_log ERROR "Installed openssh-server but failed to enable/start SSH service"
             FIX_FAILED=$((FIX_FAILED + 1))
             return 1
@@ -1629,14 +2019,19 @@ fix_ssh_keepalive() {
     local sshd_config="${DOCTOR_FIX_SSHD_CONFIG:-/etc/ssh/sshd_config}"
     local marker="# ACFS: SSH keepalive settings (added by doctor --fix)"
     local fallback_restore_command=""
+    local root_display=""
+    local systemctl_bin=""
+    local tee_bin=""
+    local -a root_cmd=()
 
-    local sudo_cmd=""
-    [[ $EUID -ne 0 ]] && command -v sudo &>/dev/null && sudo_cmd="sudo"
+    root_display="$(doctor_fix_root_display_prefix)"
+    systemctl_bin="$(doctor_fix_system_binary_path systemctl 2>/dev/null || true)"
+    tee_bin="$(doctor_fix_system_binary_path tee 2>/dev/null || true)"
 
     # Guard: sshd_config must exist
     if [[ ! -f "$sshd_config" ]]; then
         doctor_fix_log WARN "sshd_config not found, install openssh-server first"
-        FIXES_MANUAL+=("$check_id|Install openssh-server first|$sudo_cmd apt-get install -y openssh-server")
+        FIXES_MANUAL+=("$check_id|Install openssh-server first|${root_display}apt-get install -y openssh-server")
         FIX_MANUAL=$((FIX_MANUAL + 1))
         return 1
     fi
@@ -1648,9 +2043,20 @@ fix_ssh_keepalive() {
     fi
 
     if [[ "$DOCTOR_FIX_DRY_RUN" == "true" ]]; then
-        FIXES_DRY_RUN+=("fix.ssh.keepalive|Configure SSH keepalive|$sshd_config|echo 'ClientAliveInterval 60' >> $sshd_config")
+        FIXES_DRY_RUN+=("fix.ssh.keepalive|Configure SSH keepalive|$sshd_config|${root_display}tee -a $sshd_config")
         doctor_fix_log DRY "Configure SSH keepalive in $sshd_config"
         return 0
+    fi
+
+    if [[ -z "$tee_bin" ]]; then
+        doctor_fix_log ERROR "tee not found; cannot append SSH keepalive settings"
+        FIX_FAILED=$((FIX_FAILED + 1))
+        return 1
+    fi
+    if ! doctor_fix_root_prefix root_cmd; then
+        doctor_fix_log ERROR "Cannot configure SSH keepalive without root or passwordless sudo"
+        FIX_FAILED=$((FIX_FAILED + 1))
+        return 1
     fi
 
     # Create backup
@@ -1670,21 +2076,30 @@ fix_ssh_keepalive() {
         echo "$marker"
         echo "ClientAliveInterval 60"
         echo "ClientAliveCountMax 3"
-    } | $sudo_cmd tee -a "$sshd_config" > /dev/null; then
+    } | "${root_cmd[@]}" "$tee_bin" -a "$sshd_config" > /dev/null; then
         doctor_fix_log ERROR "Failed to append SSH keepalive settings to $sshd_config"
         FIX_FAILED=$((FIX_FAILED + 1))
         return 1
     fi
 
     # Restart sshd to apply
-    $sudo_cmd systemctl reload ssh 2>/dev/null || $sudo_cmd systemctl reload sshd 2>/dev/null || true
+    if [[ -n "$systemctl_bin" ]]; then
+        "${root_cmd[@]}" "$systemctl_bin" reload ssh 2>/dev/null || "${root_cmd[@]}" "$systemctl_bin" reload sshd 2>/dev/null || true
+    fi
+
+    local reload_rollback=""
+    if [[ -n "$systemctl_bin" ]]; then
+        reload_rollback="$(printf '%q reload ssh 2>/dev/null || %q reload sshd 2>/dev/null || true' "$systemctl_bin" "$systemctl_bin")"
+    else
+        reload_rollback="true"
+    fi
 
     if ! doctor_fix_record_change_or_rollback \
-        "${restore_command:-$fallback_restore_command}; $sudo_cmd systemctl reload ssh 2>/dev/null || $sudo_cmd systemctl reload sshd 2>/dev/null || true" \
+        "${restore_command:-$fallback_restore_command}; $reload_rollback" \
         true \
         "config" "Configured SSH keepalive in $sshd_config" \
-        "${restore_command:-$fallback_restore_command}; $sudo_cmd systemctl reload ssh 2>/dev/null || $sudo_cmd systemctl reload sshd 2>/dev/null || true" \
-        true "info" "$(doctor_fix_files_json "$sshd_config")" "$(echo "${backup_json:-[]}" | jq -c 'if type == \"object\" then [.] else . end' 2>/dev/null || echo '[]')" "[]"; then
+        "${restore_command:-$fallback_restore_command}; $reload_rollback" \
+        true "info" "$(doctor_fix_files_json "$sshd_config")" "$(doctor_fix_backups_json_array "${backup_json:-[]}")" "[]"; then
         FIX_FAILED=$((FIX_FAILED + 1))
         return 1
     fi
@@ -1810,6 +2225,8 @@ doctor_fix_agent_mail_mcp_path() {
 agent_mail_fix_doctor_healthy() {
     local doctor_json=""
     local am_bin=""
+    local jq_bin=""
+    local timeout_bin=""
     local -a cmd=()
 
     am_bin="$(doctor_fix_agent_mail_bin 2>/dev/null || true)"
@@ -1820,16 +2237,18 @@ agent_mail_fix_doctor_healthy() {
         cmd+=("$1")
     fi
 
-    if command -v timeout &>/dev/null; then
-        doctor_json="$(timeout 15s "${cmd[@]}" 2>/dev/null)" || return 1
+    timeout_bin="$(doctor_fix_system_binary_path timeout 2>/dev/null || true)"
+    if [[ -n "$timeout_bin" ]]; then
+        doctor_json="$("$timeout_bin" 15s "${cmd[@]}" 2>/dev/null)" || return 1
     else
         doctor_json="$("${cmd[@]}" 2>/dev/null)" || return 1
     fi
 
     [[ -n "$doctor_json" ]] || return 1
 
-    if command -v jq &>/dev/null; then
-        [[ "$(printf '%s' "$doctor_json" | jq -r '.healthy // false' 2>/dev/null)" == "true" ]]
+    jq_bin="$(doctor_fix_system_binary_path jq 2>/dev/null || true)"
+    if [[ -n "$jq_bin" ]]; then
+        [[ "$(printf '%s' "$doctor_json" | "$jq_bin" -r '.healthy // false' 2>/dev/null)" == "true" ]]
         return $?
     fi
 
@@ -1839,6 +2258,23 @@ agent_mail_fix_doctor_healthy() {
 agent_mail_fix_wait_for_health() {
     doctor_fix_source_stack_lib || return 1
     ACFS_STACK_TRUST_TARGET_HOME=true TARGET_USER="$(doctor_fix_runtime_user)" TARGET_HOME="$(doctor_fix_runtime_home)" _stack_wait_for_agent_mail_health
+}
+
+agent_mail_fix_readiness_ready() {
+    local readiness_body=""
+    local readiness_url=""
+
+    for readiness_url in \
+        http://127.0.0.1:8765/health/readiness \
+        http://127.0.0.1:8765/health
+    do
+        readiness_body="$(doctor_fix_system_curl -fsS --max-time 5 "$readiness_url" 2>/dev/null)" || continue
+        if printf '%s\n' "$readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+            return 0
+        fi
+    done
+
+    return 1
 }
 
 agent_mail_fix_write_unit() {
@@ -1853,14 +2289,14 @@ agent_mail_fix_write_unit() {
     local rust_log_env=""
     local storage_root_env=""
     local database_url_env=""
-    local http_path_env=""
+    local http_allow_env=""
     local am_bin_exec=""
     local am_mcp_path_exec=""
 
     am_bin="$(doctor_fix_agent_mail_bin 2>/dev/null || true)"
     [[ -n "$am_bin" ]] || return 1
 
-    db_url="sqlite+aiosqlite:///${storage_root}/storage.sqlite3"
+    db_url="sqlite:///${storage_root}/storage.sqlite3"
 
     local am_mcp_path=""
     am_mcp_path="$(doctor_fix_agent_mail_mcp_path "$am_bin" 2>/dev/null || true)"
@@ -1871,7 +2307,7 @@ agent_mail_fix_write_unit() {
     rust_log_env="$(doctor_fix_systemd_unit_env_assignment RUST_LOG info)" || return 1
     storage_root_env="$(doctor_fix_systemd_unit_env_assignment STORAGE_ROOT "$storage_root")" || return 1
     database_url_env="$(doctor_fix_systemd_unit_env_assignment DATABASE_URL "$db_url")" || return 1
-    http_path_env="$(doctor_fix_systemd_unit_env_assignment HTTP_PATH "$am_mcp_path")" || return 1
+    http_allow_env="$(doctor_fix_systemd_unit_env_assignment HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED true)" || return 1
     am_bin_exec="$(doctor_fix_systemd_unit_exec_command "$am_bin")" || return 1
     am_mcp_path_exec="$(doctor_fix_systemd_unit_exec_arg "$am_mcp_path")" || return 1
     cat > "$unit_file" <<UNIT_EOF
@@ -1885,8 +2321,8 @@ WorkingDirectory=$storage_root_unit
 Environment=$rust_log_env
 Environment=$storage_root_env
 Environment=$database_url_env
-Environment=$http_path_env
-ExecStart=${am_bin_exec} serve-http --host 127.0.0.1 --port 8765 --path ${am_mcp_path_exec} --no-auth --no-tui
+Environment=$http_allow_env
+ExecStart=${am_bin_exec} serve-http --no-tui --host 127.0.0.1 --port 8765 --path ${am_mcp_path_exec}
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -1907,13 +2343,14 @@ agent_mail_fix_launch_fallback() {
     am_bin="$(doctor_fix_agent_mail_bin 2>/dev/null || true)"
     [[ -n "$am_bin" ]] || return 1
 
-    db_url="sqlite+aiosqlite:///${storage_root}/storage.sqlite3"
+    db_url="sqlite:///${storage_root}/storage.sqlite3"
 
     local am_mcp_path=""
     am_mcp_path="$(doctor_fix_agent_mail_mcp_path "$am_bin" 2>/dev/null || true)"
     [[ -n "$am_mcp_path" ]] || return 1
 
-    if doctor_fix_system_curl -fsS --max-time 5 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; then
+    if doctor_fix_system_curl -fsS --max-time 5 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \
+       agent_mail_fix_readiness_ready; then
         return 0
     fi
 
@@ -1921,17 +2358,18 @@ agent_mail_fix_launch_fallback() {
         existing_pid="$(cat "$fallback_pid_file" 2>/dev/null || true)"
         if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null && \
            ps -p "$existing_pid" -o args= 2>/dev/null | grep -Fq "$am_bin serve-http"; then
-            return 0
+            agent_mail_fix_stop_fallback
+        else
+            rm -f "$fallback_pid_file"
         fi
-        rm -f "$fallback_pid_file"
     fi
 
     nohup env \
         RUST_LOG=info \
         STORAGE_ROOT="$storage_root" \
         DATABASE_URL="$db_url" \
-        HTTP_PATH="$am_mcp_path" \
-        "$am_bin" serve-http --host 127.0.0.1 --port 8765 --path "$am_mcp_path" --no-auth --no-tui \
+        HTTP_ALLOW_LOCALHOST_UNAUTHENTICATED=true \
+        "$am_bin" serve-http --no-tui --host 127.0.0.1 --port 8765 --path "$am_mcp_path" \
         >>"$fallback_log_file" 2>&1 < /dev/null &
     echo $! > "$fallback_pid_file"
 }
@@ -2049,12 +2487,12 @@ fix_mcp_agent_mail() {
 
     if [[ -z "$am_bin" ]]; then
         if [[ "$DOCTOR_FIX_DRY_RUN" == "true" ]]; then
-            FIXES_DRY_RUN+=("fix.stack.mcp_agent_mail|Install MCP Agent Mail via verified installer, then repair service state|$runtime_home/mcp_agent_mail|verified:mcp_agent_mail --dest $runtime_home/mcp_agent_mail --yes")
+            FIXES_DRY_RUN+=("fix.stack.mcp_agent_mail|Install MCP Agent Mail via verified installer, then repair service state|$runtime_home/mcp_agent_mail|verified:mcp_agent_mail AM_INSTALL_SKIP_MCP_SETUP=1 AM_INSTALL_SKIP_REMOTE_HTTP_READINESS=1 --dest $runtime_home/mcp_agent_mail --yes")
             doctor_fix_log DRY "Install MCP Agent Mail via verified installer, then repair service state"
             return 0
         fi
 
-        if doctor_fix_run_verified_installer "mcp_agent_mail" --dest "$runtime_home/mcp_agent_mail" --yes >/dev/null 2>&1; then
+        if doctor_fix_run_verified_installer_with_env "mcp_agent_mail" $'AM_INSTALL_SKIP_MCP_SETUP=1\nAM_INSTALL_SKIP_REMOTE_HTTP_READINESS=1' --dest "$runtime_home/mcp_agent_mail" --yes >/dev/null 2>&1; then
             local installed_cli=""
             local installed_cli_target=""
             local am_src_target=""
@@ -2148,7 +2586,7 @@ fix_mcp_agent_mail() {
     fi
 
     if doctor_fix_system_curl -fsS --max-time 5 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1 && \
-       doctor_fix_system_curl -fsS --max-time 5 http://127.0.0.1:8765/health >/dev/null 2>&1; then
+       agent_mail_fix_readiness_ready; then
         service_healthy=true
     fi
 

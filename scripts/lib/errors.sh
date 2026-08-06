@@ -59,7 +59,7 @@ declare -gA ERROR_PATTERNS=(
     ['NO_PUBKEY']="Missing GPG key for repository. Modern fix:\n  sudo gpg --no-default-keyring --keyring /etc/apt/keyrings/repo-name.gpg --keyserver keyserver.ubuntu.com --recv-keys <KEY_ID>"
 
     # Verification/checksum
-    ['checksum mismatch']="Upstream installer script has changed. This could mean:\n  1. Legitimate update - check the tool's GitHub for release notes\n  2. Potential tampering - verify manually before proceeding\nSee: https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup/issues"
+    ['checksum mismatch']="Upstream installer script has changed. This could mean:\n  1. Legitimate update - check the tool's GitHub for release notes\n  2. Potential tampering - verify manually before proceeding\nSee: https://github.com/quangdang46/agents_environment_setup/issues"
 
     ['signature verification failed']="GPG signature verification failed. The file may be:\n  1. Corrupted during download - retry\n  2. Tampered with - do not proceed\n  3. Using outdated signing key"
 
@@ -149,7 +149,7 @@ get_suggested_fix() {
     fi
 
     # No pattern matched - return generic guidance
-    printf "%b\n" "Unknown error. Troubleshooting steps:\n  1. Check internet connectivity: curl -I https://google.com\n  2. Verify disk space: df -h\n  3. Check system logs: journalctl -xe\n  4. Search the error message online\n  5. Report at: https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup/issues"
+    printf "%b\n" "Unknown error. Troubleshooting steps:\n  1. Check internet connectivity: curl -I https://google.com\n  2. Verify disk space: df -h\n  3. Check system logs: journalctl -xe\n  4. Search the error message online\n  5. Report at: https://github.com/quangdang46/agents_environment_setup/issues"
     return 0
 }
 

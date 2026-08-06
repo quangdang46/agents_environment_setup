@@ -613,7 +613,10 @@ main() {
             echo -e "${YELLOW}Test mode detected: redirecting to $project_dir${NC}" >&2
         fi
     elif [[ -z "$project_dir" ]]; then
-        project_dir="/data/projects/$project_name"
+        # Honor ACFS_PROJECTS_DIR so the non-interactive CLI matches the
+        # interactive wizard (screen_directory.sh::get_default_projects_dir),
+        # defaulting to the canonical /data/projects when it is unset.
+        project_dir="${ACFS_PROJECTS_DIR:-/data/projects}/$project_name"
     fi
 
     if declare -f normalize_path &>/dev/null; then
@@ -796,7 +799,6 @@ EOF
             echo -e "${GREEN}Creating Claude settings...${NC}"
             cat > .claude/settings.local.json << 'EOF'
 {
-  "model": "claude-sonnet-4-6-20250514",
   "permissions": {
     "allow_file_read": true,
     "allow_file_write": true,

@@ -463,7 +463,7 @@ presets:
 In curl|bash mode, `install.sh` fetches assets from GitHub via `install_asset()`:
 ```bash
 acfs_curl -o "$dest_path" "$ACFS_RAW/$rel_path"
-# $ACFS_RAW = https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main
+# $ACFS_RAW = https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main
 ```
 
 ### Required Runtime Assets
@@ -494,7 +494,7 @@ acfs_curl -o "$dest_path" "$ACFS_RAW/$rel_path"
 | `acfs/onboard/lessons/04_agents_login.md` | Agent authentication |
 | `acfs/onboard/lessons/05_ntm_core.md` | NTM basics |
 | `acfs/onboard/lessons/06_ntm_command_palette.md` | NTM commands |
-| `acfs/onboard/lessons/07_flywheel_loop.md` | Workflow loop |
+| `acfs/onboard/lessons/06_ntm_command_palette.md` | NTM commands (workflow loop lesson removed) |
 
 ### Scripts Not Downloaded (embedded/generated)
 

@@ -392,6 +392,9 @@ acfs_resolve_selection() {
             fi
         fi
     done
+
+    ACFS_GENERATED_SELECTION_READY=true
+    export ACFS_GENERATED_SELECTION_READY
 }
 
 should_run_module() {
@@ -497,8 +500,30 @@ acfs_use_generated_for_category() {
         return 1
     fi
 
-    # 3) Default: generated only for migrated categories
-    _acfs_category_is_migrated "$category"
+    # 3) Default: generated for migrated categories...
+    if _acfs_category_is_migrated "$category"; then
+        return 0
+    fi
+
+    # 3b) Selection-filtered runs must use generated dispatch for every category.
+    # The top-level installer still enters every phase; legacy phase bodies are
+    # coarse category installers and do not know ACFS_EFFECTIVE_PLAN. Generated
+    # category dispatch is module-aware and no-ops when a category/phase has no
+    # selected modules, so it is the only safe path for --only/--only-phase/--skip.
+    if acfs_selection_filters_active; then
+        return 0
+    fi
+
+    return 1
+}
+
+acfs_selection_filters_active() {
+    [[ "${ONLY_MODULES+x}" == "x" && ${#ONLY_MODULES[@]} -gt 0 ]] && return 0
+    [[ "${ONLY_PHASES+x}" == "x" && ${#ONLY_PHASES[@]} -gt 0 ]] && return 0
+    [[ "${SKIP_MODULES+x}" == "x" && ${#SKIP_MODULES[@]} -gt 0 ]] && return 0
+    [[ "${SKIP_TAGS+x}" == "x" && ${#SKIP_TAGS[@]} -gt 0 ]] && return 0
+    [[ "${SKIP_CATEGORIES+x}" == "x" && ${#SKIP_CATEGORIES[@]} -gt 0 ]] && return 0
+    return 1
 }
 
 # Determines category from module ID (e.g., "lang.bun" -> "lang").
@@ -935,12 +960,12 @@ if ! declare -f run_as_target >/dev/null 2>&1; then
             return $?
         fi
 
-        # Prefer sudo (non-login) when available.
+        # Prefer noninteractive sudo (non-login) when available.
         sudo_bin="$(_acfs_system_binary_path sudo 2>/dev/null || true)"
         if [[ -n "$sudo_bin" ]]; then
             # shellcheck disable=SC2016  # $HOME/$@ expand inside sh -c
             # Use sh -c to ensure the cd happens as the target user.
-            "$sudo_bin" -u "$user" "$env_bin" "${env_args[@]}" "$sh_bin" -c 'cd "$HOME" || exit 1; exec "$@"' _ "${command_argv[@]}"
+            "$sudo_bin" -n -u "$user" "$env_bin" "${env_args[@]}" "$sh_bin" -c 'cd "$HOME" || exit 1; exec "$@"' _ "${command_argv[@]}"
             return $?
         fi
 
@@ -1194,20 +1219,20 @@ run_as_root_shell() {
             return 1
         }
         if [[ -n "$cmd" ]]; then
-            "$sudo_bin" "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; eval \"\$1\"" _ "$cmd"
+            "$sudo_bin" -n "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; eval \"\$1\"" _ "$cmd"
             return $?
         fi
-        "$sudo_bin" "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; (printf \"%s\\n\" \"set -euo pipefail\"; cat) | \"\$ACFS_BASH_BIN\" -s"
+        "$sudo_bin" -n "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; (printf \"%s\\n\" \"set -euo pipefail\"; cat) | \"\$ACFS_BASH_BIN\" -s"
         return $?
     fi
 
     sudo_bin="$(_acfs_system_binary_path sudo 2>/dev/null || true)"
     if [[ -n "$sudo_bin" ]]; then
         if [[ -n "$cmd" ]]; then
-            "$sudo_bin" "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; eval \"\$1\"" _ "$cmd"
+            "$sudo_bin" -n "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; eval \"\$1\"" _ "$cmd"
             return $?
         fi
-        "$sudo_bin" "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; (printf \"%s\\n\" \"set -euo pipefail\"; cat) | \"\$ACFS_BASH_BIN\" -s"
+        "$sudo_bin" -n "${env_cmd[@]}" "$bash_bin" -c "$path_export_source; set -euo pipefail; (printf \"%s\\n\" \"set -euo pipefail\"; cat) | \"\$ACFS_BASH_BIN\" -s"
         return $?
     fi
 

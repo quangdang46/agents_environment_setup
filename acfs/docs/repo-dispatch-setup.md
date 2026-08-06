@@ -41,7 +41,7 @@ When an ACFS tool (ntm, dcg, bv, etc.) updates its `install.sh`, ACFS's `checksu
 2. Create a new token with:
    - **Token name**: `acfs-checksum-dispatch`
    - **Expiration**: 1 year (or never for convenience)
-   - **Repository access**: Select "Only select repositories" → choose `agentic_coding_flywheel_setup`
+   - **Repository access**: Select "Only select repositories" → choose `agents_environment_setup`
    - **Permissions**:
      - Contents: Read-only (to trigger workflows)
      - Metadata: Read-only (required)
@@ -91,7 +91,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.ACFS_REPO_DISPATCH_TOKEN }}
-          repository: Dicklesworthstone/agentic_coding_flywheel_setup
+          repository: quangdang46/agents_environment_setup
           event-type: upstream-changed
           client-payload: |
             {
@@ -178,7 +178,7 @@ on:
 
 1. Verify the PAT has correct permissions
 2. Check the secret name is exactly `ACFS_REPO_DISPATCH_TOKEN`
-3. Ensure the ACFS repo name is correct: `Dicklesworthstone/agentic_coding_flywheel_setup`
+3. Ensure the ACFS repo name is correct: `quangdang46/agents_environment_setup`
 4. Check GitHub Actions is enabled on both repos
 
 ### PAT expired

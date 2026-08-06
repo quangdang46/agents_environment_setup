@@ -267,6 +267,27 @@ describe('validatePluginPackage', () => {
     expect(diagnosticCodes(plugin)).toContain('plugin_disallowed_behavior');
   });
 
+  test('rejects non-normalized plugin artifact target paths', () => {
+    const plugin = validPlugin();
+    plugin.capabilities = {
+      allowed: ['release_artifact'],
+      reviewRequired: ['root_run_as', 'cross_plugin_dependency'],
+      disallowed: ['arbitrary_shell', 'secret_values'],
+    };
+    const modules = plugin.modules as Record<string, unknown>[];
+    modules[0] = {
+      ...modules[0],
+      install: {
+        kind: 'release_artifact',
+        url: 'https://example.com/tool.tar.gz',
+        sha256: CHECKSUM,
+        targetPath: 'bin/./example',
+      },
+    };
+
+    expect(diagnosticCodes(plugin)).toContain('plugin_archive_layout_invalid');
+  });
+
   test('rejects credential-bearing fields without echoing values', () => {
     const plugin = validPlugin();
     const modules = plugin.modules as Record<string, unknown>[];

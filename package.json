@@ -1,5 +1,5 @@
 {
-  "name": "agentic-coding-flywheel-setup",
+  "name": "agents_environment_setup",
   "version": "0.7.0",
   "private": true,
   "workspaces": [

@@ -14,10 +14,10 @@ Pass `--ref` to the installer and use the same ref in the raw GitHub URL:
 
 ```bash
 # Pin to a tagged release (recommended for production)
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.6.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.6.0
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.6.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.6.0
 
 # Pin to a specific commit SHA (maximum reproducibility)
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/abc1234/install.sh" | bash -s -- --yes --mode vibe --ref abc1234
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/abc1234/install.sh" | bash -s -- --yes --mode vibe --ref abc1234
 ```
 
 ## When to Use Pinning
@@ -59,13 +59,13 @@ When using pinned refs, you can also use:
 
 ```bash
 # Use --ref instead of relying on shell environment-variable placement
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.6.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.6.0
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.6.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.6.0
 
 # Resolve a branch or tag to a copy-pasteable pinned SHA command
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" | bash -s -- --pin-ref --ref main
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" | bash -s -- --pin-ref --ref main
 
 # Fetch checksums from a different ref (advanced)
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.6.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.6.0 --checksums-ref main
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.6.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.6.0 --checksums-ref main
 ```
 
 ## Finding Version Tags
@@ -74,9 +74,9 @@ View available releases:
 
 ```bash
 # List all tags
-curl -s "https://api.github.com/repos/Dicklesworthstone/agentic_coding_flywheel_setup/tags" | jq -r '.[].name'
+curl -s "https://api.github.com/repos/Dicklesworthstone/agents_environment_setup/tags" | jq -r '.[].name'
 
-# Or visit: https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup/releases
+# Or visit: https://github.com/quangdang46/agents_environment_setup/releases
 ```
 
 ## Verifying Your Installation
@@ -97,13 +97,13 @@ To update a pinned installation:
 
 ```bash
 # Option 1: Re-run with new pin
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.7.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.7.0
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.7.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.7.0
 
 # Option 2: Use acfs update (updates to main)
 acfs update
 
 # Option 3: Force ACFS to reinstall managed tools from the pinned ref
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/v0.7.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.7.0 --force-reinstall
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/v0.7.0/install.sh" | bash -s -- --yes --mode vibe --ref v0.7.0 --force-reinstall
 ```
 
 ## Best Practices

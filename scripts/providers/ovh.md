@@ -70,22 +70,18 @@ Select a plan with at least:
 
 ---
 
-## Step 5: Add Your SSH Key
+## Step 5: Choose Password Authentication
 
-This is critical for secure access.
+For the ACFS beginner flow, use password authentication for the first login and let the installer handle SSH keys.
 
-1. In the order form, find "SSH Key" section
-2. Click "Add a key"
-3. Paste your public SSH key (from `~/.ssh/id_ed25519.pub`)
-4. Give it a memorable name
+1. In the order form, find the authentication or login method section
+2. Choose **Password** authentication
+3. Skip the SSH key section for now
+4. Save the VPS root password or temporary provider password somewhere safe
 
-If you don't have an SSH key yet:
-```bash
-ssh-keygen -t ed25519 -C "your-email@example.com"
-cat ~/.ssh/id_ed25519.pub
-```
+ACFS creates the `ubuntu` user after the first password login, then either sets up SSH key access automatically or prints the exact follow-up command to run.
 
-![OVH Step 5: Add SSH key](screenshots/ovh-step5-add-ssh-key.png)
+![OVH Step 5: Choose authentication](screenshots/ovh-step5-add-ssh-key.png)
 
 ---
 
@@ -126,13 +122,17 @@ After provisioning:
 
 ## Step 9: Connect via SSH
 
-```bash
-ssh ubuntu@YOUR_IP_ADDRESS
-```
+Start with the root password login:
 
-If you used root during setup:
 ```bash
 ssh root@YOUR_IP_ADDRESS
+```
+
+If OVH disables direct root login for your selected image and gives you an `ubuntu` admin account, connect as `ubuntu` and become root before installing. If `sudo -i` asks for a password, enter the `ubuntu` Linux account password. Do not enter your OVH account password or a different root password at the sudo prompt. If OVH only gave you a root password, use the provider console or root SSH path instead.
+
+```bash
+ssh ubuntu@YOUR_IP_ADDRESS
+sudo -i
 ```
 
 ---
@@ -140,7 +140,7 @@ ssh root@YOUR_IP_ADDRESS
 ## OVH-Specific Notes
 
 ### Default User
-OVH VPS typically uses `ubuntu` as the default user for Ubuntu images.
+Some OVH Ubuntu images default to `ubuntu` or disable direct root login. ACFS should still be run from a root shell, so use `sudo -i` before starting the installer when the first login lands on `ubuntu`. A sudo password prompt belongs to the `ubuntu` Linux account, not to your OVH website account.
 
 ### Firewall
 OVH has a basic firewall in the control panel. For most setups, the default configuration works fine.
@@ -159,11 +159,13 @@ sudo reboot
 
 ## Next Step
 
-Once connected, run the ACFS installer:
+Once connected as root, run the ACFS installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh | bash -s -- --yes --mode vibe
 ```
+
+When the installer finishes, follow its reconnect command for the `ubuntu` user. If it prints an SSH-key follow-up warning, run the printed command from your local machine once, then reconnect with the ACFS SSH key.
 
 ---
 

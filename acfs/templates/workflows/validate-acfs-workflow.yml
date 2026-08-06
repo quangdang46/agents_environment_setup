@@ -47,16 +47,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ACFS_REPO_DISPATCH_TOKEN }}
         run: |
-          if ! gh api /repos/Dicklesworthstone/agentic_coding_flywheel_setup > /dev/null 2>&1; then
+          if ! gh api /repos/quangdang46/agents_environment_setup > /dev/null 2>&1; then
             echo "::error::Token does not have access to ACFS repository"
-            echo "Ensure the PAT has 'repo' scope for Dicklesworthstone/agentic_coding_flywheel_setup"
+            echo "Ensure the PAT has 'repo' scope for quangdang46/agents_environment_setup"
             exit 1
           fi
           echo "Token has access to ACFS repository"
 
       - name: Check tool is in checksums.yaml
         run: |
-          CHECKSUMS=$(curl -sL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/checksums.yaml")
+          CHECKSUMS=$(curl -sL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/checksums.yaml")
           if ! echo "$CHECKSUMS" | grep -q "${{ env.TOOL_NAME }}:"; then
             echo "::warning::Tool '${{ env.TOOL_NAME }}' not found in ACFS checksums.yaml"
             echo "You may need to add it first, or verify the TOOL_NAME matches exactly"

@@ -247,27 +247,32 @@ aadc fix diagram.txt --preview
 
 ## s2p (source_to_prompt_tui)
 
-Source code to LLM prompt generator with TUI interface.
+Source code to LLM prompt generator with an interactive TUI. Built with Bun/TypeScript (Ink), distributed as a compiled `s2p` binary — not a Rust crate.
 
 ### Installation Verification
 
 ```bash
-s2p --version
 s2p --help
 ```
 
 ### Basic Usage
 
+`s2p` is an interactive TUI, not a non-interactive CLI. Its only flag is `-h`/`--help`; the first positional argument is the directory to open in (defaults to the current directory). File selection and prompt generation happen inside the TUI:
+
 ```bash
-# Launch TUI to select files
+# Launch the TUI in the current directory
 s2p
 
-# Generate prompt for specific files
-s2p generate src/main.rs src/lib.rs
-
-# Use template
-s2p generate --template review src/*.rs
+# Launch the TUI rooted at a specific directory
+s2p src/
 ```
+
+Inside the TUI:
+
+- **Explorer:** `j`/`k` move, `h`/`l` collapse/expand, `Space` selects files
+- **Generate combined prompt:** `Ctrl+G`
+- **Help:** `?` or `F1`
+- **Quit:** `Esc` (twice) or `Ctrl+C`
 
 ### Use Cases
 
@@ -314,7 +319,7 @@ caut alert set --daily-limit 100000
 
 ## Installation
 
-All utilities are installed via ACFS as optional tools. They can be installed individually via cargo:
+All utilities are installed via ACFS as optional tools. The Rust crates can be installed individually via cargo:
 
 ```bash
 cargo install toon_rust
@@ -324,8 +329,13 @@ cargo install xf
 cargo install markdown_web_browser
 cargo install process_triage
 cargo install aadc
-cargo install source_to_prompt_tui
 cargo install coding_agent_usage_tracker
+```
+
+`s2p` (source_to_prompt_tui) is a Bun/TypeScript tool, not a Rust crate, so it is installed via its own install script (which requires `bun`) rather than `cargo`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/source_to_prompt_tui/main/install.sh | bash
 ```
 
 ## Health Checks

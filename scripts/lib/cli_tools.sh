@@ -375,6 +375,72 @@ _cli_preferred_bin_dir() {
     printf '%s\n' "$target_home/.local/bin"
 }
 
+_cli_write_atuin_guard_wrapper() {
+    local wrapper_path="${1:-}"
+    local real_bin="${2:-}"
+    local real_bin_q=""
+    local backup_path=""
+
+    [[ -n "$wrapper_path" && -n "$real_bin" && -x "$real_bin" ]] || return 1
+    printf -v real_bin_q '%q' "$real_bin"
+
+    if [[ -e "$wrapper_path" || -L "$wrapper_path" ]]; then
+        if [[ ! -L "$wrapper_path" ]] && grep -Fq "agent hook integration disabled by ACFS" "$wrapper_path" 2>/dev/null; then
+            :
+        else
+            backup_path="${wrapper_path}.acfs-backup.$(date +%s).$$"
+            mv "$wrapper_path" "$backup_path" 2>/dev/null || return 1
+        fi
+    fi
+
+    {
+        cat <<'ATUIN_ACFS_WRAPPER_HEAD'
+#!/usr/bin/env bash
+set -euo pipefail
+
+real_atuin_bin="${ATUIN_REAL_BIN:-}"
+if [[ -z "$real_atuin_bin" ]]; then
+ATUIN_ACFS_WRAPPER_HEAD
+        printf '    real_atuin_bin=%s\n' "$real_bin_q"
+        cat <<'ATUIN_ACFS_WRAPPER_TAIL'
+fi
+
+if [[ ! -x "$real_atuin_bin" ]]; then
+    echo "atuin wrapper: real atuin binary not found at $real_atuin_bin" >&2
+    exit 127
+fi
+
+if [[ "${1:-}" == "hook" ]]; then
+    # atuin wrapper: agent hook integration disabled by ACFS
+    # Drain retained hook payloads so stale agent processes do not see EPIPE.
+    cat >/dev/null || true
+    exit 0
+fi
+
+_acfs_atuin_agent_context() {
+    local parent_comm=""
+
+    if [[ -n "${CODEX_CI:-}" || -n "${CODEX_THREAD_ID:-}" || -n "${CLAUDE_PROJECT_DIR:-}" || -n "${AGENT_NAME:-}" ]]; then
+        return 0
+    fi
+
+    parent_comm="$(ps -o comm= -p "${PPID:-0}" 2>/dev/null || true)"
+    case "$parent_comm" in
+        claude|codex|cod|cc|agy|antigravity|agy-locked|gmi|gemini|bun|node) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if [[ "${1:-}" == "history" && ( "${2:-}" == "start" || "${2:-}" == "end" ) ]] && _acfs_atuin_agent_context; then
+    exit 0
+fi
+
+exec "$real_atuin_bin" "$@"
+ATUIN_ACFS_WRAPPER_TAIL
+    } > "$wrapper_path"
+    chmod 0755 "$wrapper_path"
+}
+
 _cli_normalize_atuin_shims() {
     local target_user="${TARGET_USER:-ubuntu}"
     local target_home=""
@@ -382,24 +448,34 @@ _cli_normalize_atuin_shims() {
     local preferred_src="$target_home/.atuin/bin/atuin"
     local primary_dir="${ACFS_BIN_DIR:-$target_home/.local/bin}"
     local fallback_dir="$target_home/.local/bin"
+    local installed_wrapper=false
+    local dir=""
 
     primary_dir="$(_cli_validate_bin_dir_for_home "$primary_dir" "$target_home" 2>/dev/null || true)"
     [[ -n "$primary_dir" ]] || primary_dir="$fallback_dir"
 
     [[ -x "$preferred_src" ]] || return 0
 
-    _cli_run_as_user "
-        set -e
-        preferred_src='$preferred_src'
-        primary_dir='$primary_dir'
-        fallback_dir='$fallback_dir'
-        mkdir -p \"\$primary_dir\"
-        ln -sf \"\$preferred_src\" \"\$primary_dir/atuin\"
-        if [[ \"\$fallback_dir\" != \"\$primary_dir\" ]]; then
-            mkdir -p \"\$fallback_dir\"
-            ln -sf \"\$preferred_src\" \"\$fallback_dir/atuin\"
+    for dir in "$primary_dir" "$fallback_dir"; do
+        [[ -n "$dir" ]] || continue
+        mkdir -p "$dir" 2>/dev/null || continue
+        if [[ "${EUID:-$(id -u)}" -eq 0 && -n "$target_home" && "$dir" == "$target_home/"* ]]; then
+            local chown_dir="$dir"
+            while [[ "$chown_dir" == "$target_home/"* && "$chown_dir" != "$target_home" ]]; do
+                chown "$target_user:$target_user" "$chown_dir" 2>/dev/null || chown "$target_user" "$chown_dir" 2>/dev/null || true
+                chown_dir="${chown_dir%/*}"
+            done
         fi
-    " >/dev/null 2>&1 || true
+        if _cli_write_atuin_guard_wrapper "$dir/atuin" "$preferred_src"; then
+            installed_wrapper=true
+            if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+                chown "$target_user:$target_user" "$dir/atuin" 2>/dev/null || chown "$target_user" "$dir/atuin" 2>/dev/null || true
+            fi
+        fi
+        [[ "$fallback_dir" != "$primary_dir" ]] || break
+    done
+
+    [[ "$installed_wrapper" == true ]]
 }
 
 # Fetch latest version tag from GitHub
@@ -515,7 +591,7 @@ _cli_run_as_user() {
 
     sudo_bin="$(_cli_system_binary_path sudo 2>/dev/null || true)"
     if [[ -n "$sudo_bin" ]]; then
-        "$sudo_bin" -u "$target_user" -H "$bash_bin" -c "$wrapped_cmd"
+        "$sudo_bin" -n -u "$target_user" -H "$bash_bin" -c "$wrapped_cmd"
         return $?
     fi
 
@@ -885,7 +961,10 @@ install_atuin() {
 
     if [[ -x "$target_atuin_bin" ]]; then
         log_detail "atuin already installed"
-        _cli_normalize_atuin_shims
+        if ! _cli_normalize_atuin_shims; then
+            log_warn "Could not install guarded atuin shim"
+            return 1
+        fi
         return 0
     fi
 
@@ -908,12 +987,15 @@ install_atuin() {
     printf -v security_lib_q '%q' "$CLI_TOOLS_SCRIPT_DIR/security.sh"
     printf -v url_q '%q' "$url"
     printf -v expected_sha256_q '%q' "$expected_sha256"
-    if ! _cli_run_as_user "source $security_lib_q; verify_checksum $url_q $expected_sha256_q atuin | sh -s -- --non-interactive"; then
+    if ! _cli_run_as_user "source $security_lib_q; verify_checksum $url_q $expected_sha256_q atuin | env ATUIN_NO_MODIFY_PATH=1 sh"; then
         log_warn "Could not install atuin"
     fi
 
     if [[ -x "$target_atuin_bin" ]]; then
-        _cli_normalize_atuin_shims
+        if ! _cli_normalize_atuin_shims; then
+            log_warn "Could not install guarded atuin shim"
+            return 1
+        fi
         log_success "atuin installed"
         return 0
     fi

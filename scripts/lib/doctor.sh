@@ -805,7 +805,7 @@ build_fix_suggestion() {
         pinned_ref="$(_acfs_doctor_read_json_string_key "$state_file" "pinned_ref" 2>/dev/null || true)"
         pinned_ref="$(_acfs_doctor_normalize_ref "$pinned_ref" 2>/dev/null || true)"
         if [[ -n "$pinned_ref" && "$pinned_ref" != "main" ]]; then
-            install_url="https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${pinned_ref}/install.sh"
+            install_url="https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${pinned_ref}/install.sh"
             flag_args+=(--ref "$pinned_ref")
         fi
     fi
@@ -984,7 +984,7 @@ DOCTOR_VERSION_TIMEOUT="${DOCTOR_VERSION_TIMEOUT:-2}"
 
 # Print `acfs` CLI help (only used when this script is installed as the `acfs` entrypoint).
 print_acfs_help() {
-    echo "ACFS - Agentic Coding Flywheel Setup"
+    echo "ACFS - Agents Environment Setup"
     echo ""
     echo "Usage: acfs <command> [options]"
     echo ""
@@ -1015,6 +1015,12 @@ print_acfs_help() {
     echo "  continue [options]  View installation/upgrade progress"
     echo "  dashboard <command> Generate/view a static HTML dashboard"
     echo "  newproj <name>      Create new project with git, br, claude settings"
+    echo "  agents <command>    Manage the flywheel agent guide (ACFS-owned)"
+    echo "    update            Regenerate ~/.acfs/docs/flywheel-agent-guide.md"
+    echo "    install <target>  Explicitly deploy the guide (never overwrites):"
+    echo "                      --codex-global | --workspace | --root |"
+    echo "                      --project DIR | --to PATH"
+    echo "    path              Print the canonical guide path"
     echo "  update [options]    Update ACFS tools to latest versions"
     echo "  services-setup      Configure AI agents and cloud services"
     echo "  session <command>   Export/import/share agent sessions"
@@ -1029,6 +1035,9 @@ _acfs_doctor_exec_bash_script() {
     local env_bin=""
     local passthrough_acfs_home=""
     local passthrough_home=""
+    local passthrough_target_user=""
+    local passthrough_target_home=""
+    local passthrough_bin_dir=""
     shift || true
 
     bash_bin="$(_acfs_doctor_system_binary_path bash 2>/dev/null || true)"
@@ -1037,8 +1046,11 @@ _acfs_doctor_exec_bash_script() {
         return 1
     fi
 
-    passthrough_acfs_home="$(_acfs_doctor_sanitize_abs_nonroot_path "${_ACFS_DOCTOR_ENV_ACFS_HOME:-}" 2>/dev/null || true)"
-    passthrough_home="$(_acfs_doctor_sanitize_abs_nonroot_path "${_acfs_doctor_original_home:-}" 2>/dev/null || true)"
+    passthrough_acfs_home="$(_acfs_doctor_sanitize_abs_nonroot_path "${ACFS_HOME:-}" 2>/dev/null || true)"
+    passthrough_target_home="$(_acfs_doctor_sanitize_abs_nonroot_path "${TARGET_HOME:-}" 2>/dev/null || true)"
+    passthrough_home="${passthrough_target_home:-$(_acfs_doctor_sanitize_abs_nonroot_path "${_acfs_doctor_original_home:-}" 2>/dev/null || true)}"
+    passthrough_bin_dir="$(_acfs_doctor_sanitize_abs_nonroot_path "${ACFS_BIN_DIR:-}" 2>/dev/null || true)"
+    passthrough_target_user="${TARGET_USER:-}"
     if [[ -n "$passthrough_acfs_home" ]] && [[ -n "$passthrough_home" ]] && \
        _acfs_doctor_acfs_home_matches_home "$passthrough_acfs_home" "$passthrough_home" 2>/dev/null; then
         env_bin="$(_acfs_doctor_system_binary_path env 2>/dev/null || true)"
@@ -1046,9 +1058,9 @@ _acfs_doctor_exec_bash_script() {
             exec "$env_bin" \
                 HOME="$passthrough_home" \
                 ACFS_HOME="$passthrough_acfs_home" \
-                TARGET_USER="$_ACFS_DOCTOR_ENV_TARGET_USER" \
-                TARGET_HOME="$_ACFS_DOCTOR_ENV_TARGET_HOME" \
-                ACFS_BIN_DIR="$_ACFS_DOCTOR_ENV_BIN_DIR" \
+                TARGET_USER="$passthrough_target_user" \
+                TARGET_HOME="$passthrough_target_home" \
+                ACFS_BIN_DIR="$passthrough_bin_dir" \
                 "$bash_bin" "$script_path" "$@"
         fi
     fi
@@ -1212,6 +1224,12 @@ json_escape() {
     s=${s//$'\n'/\\n}
     s=${s//$'\r'/\\r}
     s=${s//$'\t'/\\t}
+    # Strip any remaining raw control bytes (e.g. ANSI escapes that a tool
+    # emits in its --version output). JSON forbids literal U+0000-U+001F inside
+    # strings, so leaving them in would make jq/consumers reject the output.
+    # The escaped \n, \r and \t above are now backslash sequences, not control
+    # bytes, so the ranges below deliberately exclude 0x09/0x0A/0x0D.
+    s=$(printf '%s' "$s" | LC_ALL=C tr -d '\000-\010\013\014\016-\037') || true
     printf '%s' "$s"
 }
 
@@ -1230,7 +1248,9 @@ run_with_timeout() {
 
     local result
     local status
-    result=$(timeout "$timeout_secs" "$@" 2>&1)
+    # -k 5: if the probe ignores/traps SIGTERM at the deadline, force-kill it
+    # 5s later so `acfs doctor --deep` can't hang past its timeout budget.
+    result=$(timeout -k 5 "$timeout_secs" "$@" 2>&1)
     status=$?
 
     if ((status == 124)); then
@@ -2049,7 +2069,7 @@ check_agents() {
 
     check_command "agent.claude" "Claude Code" "claude" "$(fix_for_module "agents.claude")"
     check_command "agent.codex" "Codex CLI" "codex" "$(fix_for_module "agents.codex")"
-    check_command "agent.gemini" "Gemini CLI" "gemini" "$(fix_for_module "agents.gemini")"
+    check_command "agent.antigravity" "Antigravity CLI" "agy" "$(fix_for_module "agents.antigravity")"
 
     # Check aliases are defined in the zshrc
     local alias_fix
@@ -2068,11 +2088,20 @@ check_agents() {
         check "agent.alias.cod" "cod alias" "warn" "not in zshrc" "$alias_fix"
     fi
 
-    # gmi is defined as a shell function (not an alias) in acfs.zshrc
-    if grep -q "^gmi()" "$target_zshrc" 2>/dev/null || grep -q "^alias gmi=" "$target_zshrc" 2>/dev/null; then
-        check "agent.alias.gmi" "gmi function" "pass"
+    # agy is defined as an alias or shell function in acfs.zshrc — the
+    # Antigravity CLI, successor to the retired gmi/Gemini CLI (the forward path).
+    if grep -q "^agy()" "$target_zshrc" 2>/dev/null || grep -q "^alias agy=" "$target_zshrc" 2>/dev/null; then
+        check "agent.alias.agy" "agy alias/function" "pass"
     else
-        check "agent.alias.gmi" "gmi function" "warn" "not in zshrc" "$alias_fix"
+        check "agent.alias.agy" "agy alias/function" "warn" "not in zshrc" "$alias_fix"
+    fi
+
+    # gmi is defined as an alias or shell function in acfs.zshrc — LEGACY
+    # (Gemini CLI retired 2026-06-18; kept only for reading old ~/.gemini/tmp history)
+    if grep -q "^gmi()" "$target_zshrc" 2>/dev/null || grep -q "^alias gmi=" "$target_zshrc" 2>/dev/null; then
+        check "agent.alias.gmi" "gmi alias/function" "pass"
+    else
+        check "agent.alias.gmi" "gmi alias/function" "warn" "not in zshrc" "$alias_fix"
     fi
 
     # Check for PATH conflicts (bead hi7)
@@ -2118,7 +2147,7 @@ check_agent_path_conflicts() {
 check_dcg_hook_status() {
     if ! doctor_binary_exists "dcg"; then
         check "stack.dcg" "DCG" "warn" "not installed" \
-            "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh | bash && dcg install"
+            "Re-run: acfs update --stack-only && dcg install --force"
         return
     fi
 
@@ -2345,20 +2374,47 @@ check_stack() {
         local curl_bin=""
         local id_bin=""
         local systemctl_bin=""
+        local am_live=false
+        local am_ready=false
+        local am_readiness_body=""
+        local am_readiness_url=""
 
         am_version=$(get_version_line "$am_bin")
         am_label="MCP Agent Mail ($am_version)"
         curl_bin="$(_acfs_doctor_system_binary_path curl 2>/dev/null || true)"
 
-        if [[ -z "$curl_bin" ]] || ! "$curl_bin" -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; then
+        if [[ -n "$curl_bin" ]] && "$curl_bin" -fsS --max-time 10 http://127.0.0.1:8765/health/liveness >/dev/null 2>&1; then
+            am_live=true
+            for am_readiness_url in \
+                http://127.0.0.1:8765/health/readiness \
+                http://127.0.0.1:8765/health
+            do
+                am_readiness_body="$("$curl_bin" -fsS --max-time 10 "$am_readiness_url" 2>/dev/null)" || continue
+                if printf '%s\n' "$am_readiness_body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ready"([[:space:]]*[,}])'; then
+                    am_ready=true
+                    break
+                fi
+            done
+        fi
+
+        if [[ "$am_live" != "true" ]]; then
             check "stack.mcp_agent_mail" "$am_label" "warn" "installed but service is not running" "$am_install_fix"
+        elif [[ "$am_ready" != "true" ]]; then
+            check "stack.mcp_agent_mail" "$am_label" "warn" "service is running but not ready" "$am_install_fix"
         elif {
             id_bin="$(_acfs_doctor_system_binary_path id 2>/dev/null || true)"
             systemctl_bin="$(_acfs_doctor_system_binary_path systemctl 2>/dev/null || true)"
             local am_uid=""
             local am_runtime_dir=""
+            # Resolve TARGET_USER's UID, not the current process user's, so split-user
+            # installs (running doctor as a different user than the service owner)
+            # check the right systemd user bus. Fall back to current user only when
+            # TARGET_USER is unset or equals the current user. (#281)
             if [[ -n "$id_bin" ]]; then
-                am_uid="$("$id_bin" -u 2>/dev/null || true)"
+                if [[ -n "${TARGET_USER:-}" ]]; then
+                    am_uid="$("$id_bin" -u "$TARGET_USER" 2>/dev/null || true)"
+                fi
+                [[ -z "$am_uid" ]] && am_uid="$("$id_bin" -u 2>/dev/null || true)"
             fi
             [[ -n "$am_uid" ]] && am_runtime_dir="/run/user/$am_uid"
             if [[ -d "$am_runtime_dir" ]]; then
@@ -2367,8 +2423,16 @@ check_stack() {
                     export DBUS_SESSION_BUS_ADDRESS="unix:path=$am_runtime_dir/bus"
                 fi
             fi
-            [[ -n "$systemctl_bin" ]] && "$systemctl_bin" --user show-environment >/dev/null 2>&1 && \
-                ! "$systemctl_bin" --user is-active --quiet agent-mail.service >/dev/null 2>&1
+            # When running doctor as a different user than TARGET_USER, the
+            # current-process `systemctl --user` can't see TARGET_USER's session
+            # bus — `--machine=TARGET_USER@.host` reaches it via systemd-run.
+            local systemctl_user_args=(--user)
+            if [[ -n "$systemctl_bin" ]] && [[ -n "${TARGET_USER:-}" ]] \
+               && [[ "$TARGET_USER" != "$(${id_bin:-id} -un 2>/dev/null || true)" ]]; then
+                systemctl_user_args=(--machine="${TARGET_USER}@.host" --user)
+            fi
+            [[ -n "$systemctl_bin" ]] && "$systemctl_bin" "${systemctl_user_args[@]}" show-environment >/dev/null 2>&1 && \
+                ! "$systemctl_bin" "${systemctl_user_args[@]}" is-active --quiet agent-mail.service >/dev/null 2>&1
         }; then
             check "stack.mcp_agent_mail" "$am_label" "warn" \
                 "HTTP endpoint is healthy but agent-mail.service is inactive; rerun install/update to migrate off the fallback launcher" \
@@ -2463,7 +2527,7 @@ check_stack() {
         local _ms_arch _ms_os _ms_fix
         _ms_arch="$(uname -m 2>/dev/null || echo unknown)"
         _ms_os="$(uname -s 2>/dev/null || echo unknown)"
-        _ms_fix="Re-run: curl -fsSL https://raw.githubusercontent.com/quangdang46/ms/main/install.sh | bash"
+        _ms_fix="Re-run: curl -fsSL https://raw.githubusercontent.com/quangdang46/ms/main/scripts/install.sh | bash"
 
         # Pre-built binaries exist for: x86_64-linux, aarch64-darwin, x86_64-darwin
         # ARM64 Linux (aarch64-Linux) does NOT have a pre-built binary yet:
@@ -3337,7 +3401,24 @@ run_deep_checks() {
 deep_check_agent_auth() {
     check_claude_auth
     check_codex_auth
-    check_gemini_auth
+    check_antigravity_auth
+    if doctor_binary_path gemini >/dev/null 2>&1 && legacy_gemini_auth_artifact_exists; then
+        check_gemini_auth
+    fi
+}
+
+legacy_gemini_auth_artifact_exists() {
+    local auth_home=""
+    local gemini_home=""
+    auth_home="$(doctor_runtime_home)"
+    gemini_home="${GEMINI_CLI_HOME:-$auth_home}"
+    [[ -n "${GEMINI_API_KEY:-}" ]] && return 0
+    [[ -n "${GOOGLE_API_KEY:-}" ]] && return 0
+    [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]] && return 0
+    [[ -f "$gemini_home/.gemini/.env" ]] && return 0
+    [[ -f "$gemini_home/.gemini/google_accounts.json" ]] && return 0
+    [[ -f "$gemini_home/.gemini/oauth_creds.json" ]] && return 0
+    return 1
 }
 
 # check_claude_auth - Thorough Claude Code authentication check
@@ -3453,6 +3534,33 @@ check_codex_auth() {
         check "deep.agent.codex_auth" "Codex CLI auth" "pass" "API key authenticated (pay-as-you-go)"
     else
         check "deep.agent.codex_auth" "Codex CLI auth" "warn" "not authenticated" "Run: codex login --device-auth"
+    fi
+}
+
+# check_antigravity_auth - Thorough Antigravity CLI authentication check
+# Antigravity stores OAuth state under ~/.gemini/antigravity-cli.
+check_antigravity_auth() {
+    local auth_home=""
+    auth_home="$(doctor_runtime_home)"
+
+    local agy_bin=""
+    agy_bin="$(doctor_binary_path agy 2>/dev/null || true)"
+    if [[ -z "$agy_bin" ]]; then
+        check "deep.agent.antigravity_auth" "Antigravity CLI" "warn" "not installed" "acfs update --force --agents-only"
+        return
+    fi
+
+    if ! "$agy_bin" --version &>/dev/null && ! "$agy_bin" --help &>/dev/null; then
+        check "deep.agent.antigravity_auth" "Antigravity CLI auth" "fail" "binary error" "Reinstall: acfs update --force --agents-only"
+        return
+    fi
+
+    local antigravity_home="${ANTIGRAVITY_HOME:-$auth_home/.gemini/antigravity-cli}"
+    local token_file="$antigravity_home/antigravity-oauth-token"
+    if [[ -s "$token_file" ]]; then
+        check "deep.agent.antigravity_auth" "Antigravity CLI auth" "pass" "authenticated"
+    else
+        check "deep.agent.antigravity_auth" "Antigravity CLI auth" "warn" "not authenticated" "Run: agy to authenticate"
     fi
 }
 
@@ -4638,6 +4746,46 @@ main() {
             echo "Error: newproj.sh not found" >&2
             return 1
             ;;
+        agents|agent-guide)
+            shift
+            # Manage the ACFS-owned flywheel agent guide. Generation only
+            # touches ~/.acfs/docs/flywheel-agent-guide.md; deployment into a
+            # real instruction file is explicit and non-overwriting.
+            local agents_generator=""
+            agents_generator="$(doctor_binary_path flywheel-update-agents-md 2>/dev/null || true)"
+            [[ -n "$agents_generator" ]] || agents_generator="$(command -v flywheel-update-agents-md 2>/dev/null || true)"
+            if [[ -z "$agents_generator" ]]; then
+                echo "Error: flywheel-update-agents-md not found (re-run the ACFS installer)" >&2
+                return 1
+            fi
+
+            local agents_subcmd="${1:-update}"
+            case "$agents_subcmd" in
+                update|generate|refresh)
+                    [[ $# -gt 0 ]] && shift
+                    "$agents_generator" "$@"
+                    return $?
+                    ;;
+                install|deploy)
+                    [[ $# -gt 0 ]] && shift
+                    "$agents_generator" deploy "$@"
+                    return $?
+                    ;;
+                path)
+                    "$agents_generator" path
+                    return $?
+                    ;;
+                help|-h|--help)
+                    "$agents_generator" --help
+                    return $?
+                    ;;
+                *)
+                    echo "Error: unknown agents subcommand: $agents_subcmd" >&2
+                    echo "Usage: acfs agents [update|install <target>|path|help]" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
         services-setup|services|setup)
             shift
             local services_script=""
@@ -4775,7 +4923,7 @@ main() {
                 echo ""
                 echo "By default, doctor runs quick existence checks only."
                 echo "Use --deep for thorough validation including:"
-                echo "  - Agent authentication (claude, codex, gemini)"
+                echo "  - Agent authentication (claude, codex, agy)"
                 echo "  - Database connectivity (PostgreSQL)"
                 echo "  - Cloud CLI authentication (vault, wrangler, etc.)"
                 echo ""

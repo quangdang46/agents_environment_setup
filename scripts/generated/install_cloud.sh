@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 # ============================================================
 # AUTO-GENERATED FROM acfs.manifest.yaml - DO NOT EDIT
 # Regenerate: bun run generate (from packages/manifest)
@@ -254,7 +254,68 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
 
     export TARGET_USER TARGET_HOME MODE ACFS_BIN_DIR
     export ACFS_BOOTSTRAP_DIR ACFS_LIB_DIR ACFS_GENERATED_DIR ACFS_ASSETS_DIR ACFS_CHECKSUMS_YAML ACFS_MANIFEST_YAML
+
+    # Defensive ownership repair (#306): when running as root, make sure the
+    # target user owns their XDG bin dir before the user-space language
+    # installers (uv/rust/bun) write into it. uv installs via an atomic
+    # mktemp+rename inside ~/.local/bin, so a root-owned ~/.local/bin makes its
+    # mktemp fail with "Permission denied (os error 13)" once the installer is
+    # re-exec'd as the (non-root) target user. The ownership repair is
+    # deliberately non-recursive: only the two directories themselves are
+    # touched, never their contents.
+    if [[ $EUID -eq 0 ]] && [[ -n "${TARGET_USER:-}" ]] && [[ "${TARGET_USER}" != "root" ]]; then
+        # SECURITY: never chown through a symlink. If an untrusted target user
+        # pre-staged ~/.local or ~/.local/bin as a symlink (e.g. -> /etc) before
+        # the root install, a chown that follows it would transfer ownership of
+        # the link target to them (local privilege escalation). chown -h /
+        # nofollow is not portable, so refuse the repair entirely when either
+        # path already exists as a symlink.
+        if [[ -L "$TARGET_HOME/.local" ]] || [[ -L "$TARGET_HOME/.local/bin" ]]; then
+            log_warn "Skipping ~/.local ownership repair: $TARGET_HOME/.local or .local/bin is a symlink (refusing to chown through it)"
+        else
+            _acfs_repair_mkdir="$(_acfs_system_binary_path mkdir 2>/dev/null || true)"
+            _acfs_repair_chown="$(_acfs_system_binary_path chown 2>/dev/null || true)"
+            if [[ -n "$_acfs_repair_mkdir" ]] && [[ -n "$_acfs_repair_chown" ]]; then
+                if "$_acfs_repair_mkdir" -p "$TARGET_HOME/.local/bin" 2>/dev/null; then
+                    "$_acfs_repair_chown" "${TARGET_USER}" "$TARGET_HOME/.local" "$TARGET_HOME/.local/bin" 2>/dev/null || true
+                fi
+            fi
+            unset _acfs_repair_mkdir _acfs_repair_chown
+        fi
+    fi
 fi
+
+acfs_generated_ensure_selection() {
+    if [[ "${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        local manifest_index="${ACFS_GENERATED_DIR:-$ACFS_GENERATED_SCRIPT_DIR}/manifest_index.sh"
+        if [[ ! -f "$manifest_index" ]]; then
+            log_error "Manifest index not found: $manifest_index"
+            return 1
+        fi
+        source "$manifest_index"
+        ACFS_MANIFEST_INDEX_LOADED=true
+        export ACFS_MANIFEST_INDEX_LOADED
+    fi
+
+    if [[ "${ACFS_GENERATED_SELECTION_READY:-false}" != "true" ]]; then
+        if ! declare -f acfs_resolve_selection >/dev/null 2>&1; then
+            log_error "Install selection helper not loaded"
+            return 1
+        fi
+        acfs_resolve_selection || return 1
+        ACFS_GENERATED_SELECTION_READY=true
+        export ACFS_GENERATED_SELECTION_READY
+    fi
+
+    return 0
+}
+
+acfs_generated_should_run_module() {
+    local module_id="${1:-}"
+    [[ -n "$module_id" ]] || return 1
+    acfs_generated_ensure_selection || return 1
+    should_run_module "$module_id"
+}
 
 # Source contract validation
 if [[ -f "$ACFS_GENERATED_SCRIPT_DIR/../lib/contract.sh" ]]; then
@@ -295,6 +356,11 @@ acfs_security_init() {
 install_cloud_wrangler() {
     local module_id="cloud.wrangler"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping cloud.wrangler (not selected)"
+        return 0
+    fi
     log_step "Installing cloud.wrangler"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -525,6 +591,11 @@ INSTALL_CLOUD_WRANGLER
 install_cloud_supabase() {
     local module_id="cloud.supabase"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping cloud.supabase (not selected)"
+        return 0
+    fi
     log_step "Installing cloud.supabase"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -717,7 +788,11 @@ fi
 version="${tag#v}"
 base_url="https://github.com/supabase/cli/releases/download/${tag}"
 tarball="supabase_linux_${arch}.tar.gz"
-checksums="supabase_${version}_checksums.txt"
+# Supabase CLI v2.99.0 (2026-05-18) renamed the per-version asset to plain
+# `checksums.txt`. Older releases still ship `supabase_${version}_checksums.txt`.
+# Try the new name first, then fall back to the legacy one so both work. (#282)
+checksums_new="checksums.txt"
+checksums_legacy="supabase_${version}_checksums.txt"
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/acfs-supabase.XXXXXX")"
 tmp_tgz="$(mktemp "${TMPDIR:-/tmp}/acfs-supabase.tgz.XXXXXX")"
@@ -731,7 +806,11 @@ if [[ -z "$tmp_dir" ]] || [[ -z "$tmp_tgz" ]] || [[ -z "$tmp_checksums" ]]; then
 fi
 
 curl "${CURL_ARGS[@]}" -o "$tmp_tgz" "${base_url}/${tarball}"
-curl "${CURL_ARGS[@]}" -o "$tmp_checksums" "${base_url}/${checksums}"
+if ! curl "${CURL_ARGS[@]}" -o "$tmp_checksums" "${base_url}/${checksums_new}" 2>/dev/null \
+   && ! curl "${CURL_ARGS[@]}" -o "$tmp_checksums" "${base_url}/${checksums_legacy}" 2>/dev/null; then
+  echo "Supabase CLI: failed to download checksums (tried ${checksums_new} and ${checksums_legacy})" >&2
+  exit 1
+fi
 
 expected_sha="$(awk -v tb="$tarball" '$2 == tb {print $1; exit}' "$tmp_checksums" 2>/dev/null)"
 if [[ -z "$expected_sha" ]]; then
@@ -827,6 +906,11 @@ INSTALL_CLOUD_SUPABASE
 install_cloud_vercel() {
     local module_id="cloud.vercel"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping cloud.vercel (not selected)"
+        return 0
+    fi
     log_step "Installing cloud.vercel"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then

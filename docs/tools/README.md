@@ -1,6 +1,6 @@
 # ACFS Flywheel Tools Documentation
 
-This directory contains documentation for the tools installed by ACFS (Agentic Coding Flywheel Setup).
+This directory contains documentation for the tools installed by ACFS (Agents Environment Setup).
 
 ## Core Tools
 

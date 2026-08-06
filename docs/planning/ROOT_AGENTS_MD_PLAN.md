@@ -17,7 +17,7 @@ agents use every day.
 5. Agent CLIs:
    - cc (Claude Code)
    - cod (Codex)
-   - gmi (Gemini)
+   - agy (Antigravity)
 
 ## Tools to Mention (Support)
 - ubs (Ultimate Bug Scanner) - required before commits
@@ -38,7 +38,7 @@ agents use every day.
 ### br - Issue Tracking
 ### bv - Beads Visualization
 ### ntm - Agent Orchestration
-### Agent CLIs (cc/cod/gmi)
+### Agent CLIs (cc/cod/agy)
 ## Workflows
 ### Flywheel Loop (triage -> claim -> work -> sync -> push)
 ### Multi-Agent Sessions (ntm + agent-mail)
@@ -101,7 +101,7 @@ Each tool section should include:
 - Commands: `ntm list`, `ntm activity`, `ntm health`, `ntm --robot-bulk-assign`.
 - Gotchas: ensure pane titles include agent short forms.
 
-#### Agent CLIs (cc/cod/gmi)
+#### Agent CLIs (cc/cod/agy)
 - Purpose: run the underlying model UIs.
 - Commands: canonical launch wrappers (from VPS setup).
 - Gotchas: respect AGENTS.md rules; ensure prompts include AGENTS.md and README.

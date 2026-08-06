@@ -69,7 +69,7 @@ valid_packet_fixture() {
     "manualStepsRemaining": [
       "Log in to the provider console and choose the ACFS-recommended VPS product.",
       "Select the desired region and Ubuntu image from the provider UI.",
-      "Paste or select the public SSH key for root access.",
+      "Use the provider password flow, keep root as the initial login user, and save the temporary VPS root password.",
       "Complete checkout and payment manually."
     ]
   },
@@ -109,7 +109,7 @@ valid_packet_fixture() {
   "install": {
     "mode": "vibe",
     "sourceRef": "main",
-    "command": "curl -fsSL \"https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)\" | bash -s -- --yes --mode vibe",
+    "command": "curl -fsSL \"https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?$(date +%s)\" | bash -s -- --yes --mode vibe",
     "commandRunLocation": "vps-root-shell"
   },
   "compatibility": {
@@ -127,7 +127,7 @@ valid_packet_fixture() {
   },
   "verificationCommands": [
     {"id": "ssh-root", "label": "Root SSH reaches the new VPS", "command": "ssh root@<target-host>", "runLocation": "local", "expectedStatus": "pass", "supportBundleSafe": false},
-    {"id": "installer", "label": "ACFS installer exits successfully", "command": "curl -fsSL \"https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh?$(date +%s)\" | bash -s -- --yes --mode vibe", "runLocation": "vps", "expectedStatus": "pass", "supportBundleSafe": true},
+    {"id": "installer", "label": "ACFS installer exits successfully", "command": "curl -fsSL \"https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh?$(date +%s)\" | bash -s -- --yes --mode vibe", "runLocation": "vps", "expectedStatus": "pass", "supportBundleSafe": true},
     {"id": "doctor", "label": "ACFS doctor passes or reports only documented warnings", "command": "acfs doctor", "runLocation": "vps", "expectedStatus": "pass", "supportBundleSafe": true}
   ],
   "expectedArtifacts": [
@@ -208,6 +208,7 @@ test_valid_packet_json_output_is_stable() {
       .packet.provider.name == "Contabo" and
       .packet.compatibility.targetAgents == 10 and
       .validation.errors == [] and
+      any(.validation.manualSteps[]; contains("temporary VPS root password")) and
       (.validation.manualSteps[] | select(contains("Complete checkout"))) and
       (.validation.verificationCommands[] | select(.id == "installer"))
     ' <<<"$output" >/dev/null || return 1
@@ -227,6 +228,7 @@ test_valid_packet_markdown_renders_steps() {
     [[ "$output" == *"Status: pass"* ]] || return 1
     [[ "$output" == *"Provider: Contabo (manual)"* ]] || return 1
     [[ "$output" == *"Manual provider steps:"* ]] || return 1
+    [[ "$output" == *"temporary VPS root password"* ]] || return 1
     [[ "$output" == *"[installer] ACFS installer exits successfully"* ]] || return 1
 
     pass "valid_packet_markdown_renders_steps"

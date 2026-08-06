@@ -265,6 +265,56 @@ EOF
     assert_output --partial '"session_id": "123"'
 }
 
+@test "sanitize_session_export: ignores PATH-poisoned jq" {
+    local system_jq=""
+    local candidate
+    for candidate in /usr/bin/jq /bin/jq /usr/local/bin/jq /usr/local/sbin/jq /usr/sbin/jq /sbin/jq; do
+        if [[ -x "$candidate" ]]; then
+            system_jq="$candidate"
+            break
+        fi
+    done
+    [[ -n "$system_jq" ]] || skip "system jq required for PATH trust test"
+
+    local fake_bin
+    local marker
+    local file
+    fake_bin="$(create_temp_dir)"
+    marker="$BATS_TEST_TMPDIR/session-fake-jq-used"
+    cat > "$fake_bin/jq" <<EOF
+#!/usr/bin/env bash
+: > "$marker"
+last="\${@: -1}"
+if [[ -f "\$last" ]]; then
+    cat -- "\$last"
+fi
+exit 0
+EOF
+    chmod +x "$fake_bin/jq"
+
+    file=$(create_temp_file '{
+        "schema_version": 1,
+        "session_id": "123",
+        "agent": "claude-code",
+        "stats": { "turns": 1 },
+        "sanitized_transcript": [
+            { "content": "password=supersecret123" }
+        ]
+    }')
+
+    run env PATH="$fake_bin:/usr/bin:/bin" bash -c '
+        set -euo pipefail
+        source "$1"
+        sanitize_session_export "$2"
+        cat "$2"
+    ' _ "$PROJECT_ROOT/scripts/lib/session.sh" "$file"
+
+    assert_success
+    refute_output --partial "supersecret123"
+    assert_output --partial "[SECRET_REDACTED]"
+    [[ ! -e "$marker" ]] || fail "sanitize_session_export used PATH-poisoned jq"
+}
+
 @test "sanitize_session_export: clears RETURN cleanup trap after success" {
     local json='{
         "schema_version": 1,

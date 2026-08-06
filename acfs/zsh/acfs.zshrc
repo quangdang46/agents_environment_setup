@@ -23,8 +23,7 @@ if [[ -n "$TERM" ]] && ! infocmp "$TERM" &>/dev/null; then
 fi
 
 # --- Paths (early) ---
-# User ~/bin takes highest precedence (for custom shims)
-[[ -d "$HOME/bin" ]] && export PATH="$HOME/bin:$PATH"
+# Each line below PREPENDS, so the LAST prepend ends up first in PATH.
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Go (support both apt-style and /usr/local/go)
@@ -36,27 +35,18 @@ export BUN_INSTALL="$HOME/.bun"
 [[ -d "$BUN_INSTALL/bin" ]] && export PATH="$BUN_INSTALL/bin:$PATH"
 [[ -s "$HOME/.bun/_bun" ]] && source "$HOME/.bun/_bun"
 
-# Atuin (installer default)
-if [[ -f "$HOME/.atuin/bin/env" ]]; then
-  source "$HOME/.atuin/bin/env"
-elif [[ -d "$HOME/.atuin/bin" ]]; then
-  export PATH="$HOME/.atuin/bin:$PATH"
-fi
-
 # Ensure user-local binaries take precedence (e.g., native Claude install).
 export PATH="$HOME/.local/bin:$PATH"
+
+# User ~/bin takes highest precedence (for custom shims), so it must be the
+# final prepend — anything earlier would be outranked by the lines above.
+[[ -d "$HOME/bin" ]] && export PATH="$HOME/bin:$PATH"
 if command -v zsh &>/dev/null; then
   export SHELL="$(command -v zsh)"
 fi
 
-_ACFS_ATUIN_BIN=""
-if command -v atuin &>/dev/null; then
-  _ACFS_ATUIN_BIN="$(command -v atuin)"
-elif [[ -x "$HOME/.local/bin/atuin" ]]; then
-  _ACFS_ATUIN_BIN="$HOME/.local/bin/atuin"
-elif [[ -x "$HOME/.atuin/bin/atuin" ]]; then
-  _ACFS_ATUIN_BIN="$HOME/.atuin/bin/atuin"
-fi
+# Atuin remains available through the guarded shim in ~/.local/bin. Do not
+# source Atuin's env file here; it can put the real binary ahead of the shim.
 
 # --- Oh My Zsh ---
 export ZSH="$HOME/.oh-my-zsh"
@@ -89,6 +79,14 @@ plugins=(
   zsh-autosuggestions
   zsh-syntax-highlighting
 )
+
+# --- ACFS Tab Completion (zsh) ---
+# fpath must gain the completions directory BEFORE oh-my-zsh runs compinit,
+# or the #compdef header in _acfs is never registered and `acfs <TAB>`
+# silently does nothing.
+if [[ -f "$HOME/.acfs/completions/_acfs" ]]; then
+  fpath=("$HOME/.acfs/completions" "${fpath[@]}")
+fi
 
 # Load OMZ if installed
 if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
@@ -133,7 +131,13 @@ if command -v fd &>/dev/null; then
 elif command -v fdfind &>/dev/null; then
   alias fd='fdfind'
 fi
-command -v rg &>/dev/null && alias grep='rg'
+# ripgrep as standalone aliases (NOT aliased over 'grep' — rg is not a drop-in
+# replacement: e.g. grep's -E means ERE while rg's -E means --encoding, so
+# `grep -E 'pat' file` breaks under an alias. Same principle as fd/find above.)
+if command -v rg &>/dev/null; then
+  alias rgrep='rg'
+  alias search='rg'
+fi
 command -v dust &>/dev/null && alias du='dust'
 command -v btop &>/dev/null && alias top='btop'
 command -v nvim &>/dev/null && alias vim='nvim'
@@ -168,10 +172,12 @@ alias p='cd /data/projects'
 # --- Ubuntu/Debian convenience ---
 alias update='sudo apt update && sudo apt upgrade -y && sudo apt autoremove -y'
 alias install='sudo apt install'
-alias search='apt search'
+# Named aptsearch (not `search`) so it can't shadow the ripgrep `search`
+# alias defined in the modern-CLI block above.
+alias aptsearch='apt search'
 
 # Update agent CLIs
-alias uca='(curl -fsSL https://claude.ai/install.sh | bash -s -- latest) && ("$HOME/.bun/bin/bun" install -g --trust @openai/codex@latest || "$HOME/.bun/bin/bun" install -g --trust @openai/codex) && "$HOME/.bun/bin/bun" install -g --trust @google/gemini-cli@latest && curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/misc_coding_agent_tips_and_scripts/main/fix-gemini-cli-ebadf-crash.sh | bash'
+alias uca='(curl -fsSL https://claude.ai/install.sh | bash -s -- latest) && ("$HOME/.bun/bin/bun" install -g --trust @openai/codex@latest || "$HOME/.bun/bin/bun" install -g --trust @openai/codex) && "$HOME/.local/bin/agy" update && "$HOME/.local/bin/agy-locked" --acfs-prime-settings'
 
 # --- Custom functions ---
 mkcd() { mkdir -p "$1" && cd "$1" || return; }
@@ -219,14 +225,38 @@ export UV_LINK_MODE=copy
 [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
 
 # nvm (Node Version Manager)
+#
+# Sourcing nvm.sh plainly runs nvm_auto -> nvm_version -> nvm_resolve_alias on
+# every interactive shell. That walks the versions tree and costs 2-38s per
+# shell (measured: trj 37,968ms, css 2,746ms, ts2 4,523ms), so every new pane
+# and every command in a fresh shell pays it.
+#
+# nvm.sh is also the only thing that puts node on PATH, so it can't just be
+# dropped. Resolve the node bin directly (cheap), then source nvm.sh with
+# --no-use so the `nvm` function still exists without the auto-use cost.
 export NVM_DIR="$HOME/.nvm"
-[[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh"
-[[ -s "$NVM_DIR/bash_completion" ]] && source "$NVM_DIR/bash_completion"
-
-# Atuin init (after PATH)
-if [[ -n "$_ACFS_ATUIN_BIN" ]]; then
-  eval "$("$_ACFS_ATUIN_BIN" init zsh)"
+if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+    if [[ -z "${NVM_BIN:-}" || ! -x "${NVM_BIN}/node" ]]; then
+        # A pinned default alias is a concrete version (v26.0.0); symbolic ones
+        # ("node", "lts/*") need nvm to resolve, so fall back to newest installed.
+        _acfs_nvm_default="$(command cat "$NVM_DIR/alias/default" 2>/dev/null)"
+        if [[ "$_acfs_nvm_default" == v* && -x "$NVM_DIR/versions/node/$_acfs_nvm_default/bin/node" ]]; then
+            _acfs_nvm_bin="$NVM_DIR/versions/node/$_acfs_nvm_default/bin"
+        else
+            _acfs_nvm_bin="$(command ls -1d "$NVM_DIR"/versions/node/v*/bin 2>/dev/null | command sort -V | command tail -n 1)"
+        fi
+        if [[ -n "${_acfs_nvm_bin:-}" && -x "$_acfs_nvm_bin/node" ]]; then
+            case ":$PATH:" in
+                *":$_acfs_nvm_bin:"*) ;;
+                *) export PATH="$_acfs_nvm_bin:$PATH" ;;
+            esac
+            export NVM_BIN="$_acfs_nvm_bin"
+        fi
+        unset _acfs_nvm_default _acfs_nvm_bin
+    fi
+    source "$NVM_DIR/nvm.sh" --no-use
 fi
+[[ -s "$NVM_DIR/bash_completion" ]] && source "$NVM_DIR/bash_completion"
 
 # Zoxide (better cd)
 command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
@@ -249,13 +279,8 @@ fi
 # --- Local overrides ---
 [[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
-# --- Force Atuin bindings (must be last) ---
+# --- Shell editing mode ---
 bindkey -e
-if [[ -n "$_ACFS_ATUIN_BIN" ]]; then
-  bindkey -M emacs '^R' atuin-search 2>/dev/null
-  bindkey -M viins '^R' atuin-search-viins 2>/dev/null
-  bindkey -M vicmd '^R' atuin-search-vicmd 2>/dev/null
-fi
 
 # --- ACFS env shim (optional) ---
 [[ -f "$HOME/.local/bin/env" ]] && source "$HOME/.local/bin/env"
@@ -532,27 +557,13 @@ acfs() {
   esac
 }
 
-# --- ACFS Tab Completion (zsh) ---
-# Load acfs completions if the function is available
-if [[ -f "$HOME/.acfs/completions/_acfs" ]]; then
-  # Add to fpath before compinit, or load directly if compinit already ran
-  fpath=("$HOME/.acfs/completions" "${fpath[@]}")
-  autoload -Uz _acfs 2>/dev/null
-fi
-
 # --- Agent aliases (dangerously enabled by design) ---
 alias cc='NODE_OPTIONS="--max-old-space-size=32768" ~/.local/bin/claude --dangerously-skip-permissions'
 alias cod='codex --dangerously-bypass-approvals-and-sandbox'
 
-# gmi: update gemini-cli via bun, apply patches, then launch (hardcoded bun path to avoid npm hijacking)
-gmi() {
-  echo "▶ Updating gemini-cli to latest..."
-  "$HOME/.bun/bin/bun" install -g --trust @google/gemini-cli@latest 2>&1 | tail -1
-  echo "▶ Applying patches..."
-  curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/misc_coding_agent_tips_and_scripts/main/fix-gemini-cli-ebadf-crash.sh | bash
-  echo "▶ Launching gemini..."
-  "$HOME/.bun/bin/gemini" --yolo "$@"
-}
+# agy/gmi: Antigravity CLI (Google), locked to ACFS policy.
+alias agy='$HOME/.local/bin/agy-locked'
+alias gmi='$HOME/.local/bin/agy-locked'
 
 # bun project helpers (common)
 alias bdev='bun run dev'
@@ -583,7 +594,7 @@ amserve() {
     am_mcp_path="/api/"
   fi
 
-  am serve-http --host 127.0.0.1 --port 8765 --path "$am_mcp_path"
+  am serve-http --host "${ACFS_AGENT_MAIL_HOST:-127.0.0.1}" --port "${ACFS_AGENT_MAIL_PORT:-8765}" --path "$am_mcp_path"
 }
 
 # --- ACFS tool aliases (new tools) ---

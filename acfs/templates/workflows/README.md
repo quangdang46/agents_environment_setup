@@ -13,7 +13,7 @@ Ready-to-use GitHub Actions workflow templates for ACFS-owned tool repositories.
 
 ## Quick Setup
 
-1. **Create PAT**: Generate a Personal Access Token with `contents:read` on the `agentic_coding_flywheel_setup` repo
+1. **Create PAT**: Generate a Personal Access Token with `contents:read` on the `agents_environment_setup` repo
 
 2. **Add Secret**: In your tool repo, create a secret named `ACFS_REPO_DISPATCH_TOKEN` with the PAT value
 

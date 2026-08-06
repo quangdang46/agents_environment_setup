@@ -4,12 +4,12 @@
 # Use this template for repos with install.sh in the scripts/ directory.
 #
 # Setup:
-#   1. Create a PAT with 'contents:read' on agentic_coding_flywheel_setup
+#   1. Create a PAT with 'contents:read' on agents_environment_setup
 #   2. Add it as a secret named ACFS_REPO_DISPATCH_TOKEN in this repo
 #   3. Copy this file to .github/workflows/notify-acfs.yml
 #   4. Set TOOL_NAME to the matching key in ACFS checksums.yaml
 #
-# Related: agentic_coding_flywheel_setup-b04c
+# Related: agents_environment_setup-b04c
 #
 name: Notify ACFS of Installer Changes
 
@@ -32,7 +32,7 @@ jobs:
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.ACFS_REPO_DISPATCH_TOKEN }}
-          repository: Dicklesworthstone/agentic_coding_flywheel_setup
+          repository: quangdang46/agents_environment_setup
           event-type: upstream-changed
           client-payload: |
             {

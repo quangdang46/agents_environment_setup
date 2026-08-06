@@ -111,6 +111,48 @@ fi
 # VALIDATION
 # ============================================================
 
+acfs_session_system_binary_path() {
+    local name="${1:-}"
+    local candidate=""
+
+    [[ -n "$name" ]] || return 1
+    case "$name" in
+        .|..)
+            return 1
+            ;;
+        *[!A-Za-z0-9._+-]*)
+            return 1
+            ;;
+    esac
+
+    for candidate in \
+        "/usr/bin/$name" \
+        "/bin/$name" \
+        "/usr/local/bin/$name" \
+        "/usr/local/sbin/$name" \
+        "/usr/sbin/$name" \
+        "/sbin/$name"
+    do
+        [[ -x "$candidate" ]] || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+
+    return 1
+}
+
+acfs_session_jq() {
+    local jq_bin=""
+
+    jq_bin="$(acfs_session_system_binary_path jq 2>/dev/null || true)"
+    if [[ -z "$jq_bin" ]]; then
+        log_error "jq is required for session operations but not installed"
+        return 1
+    fi
+
+    "$jq_bin" "$@"
+}
+
 # Validate a session export JSON file against the schema
 # Usage: validate_session_export "/path/to/export.json"
 # Returns: 0 on success, 1 on validation failure
@@ -124,13 +166,13 @@ validate_session_export() {
     fi
 
     # Check it's valid JSON
-    if ! jq -e . "$file" >/dev/null 2>&1; then
+    if ! acfs_session_jq -e . "$file" >/dev/null 2>&1; then
         log_error "Invalid JSON in session export: $file"
         return 1
     fi
 
     # Check required top-level fields exist and contain usable values
-    if ! jq -e '
+    if ! acfs_session_jq -e '
         (.schema_version != null)
         and (.session_id | type == "string" and test("\\S"))
         and (.agent | type == "string" and test("\\S"))
@@ -141,14 +183,14 @@ validate_session_export() {
 
     # Check schema version compatibility
     local version
-    version=$(jq -r '.schema_version' "$file")
+    version=$(acfs_session_jq -r '.schema_version' "$file")
     if [[ "$version" != "1" ]]; then
         log_warn "Session schema version $version may not be fully compatible (expected: 1)"
     fi
 
     # Validate agent field is one of the known agents
     local agent
-    agent=$(jq -r '.agent' "$file")
+    agent=$(acfs_session_jq -r '.agent' "$file")
     case "$agent" in
         claude-code|codex|gemini)
             ;;
@@ -158,7 +200,7 @@ validate_session_export() {
     esac
 
     # Validate stats object exists and has expected fields
-    if ! jq -e '.stats.turns != null' "$file" >/dev/null 2>&1; then
+    if ! acfs_session_jq -e '.stats.turns != null' "$file" >/dev/null 2>&1; then
         log_warn "Session export missing stats.turns field"
     fi
 
@@ -176,7 +218,7 @@ get_session_schema_version() {
         return 1
     fi
 
-    jq -r '.schema_version // "unknown"' "$file" 2>/dev/null || echo "unknown"
+    acfs_session_jq -r '.schema_version // "unknown"' "$file" 2>/dev/null || echo "unknown"
 }
 
 # Get session summary from an export
@@ -189,7 +231,7 @@ get_session_summary() {
         return 1
     fi
 
-    jq -r '.summary // ""' "$file" 2>/dev/null || echo ""
+    acfs_session_jq -r '.summary // ""' "$file" 2>/dev/null || echo ""
 }
 
 # Get session agent from an export
@@ -202,13 +244,13 @@ get_session_agent() {
         return 1
     fi
 
-    jq -r '.agent // ""' "$file" 2>/dev/null || echo ""
+    acfs_session_jq -r '.agent // ""' "$file" 2>/dev/null || echo ""
 }
 
 # Check if jq is available (required for session operations)
 # Usage: check_session_deps
 check_session_deps() {
-    if ! command -v jq >/dev/null 2>&1; then
+    if ! acfs_session_system_binary_path jq >/dev/null 2>&1; then
         log_error "jq is required for session operations but not installed"
         return 1
     fi
@@ -336,7 +378,7 @@ sanitize_session_export() {
     fi
 
     # Validate it's valid JSON first
-    if ! jq -e . "$file" >/dev/null 2>&1; then
+    if ! acfs_session_jq -e . "$file" >/dev/null 2>&1; then
         log_error "Invalid JSON in session export: $file"
         return 1
     fi
@@ -415,7 +457,7 @@ JQ_TAIL
 
     local jq_filter="${jq_filter_base}${jq_filter_optional}${jq_filter_tail}"
 
-    if ! jq "$jq_filter" "$file" > "$tmpfile"; then
+    if ! acfs_session_jq "$jq_filter" "$file" > "$tmpfile"; then
         acfs_session_remove_temp_files "$tmpfile"
         log_error "Failed to sanitize session export"
         return 1

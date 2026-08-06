@@ -15,12 +15,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { parseManifestFile, validateManifestData } from './parser.js';
 import {
-  validatePluginPackage,
-  formatPluginDiagnostics,
-  type PluginDiagnostic,
-  type PluginValidationTarget,
-} from './plugin.js';
-import {
   validateManifest as validateManifestAdvanced,
   formatValidationErrors,
   validateVerifiedInstallerChecksums,
@@ -43,11 +37,11 @@ const SCRIPT_FILE = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = resolve(dirname(SCRIPT_FILE), '../../..');
 const MANIFEST_PATH = join(PROJECT_ROOT, 'acfs.manifest.yaml');
 const OUTPUT_DIR = join(PROJECT_ROOT, 'scripts/generated');
+const WEB_OUTPUT_DIR = join(PROJECT_ROOT, 'apps/web/lib/generated');
 const CHECKSUMS_PATH = join(PROJECT_ROOT, 'checksums.yaml');
-const DEFAULT_PLUGIN_REGISTRY_PATH = join(PROJECT_ROOT, 'acfs.plugins.json');
 
 const HEADER = `#!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 # ============================================================
 # AUTO-GENERATED FROM acfs.manifest.yaml - DO NOT EDIT
 # Regenerate: bun run generate (from packages/manifest)
@@ -302,7 +296,68 @@ if [[ "\${BASH_SOURCE[0]}" = "\${0}" ]]; then
 
     export TARGET_USER TARGET_HOME MODE ACFS_BIN_DIR
     export ACFS_BOOTSTRAP_DIR ACFS_LIB_DIR ACFS_GENERATED_DIR ACFS_ASSETS_DIR ACFS_CHECKSUMS_YAML ACFS_MANIFEST_YAML
+
+    # Defensive ownership repair (#306): when running as root, make sure the
+    # target user owns their XDG bin dir before the user-space language
+    # installers (uv/rust/bun) write into it. uv installs via an atomic
+    # mktemp+rename inside ~/.local/bin, so a root-owned ~/.local/bin makes its
+    # mktemp fail with "Permission denied (os error 13)" once the installer is
+    # re-exec'd as the (non-root) target user. The ownership repair is
+    # deliberately non-recursive: only the two directories themselves are
+    # touched, never their contents.
+    if [[ \$EUID -eq 0 ]] && [[ -n "\${TARGET_USER:-}" ]] && [[ "\${TARGET_USER}" != "root" ]]; then
+        # SECURITY: never chown through a symlink. If an untrusted target user
+        # pre-staged ~/.local or ~/.local/bin as a symlink (e.g. -> /etc) before
+        # the root install, a chown that follows it would transfer ownership of
+        # the link target to them (local privilege escalation). chown -h /
+        # nofollow is not portable, so refuse the repair entirely when either
+        # path already exists as a symlink.
+        if [[ -L "\$TARGET_HOME/.local" ]] || [[ -L "\$TARGET_HOME/.local/bin" ]]; then
+            log_warn "Skipping ~/.local ownership repair: \$TARGET_HOME/.local or .local/bin is a symlink (refusing to chown through it)"
+        else
+            _acfs_repair_mkdir="\$(_acfs_system_binary_path mkdir 2>/dev/null || true)"
+            _acfs_repair_chown="\$(_acfs_system_binary_path chown 2>/dev/null || true)"
+            if [[ -n "\$_acfs_repair_mkdir" ]] && [[ -n "\$_acfs_repair_chown" ]]; then
+                if "\$_acfs_repair_mkdir" -p "\$TARGET_HOME/.local/bin" 2>/dev/null; then
+                    "\$_acfs_repair_chown" "\${TARGET_USER}" "\$TARGET_HOME/.local" "\$TARGET_HOME/.local/bin" 2>/dev/null || true
+                fi
+            fi
+            unset _acfs_repair_mkdir _acfs_repair_chown
+        fi
+    fi
 fi
+
+acfs_generated_ensure_selection() {
+    if [[ "\${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        local manifest_index="\${ACFS_GENERATED_DIR:-\$ACFS_GENERATED_SCRIPT_DIR}/manifest_index.sh"
+        if [[ ! -f "\$manifest_index" ]]; then
+            log_error "Manifest index not found: \$manifest_index"
+            return 1
+        fi
+        source "\$manifest_index"
+        ACFS_MANIFEST_INDEX_LOADED=true
+        export ACFS_MANIFEST_INDEX_LOADED
+    fi
+
+    if [[ "\${ACFS_GENERATED_SELECTION_READY:-false}" != "true" ]]; then
+        if ! declare -f acfs_resolve_selection >/dev/null 2>&1; then
+            log_error "Install selection helper not loaded"
+            return 1
+        fi
+        acfs_resolve_selection || return 1
+        ACFS_GENERATED_SELECTION_READY=true
+        export ACFS_GENERATED_SELECTION_READY
+    fi
+
+    return 0
+}
+
+acfs_generated_should_run_module() {
+    local module_id="\${1:-}"
+    [[ -n "\$module_id" ]] || return 1
+    acfs_generated_ensure_selection || return 1
+    should_run_module "\$module_id"
+}
 
 # Source contract validation
 if [[ -f "\$ACFS_GENERATED_SCRIPT_DIR/../lib/contract.sh" ]]; then
@@ -423,6 +478,7 @@ function shellQuote(str: string): string {
  * - TARGET_HOME
  * - TARGET_USER
  * - TARGET_USER with Ubuntu default fallback
+ * - $$ for per-process temp directories
  *
  * SECURITY:
  * - We do NOT use a blacklist (e.g. banning `$(`).
@@ -436,7 +492,7 @@ function shellQuoteVerifiedInstallerArg(str: string): string {
   // Regex to capture allowed variables.
   // Order matters: match longest tokens first (${VAR} before $VAR).
   // capturing group () is included in split output.
-  const variablePattern = /(\$\{TARGET_USER:-ubuntu\}|\$\{TARGET_HOME\}|\$TARGET_HOME|\$\{TARGET_USER\}|\$TARGET_USER)/g;
+  const variablePattern = /(\$\{TARGET_USER:-ubuntu\}|\$\{TARGET_HOME\}|\$TARGET_HOME|\$\{TARGET_USER\}|\$TARGET_USER|\$\$)/g;
 
   const parts = str.split(variablePattern);
 
@@ -448,7 +504,8 @@ function shellQuoteVerifiedInstallerArg(str: string): string {
         part === '${TARGET_HOME}' ||
         part === '$TARGET_HOME' ||
         part === '${TARGET_USER}' ||
-        part === '$TARGET_USER'
+        part === '$TARGET_USER' ||
+        part === '$$'
       ) {
         return `"${part}"`;
       }
@@ -517,6 +574,17 @@ function buildVerifiedInstallerPipe(module: Module): string {
   }
 
   return parts.join(' ');
+}
+
+function verifiedInstallerTmpdirEnvValue(module: Module): string | null {
+  if (module.run_as !== 'target_user') return null;
+
+  const envVars = module.verified_installer?.env ?? [];
+  const tmpdirEnv = envVars.find((envVar) => envVar.startsWith('TMPDIR='));
+  if (!tmpdirEnv) return null;
+
+  const value = tmpdirEnv.slice('TMPDIR='.length);
+  return value.length > 0 ? value : null;
 }
 
 /**
@@ -1046,6 +1114,8 @@ function generateVerifiedInstallerSnippet(module: Module): string[] {
   const vi = module.verified_installer!;
   const tool = vi.tool;
   const runInTmux = vi.run_in_tmux === true;
+  const tmpdirEnvValue = verifiedInstallerTmpdirEnvValue(module);
+  const hasTmpdirEnv = Boolean(tmpdirEnvValue);
   const envStr = vi.env && vi.env.length > 0
     ? vi.env.map(a => shellQuoteVerifiedInstallerArg(a)).join(' ')
     : '';
@@ -1059,10 +1129,17 @@ function generateVerifiedInstallerSnippet(module: Module): string[] {
   // This prevents blocking when the installer starts a long-running server
   if (runInTmux) {
     const tmuxSession = 'acfs-services';
+    // NOTE: this snippet executes as the condition list of `if ! { ... }`
+    // (wrapCommandBlock), where `set -e` is suppressed and only the LAST
+    // command's exit status matters. Bare `false` statements are no-ops
+    // there, so every failure path must set install_success=false and the
+    // block must end with an explicit fail-closed gate, exactly like the
+    // standard and fsfs verified-installer paths.
     const lines: string[] = [
       '# Run installer in detached tmux session (run_in_tmux: true)',
       '# This prevents blocking when the installer starts a long-running service',
       `local tmux_session="${tmuxSession}"`,
+      'local install_success=false',
       '',
       '# Resolve verified installer URL + checksum (fail closed)',
       `local tool="${tool}"`,
@@ -1084,46 +1161,48 @@ function generateVerifiedInstallerSnippet(module: Module): string[] {
       `    log_error "${escapeBash(module.id)}: acfs_security_init failed - check security.sh and checksums.yaml"`,
       'fi',
       '',
+      'local tmp_install=""',
       'if [[ -z "$url" ]]; then',
       `    log_error "${escapeBash(module.id)}: KNOWN_INSTALLERS[$tool] not found"`,
-      '    false',
-      'fi',
-      'if [[ -z "$expected_sha256" ]]; then',
+      'elif [[ -z "$expected_sha256" ]]; then',
       `    log_error "${escapeBash(module.id)}: checksum for '$tool' not found"`,
-      '    false',
-      'fi',
+      'else',
+      '    # Download verified installer to a temp file (so tmux can exec it without pipes)',
+      '    tmp_install="$(mktemp "${TMPDIR:-/tmp}/acfs-install-${tool}.XXXXXX" 2>/dev/null)" || tmp_install=""',
+      '    if [[ -z "$tmp_install" ]]; then',
+      `        log_error "Failed to create temp installer for ${module.id}"`,
+      '    elif ! verify_checksum "$url" "$expected_sha256" "$tool" > "$tmp_install"; then',
+      '        rm -f "$tmp_install" 2>/dev/null || true',
+      `        log_error "${module.id}: installer verification failed"`,
+      '    else',
+      '        chmod 755 "$tmp_install" 2>/dev/null || true',
       '',
-      '# Download verified installer to a temp file (so tmux can exec it without pipes)',
-      'local tmp_install',
-      'tmp_install="$(mktemp "${TMPDIR:-/tmp}/acfs-install-${tool}.XXXXXX" 2>/dev/null)" || tmp_install=""',
-      'if [[ -z "$tmp_install" ]]; then',
-      `    log_error "Failed to create temp installer for ${module.id}"`,
-      '    false',
-      'fi',
+      '        # Kill existing session if any (clean slate)',
+      '        run_as_target tmux kill-session -t "$tmux_session" 2>/dev/null || true',
       '',
-      'if ! verify_checksum "$url" "$expected_sha256" "$tool" > "$tmp_install"; then',
-      '    rm -f "$tmp_install" 2>/dev/null || true',
-      `    log_error "${module.id}: installer verification failed"`,
-      '    false',
-      'fi',
-      'chmod 755 "$tmp_install" 2>/dev/null || true',
-      '',
-      '# Kill existing session if any (clean slate)',
-      'run_as_target tmux kill-session -t "$tmux_session" 2>/dev/null || true',
-      '',
-      '# Create new detached tmux session and run the installer',
-      'if run_as_target tmux new-session -d -s "$tmux_session" ' +
+      '        # Create new detached tmux session and run the installer',
+      '        if run_as_target tmux new-session -d -s "$tmux_session" ' +
         (envStr ? `env ${envStr} ` : '') +
         `${shellQuote(vi.runner)} "$tmp_install"` +
         (argsStr ? ` ${argsStr}` : '') +
         '; then',
-      `        log_success "${module.id} installing in tmux session '$tmux_session'"`,
-      '        log_info "Attach with: tmux attach -t $tmux_session"',
-      '        # Give it a moment to start',
-      '        sleep 3',
-      '    else',
-      `        log_warn "${module.id} tmux installation may have failed"`,
+      `            log_success "${module.id} installing in tmux session '$tmux_session'"`,
+      '            log_info "Attach with: tmux attach -t $tmux_session"',
+      '            # Give it a moment to start',
+      '            sleep 3',
+      '            install_success=true',
+      '        else',
+      `            log_error "${module.id}: failed to start tmux install session"`,
+      '        fi',
       '    fi',
+      'fi',
+      '',
+      'if [[ "$install_success" = "true" ]]; then',
+      '    true',
+      'else',
+      `    log_error "${escapeBash(module.id)}: verified tmux installer failed (fail closed; no unverified fallback)"`,
+      '    false',
+      'fi',
     ];
     return lines;
   }
@@ -1139,7 +1218,11 @@ function generateVerifiedInstallerSnippet(module: Module): string[] {
     if (vi.env && vi.env.length > 0) {
       parts.push(shellQuote('env'));
       for (const envVar of vi.env) {
-        parts.push(shellQuoteVerifiedInstallerArg(envVar));
+        if (hasTmpdirEnv && envVar.startsWith('TMPDIR=')) {
+          parts.push('"TMPDIR=$verified_installer_tmpdir"');
+        } else {
+          parts.push(shellQuoteVerifiedInstallerArg(envVar));
+        }
       }
     }
 
@@ -1175,11 +1258,52 @@ function generateVerifiedInstallerSnippet(module: Module): string[] {
   const lines: string[] = [
     '# Try security-verified install (no unverified fallback; fail closed)',
     'local install_success=false',
+    ...(hasTmpdirEnv ? ['local verified_installer_env_ready=true'] : []),
     '',
   ];
 
+  if (tmpdirEnvValue) {
+    lines.push(
+      `local verified_installer_tmpdir_template=${shellQuoteVerifiedInstallerArg(tmpdirEnvValue)}`,
+      'local verified_installer_tmpdir_parent="${verified_installer_tmpdir_template%/*}"',
+      'local verified_installer_tmpdir=""',
+      'if [[ "$verified_installer_tmpdir_template" == *[[:space:]]* ]]; then',
+      `    log_error "${escapeBash(module.id)}: installer TMPDIR template contains whitespace: $verified_installer_tmpdir_template"`,
+      '    verified_installer_env_ready=false',
+      'elif [[ "$verified_installer_tmpdir_template" != *XXXXXX* ]]; then',
+      `    log_error "${escapeBash(module.id)}: installer TMPDIR template must contain XXXXXX: $verified_installer_tmpdir_template"`,
+      '    verified_installer_env_ready=false',
+      'elif ! run_as_target mkdir -p "$verified_installer_tmpdir_parent"; then',
+      `    log_error "${escapeBash(module.id)}: failed to prepare installer TMPDIR parent: $verified_installer_tmpdir_parent"`,
+      '    verified_installer_env_ready=false',
+      'elif ! verified_installer_tmpdir="$(run_as_target mktemp -d "$verified_installer_tmpdir_template" 2>/dev/null)"; then',
+      `    log_error "${escapeBash(module.id)}: failed to create installer TMPDIR from template: $verified_installer_tmpdir_template"`,
+      '    verified_installer_env_ready=false',
+      'elif [[ -z "$verified_installer_tmpdir" ]]; then',
+      `    log_error "${escapeBash(module.id)}: installer TMPDIR creation returned an empty path"`,
+      '    verified_installer_env_ready=false',
+      'fi',
+      ''
+    );
+  }
+
+  const securityInitCondition = hasTmpdirEnv
+    ? 'if [[ "$verified_installer_env_ready" = "true" ]] && acfs_security_init; then'
+    : 'if acfs_security_init; then';
+  const securityInitFailureLines = hasTmpdirEnv
+    ? [
+        '    if [[ "$verified_installer_env_ready" != "true" ]]; then',
+        `        log_error "${escapeBash(module.id)}: verified installer environment setup failed"`,
+        '    else',
+        `        log_error "${escapeBash(module.id)}: acfs_security_init failed - check security.sh and checksums.yaml"`,
+        '    fi',
+      ]
+    : [
+        `    log_error "${escapeBash(module.id)}: acfs_security_init failed - check security.sh and checksums.yaml"`,
+      ];
+
   const verifiedInstallAttemptLines: string[] = [
-    'if acfs_security_init; then',
+    securityInitCondition,
     '    local known_installers_decl=""',
     '    # Check if KNOWN_INSTALLERS is available as an associative array (declare -A)',
     '    known_installers_decl="$(declare -p KNOWN_INSTALLERS 2>/dev/null || true)"',
@@ -1213,7 +1337,7 @@ function generateVerifiedInstallerSnippet(module: Module): string[] {
     `        log_error "${escapeBash(module.id)}: KNOWN_INSTALLERS array not available"`,
     '    fi',
     'else',
-    `    log_error "${escapeBash(module.id)}: acfs_security_init failed - check security.sh and checksums.yaml"`,
+    ...securityInitFailureLines,
     'fi',
   ];
 
@@ -1484,6 +1608,12 @@ function updateShellQuoteState(line: string, initialState: ShellQuoteState): She
 }
 
 function summarizeShellBlock(blockLines: string[], fallback: string): string {
+  for (const line of blockLines) {
+    const match = line.trim().match(/^#\s*acfs-summary:\s*(.+)$/);
+    const summary = match?.[1]?.trim();
+    if (summary) return summary;
+  }
+
   const topLevel: string[] = [];
   let skippingFunction = false;
   let skippingFunctionQuoteState: ShellQuoteState = { double: false, single: false };
@@ -1771,6 +1901,11 @@ function generateCategoryScript(manifest: Manifest, category: ModuleCategory): s
     lines.push(`${funcName}() {`);
     lines.push(`    local module_id="${module.id}"`);
     lines.push('    acfs_require_contract "module:${module_id}" || return 1');
+    lines.push('    acfs_generated_ensure_selection || return 1');
+    lines.push('    if ! should_run_module "${module_id}"; then');
+    lines.push(`        log_info "Skipping ${module.id} (not selected)"`);
+    lines.push('        return 0');
+    lines.push('    fi');
     lines.push(`    log_step "Installing ${module.id}"`);
     lines.push('');
 
@@ -2062,12 +2197,12 @@ function generateDoctorChecks(manifest: Manifest): string {
 }
 
 /**
- * Generate master installer script
+ * Generate top-level installer script
  */
 function generateMasterInstaller(manifest: Manifest): string {
   const categories = getCategories(manifest);
   const lines: string[] = [HEADER];
-  lines.push('# Master installer - sources all category scripts');
+  lines.push('# Top-level installer - sources all category scripts');
   lines.push('');
 
   // Source all category scripts
@@ -2112,6 +2247,465 @@ function generateMasterInstaller(manifest: Manifest): string {
   return lines.join('\n');
 }
 
+// ============================================================
+// Web Data Generators
+// ============================================================
+
+const TS_HEADER = `// ============================================================
+// AUTO-GENERATED FROM acfs.manifest.yaml — DO NOT EDIT
+// Regenerate: bun run generate (from packages/manifest)
+// ============================================================
+`;
+
+const WEB_SELECTION_PROFILES = [
+  {
+    id: 'full',
+    label: 'Full',
+    onlyModules: [],
+    onlyPhases: [],
+  },
+  {
+    id: 'safe',
+    label: 'Safe',
+    mode: 'safe',
+    onlyModules: [],
+    onlyPhases: [],
+  },
+  {
+    id: 'vibe',
+    label: 'Vibe',
+    mode: 'vibe',
+    onlyModules: [],
+    onlyPhases: [],
+  },
+  {
+    id: 'minimal',
+    label: 'Minimal',
+    onlyModules: [
+      'shell.omz',
+      'cli.modern',
+      'lang.bun',
+      'lang.uv',
+      'agents.claude',
+      'agents.codex',
+      'agents.antigravity',
+      'stack.ntm',
+      'stack.mcp_agent_mail',
+      'stack.ultimate_bug_scanner',
+      'stack.beads_rust',
+      'stack.beads_viewer',
+      'stack.cass',
+      'stack.cm',
+      'stack.dcg',
+      'stack.ru',
+      'stack.rch',
+      'acfs.workspace',
+      'acfs.onboard',
+      'acfs.update',
+      'acfs.doctor',
+    ],
+    onlyPhases: [],
+  },
+  {
+    id: 'agents-only',
+    label: 'Agents only',
+    onlyModules: [],
+    onlyPhases: ['agents'],
+  },
+  {
+    id: 'cloud-only',
+    label: 'Cloud only',
+    onlyModules: ['cloud.wrangler', 'cloud.supabase', 'cloud.vercel'],
+    onlyPhases: [],
+  },
+  {
+    id: 'stack-only',
+    label: 'Stack only',
+    onlyModules: [],
+    onlyPhases: ['stack'],
+  },
+] as const;
+
+/**
+ * Escape a string for use inside a TypeScript string literal (double-quoted).
+ */
+function escapeTs(str: string): string {
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+}
+
+/**
+ * Format a string array as a TypeScript literal, one item per line.
+ */
+function formatTsArray(items: string[], indent: number): string {
+  if (items.length === 0) return '[]';
+  const pad = ' '.repeat(indent);
+  const inner = items.map((item) => `${pad}  "${escapeTs(item)}",`).join('\n');
+  return `[\n${inner}\n${pad}]`;
+}
+
+/**
+ * Get all web-visible modules, sorted by ID for deterministic output.
+ */
+function getWebVisibleModules(manifest: Manifest): Module[] {
+  return manifest.modules
+    .filter((m) => m.web && m.web.visible !== false)
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * Generate manifest-modules.ts — full module metadata for web-side planning.
+ */
+function generateWebModules(manifest: Manifest): string {
+  const modules = sortModulesByPhaseAndDependency(manifest);
+  const acfsVersion = readProjectVersion();
+  const manifestSha256 = computeManifestSha256();
+  const checksumsYamlSha256 = computeChecksumsYamlSha256();
+  const lines: string[] = [TS_HEADER];
+
+  lines.push('export interface ManifestModuleMetadata {');
+  lines.push('  id: string;');
+  lines.push('  description: string;');
+  lines.push('  category: string;');
+  lines.push('  phase: number;');
+  lines.push('  dependencies: string[];');
+  lines.push('  tags: string[];');
+  lines.push('  enabledByDefault: boolean;');
+  lines.push('  optional: boolean;');
+  lines.push('}');
+  lines.push('');
+
+  const profileIds = WEB_SELECTION_PROFILES.map((profile) => `"${profile.id}"`).join(' | ');
+  lines.push(`export type ManifestSelectionProfileId = ${profileIds};`);
+  lines.push('');
+  lines.push('export interface ManifestSelectionProfile {');
+  lines.push('  id: ManifestSelectionProfileId;');
+  lines.push('  label: string;');
+  lines.push('  mode?: "safe" | "vibe";');
+  lines.push('  onlyModules: string[];');
+  lines.push('  onlyPhases: string[];');
+  lines.push('}');
+  lines.push('');
+
+  lines.push('export interface ManifestProvenanceMetadata {');
+  lines.push('  acfsVersion: string;');
+  lines.push('  manifestSha256: string;');
+  lines.push('  checksumsYamlSha256: string;');
+  lines.push('}');
+  lines.push('');
+
+  lines.push('export const manifestProvenance = {');
+  lines.push(`  acfsVersion: "${escapeTs(acfsVersion)}",`);
+  lines.push(`  manifestSha256: "${manifestSha256}",`);
+  lines.push(`  checksumsYamlSha256: "${checksumsYamlSha256}",`);
+  lines.push('} as const satisfies ManifestProvenanceMetadata;');
+  lines.push('');
+
+  lines.push('export const manifestModules: ManifestModuleMetadata[] = [');
+  for (const module of modules) {
+    lines.push('  {');
+    lines.push(`    id: "${escapeTs(module.id)}",`);
+    lines.push(`    description: "${escapeTs(module.description)}",`);
+    lines.push(`    category: "${escapeTs(resolveModuleCategory(module))}",`);
+    lines.push(`    phase: ${getModulePhase(module)},`);
+    lines.push(`    dependencies: ${formatTsArray(module.dependencies ?? [], 4)},`);
+    lines.push(`    tags: ${formatTsArray(module.tags ?? [], 4)},`);
+    lines.push(`    enabledByDefault: ${module.enabled_by_default ? 'true' : 'false'},`);
+    lines.push(`    optional: ${module.optional ? 'true' : 'false'},`);
+    lines.push('  },');
+  }
+  lines.push('];');
+  lines.push('');
+
+  lines.push('export const manifestSelectionProfiles: ManifestSelectionProfile[] = [');
+  for (const profile of WEB_SELECTION_PROFILES) {
+    lines.push('  {');
+    lines.push(`    id: "${escapeTs(profile.id)}",`);
+    lines.push(`    label: "${escapeTs(profile.label)}",`);
+    if ('mode' in profile) {
+      lines.push(`    mode: "${profile.mode}",`);
+    }
+    lines.push(`    onlyModules: ${formatTsArray([...profile.onlyModules], 4)},`);
+    lines.push(`    onlyPhases: ${formatTsArray([...profile.onlyPhases], 4)},`);
+    lines.push('  },');
+  }
+  lines.push('];');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate manifest-tools.ts — web tool data from manifest web metadata.
+ * Pure data file, no React imports, tree-shakable.
+ */
+function generateWebTools(manifest: Manifest): string {
+  const modules = getWebVisibleModules(manifest);
+  const lines: string[] = [TS_HEADER];
+
+  // Type definition
+  lines.push('export interface ManifestWebTool {');
+  lines.push('  id: string;');
+  lines.push('  moduleId: string;');
+  lines.push('  displayName: string;');
+  lines.push('  shortName: string;');
+  lines.push('  tagline: string;');
+  lines.push('  shortDesc: string;');
+  lines.push('  icon: string;');
+  lines.push('  color: string;');
+  lines.push('  categoryLabel?: string;');
+  lines.push('  href?: string;');
+  lines.push('  features: string[];');
+  lines.push('  techStack: string[];');
+  lines.push('  useCases: string[];');
+  lines.push('  language?: string;');
+  lines.push('  stars?: number;');
+  lines.push('  cliName?: string;');
+  lines.push('  cliAliases: string[];');
+  lines.push('  commandExample?: string;');
+  lines.push('  lessonSlug?: string;');
+  lines.push('  tldrSnippet?: string;');
+  lines.push('}');
+  lines.push('');
+
+  lines.push('export const manifestTools: ManifestWebTool[] = [');
+
+  for (const module of modules) {
+    const web = module.web!;
+    lines.push('  {');
+    lines.push(`    id: "${escapeTs(module.id.replace(/\./g, '-'))}",`);
+    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
+    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
+    lines.push(`    shortName: "${escapeTs(web.short_name ?? module.id.split('.').pop() ?? module.id)}",`);
+    lines.push(`    tagline: "${escapeTs(web.tagline ?? module.description)}",`);
+    lines.push(`    shortDesc: "${escapeTs(web.short_desc ?? module.description)}",`);
+    lines.push(`    icon: "${escapeTs(web.icon ?? 'box')}",`);
+    lines.push(`    color: "${escapeTs(web.color ?? '#6B7280')}",`);
+    if (web.category_label) {
+      lines.push(`    categoryLabel: "${escapeTs(web.category_label)}",`);
+    }
+    if (web.href) {
+      lines.push(`    href: "${escapeTs(web.href)}",`);
+    }
+    lines.push(`    features: ${formatTsArray(web.features ?? [], 4)},`);
+    lines.push(`    techStack: ${formatTsArray(web.tech_stack ?? [], 4)},`);
+    lines.push(`    useCases: ${formatTsArray(web.use_cases ?? [], 4)},`);
+    if (web.language) {
+      lines.push(`    language: "${escapeTs(web.language)}",`);
+    }
+    if (web.stars !== undefined) {
+      lines.push(`    stars: ${web.stars},`);
+    }
+    if (web.cli_name) {
+      lines.push(`    cliName: "${escapeTs(web.cli_name)}",`);
+    }
+    lines.push(`    cliAliases: ${formatTsArray(web.cli_aliases ?? [], 4)},`);
+    if (web.command_example) {
+      lines.push(`    commandExample: "${escapeTs(web.command_example)}",`);
+    }
+    if (web.lesson_slug) {
+      lines.push(`    lessonSlug: "${escapeTs(web.lesson_slug)}",`);
+    }
+    if (web.tldr_snippet) {
+      lines.push(`    tldrSnippet: "${escapeTs(web.tldr_snippet)}",`);
+    }
+    lines.push('  },');
+  }
+
+  lines.push('];');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate manifest-commands.ts — CLI command references from manifest web metadata.
+ */
+function generateWebCommands(manifest: Manifest): string {
+  const modules = manifest.modules
+    .filter((m) => m.web && m.web.visible !== false && m.web.cli_name)
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const lines: string[] = [TS_HEADER];
+
+  lines.push('export interface ManifestCommand {');
+  lines.push('  moduleId: string;');
+  lines.push('  displayName: string;');
+  lines.push('  moduleCategory: string;');
+  lines.push('  cliName: string;');
+  lines.push('  cliAliases: string[];');
+  lines.push('  description: string;');
+  lines.push('  commandExample?: string;');
+  lines.push('  docsUrl?: string;');
+  lines.push('}');
+  lines.push('');
+
+  lines.push('export const manifestCommands: ManifestCommand[] = [');
+
+  for (const module of modules) {
+    const web = module.web!;
+    const moduleCategory = resolveModuleCategory(module);
+    lines.push('  {');
+    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
+    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
+    lines.push(`    moduleCategory: "${escapeTs(moduleCategory)}",`);
+    lines.push(`    cliName: "${escapeTs(web.cli_name!)}",`);
+    lines.push(`    cliAliases: ${formatTsArray(web.cli_aliases ?? [], 4)},`);
+    lines.push(`    description: "${escapeTs(web.short_desc ?? module.description)}",`);
+    if (web.command_example) {
+      lines.push(`    commandExample: "${escapeTs(web.command_example)}",`);
+    }
+    if (web.href ?? module.docs_url) {
+      lines.push(`    docsUrl: "${escapeTs(web.href ?? module.docs_url ?? '')}",`);
+    }
+    lines.push('  },');
+  }
+
+  lines.push('];');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate manifest-tldr.ts — TL;DR card data from manifest web metadata.
+ * Focused subset for the TL;DR summary page.
+ */
+function generateWebTldr(manifest: Manifest): string {
+  const modules = getWebVisibleModules(manifest);
+  const lines: string[] = [TS_HEADER];
+
+  // Type definition
+  lines.push('export interface ManifestTldrTool {');
+  lines.push('  id: string;');
+  lines.push('  moduleId: string;');
+  lines.push('  displayName: string;');
+  lines.push('  shortName: string;');
+  lines.push('  tagline: string;');
+  lines.push('  tldrSnippet: string;');
+  lines.push('  icon: string;');
+  lines.push('  color: string;');
+  lines.push('  href?: string;');
+  lines.push('  features: string[];');
+  lines.push('  techStack: string[];');
+  lines.push('  useCases: string[];');
+  lines.push('  language?: string;');
+  lines.push('  stars?: number;');
+  lines.push('}');
+  lines.push('');
+
+  lines.push('export const manifestTldrTools: ManifestTldrTool[] = [');
+
+  for (const module of modules) {
+    const web = module.web!;
+    // Only include modules that have a tldr_snippet or tagline (enough content for a TL;DR card)
+    const snippet = web.tldr_snippet ?? web.tagline ?? '';
+    if (!snippet && !web.tagline) continue;
+
+    lines.push('  {');
+    lines.push(`    id: "${escapeTs(module.id.replace(/\./g, '-'))}",`);
+    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
+    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
+    lines.push(`    shortName: "${escapeTs(web.short_name ?? module.id.split('.').pop() ?? module.id)}",`);
+    lines.push(`    tagline: "${escapeTs(web.tagline ?? module.description)}",`);
+    lines.push(`    tldrSnippet: "${escapeTs(web.tldr_snippet ?? web.short_desc ?? module.description)}",`);
+    lines.push(`    icon: "${escapeTs(web.icon ?? 'box')}",`);
+    lines.push(`    color: "${escapeTs(web.color ?? '#6B7280')}",`);
+    if (web.href) {
+      lines.push(`    href: "${escapeTs(web.href)}",`);
+    }
+    lines.push(`    features: ${formatTsArray(web.features ?? [], 4)},`);
+    lines.push(`    techStack: ${formatTsArray(web.tech_stack ?? [], 4)},`);
+    lines.push(`    useCases: ${formatTsArray(web.use_cases ?? [], 4)},`);
+    if (web.language) {
+      lines.push(`    language: "${escapeTs(web.language)}",`);
+    }
+    if (web.stars !== undefined) {
+      lines.push(`    stars: ${web.stars},`);
+    }
+    lines.push('  },');
+  }
+
+  lines.push('];');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate manifest-lessons-index.ts — mapping from module IDs to lesson slugs.
+ * Used to link module detail pages to onboarding lessons.
+ */
+function generateWebLessonsIndex(manifest: Manifest): string {
+  const modules = manifest.modules
+    .filter((m) => m.web && m.web.visible !== false && m.web.lesson_slug)
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const lines: string[] = [TS_HEADER];
+
+  // Type definition
+  lines.push('export interface ManifestLessonLink {');
+  lines.push('  moduleId: string;');
+  lines.push('  lessonSlug: string;');
+  lines.push('  displayName: string;');
+  lines.push('}');
+  lines.push('');
+
+  lines.push('export const manifestLessonLinks: ManifestLessonLink[] = [');
+
+  for (const module of modules) {
+    const web = module.web!;
+    lines.push('  {');
+    lines.push(`    moduleId: "${escapeTs(module.id)}",`);
+    lines.push(`    lessonSlug: "${escapeTs(web.lesson_slug!)}",`);
+    lines.push(`    displayName: "${escapeTs(web.display_name ?? module.description)}",`);
+    lines.push('  },');
+  }
+
+  lines.push('];');
+  lines.push('');
+
+  // Convenience lookup map
+  lines.push('/** Lookup lesson slug by module ID */');
+  lines.push('export const lessonSlugByModuleId: Record<string, string> = {');
+  for (const module of modules) {
+    const web = module.web!;
+    lines.push(`  "${escapeTs(module.id)}": "${escapeTs(web.lesson_slug!)}",`);
+  }
+  lines.push('};');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate manifest-web-index.ts — barrel re-export for all web generated data.
+ */
+function generateWebIndex(): string {
+  const lines: string[] = [TS_HEADER];
+
+  lines.push("export { manifestModules, manifestSelectionProfiles, manifestProvenance } from './manifest-modules';");
+  lines.push("export type { ManifestModuleMetadata, ManifestSelectionProfile, ManifestSelectionProfileId, ManifestProvenanceMetadata } from './manifest-modules';");
+  lines.push('');
+  lines.push("export { manifestTools } from './manifest-tools';");
+  lines.push("export type { ManifestWebTool } from './manifest-tools';");
+  lines.push('');
+  lines.push("export { manifestTldrTools } from './manifest-tldr';");
+  lines.push("export type { ManifestTldrTool } from './manifest-tldr';");
+  lines.push('');
+  lines.push("export { manifestCommands } from './manifest-commands';");
+  lines.push("export type { ManifestCommand } from './manifest-commands';");
+  lines.push('');
+  lines.push("export { manifestLessonLinks, lessonSlugByModuleId } from './manifest-lessons-index';");
+  lines.push("export type { ManifestLessonLink } from './manifest-lessons-index';");
+  lines.push('');
+
+  return lines.join('\n');
+}
 
 // ============================================================
 // Main
@@ -2268,7 +2862,7 @@ async function main(): Promise<void> {
     filesToGenerate.set(filepath, { content, mode: 0o755 });
   }
 
-  // Master installer
+  // Top-level installer
   {
     const filepath = join(OUTPUT_DIR, 'install_all.sh');
     const content = generateMasterInstaller(manifest);
@@ -2289,6 +2883,10 @@ async function main(): Promise<void> {
     filesToGenerate.set(filepath, { content, mode: 0o644 });
   }
 
+  // Web data: TypeScript modules for apps/web
+  // NOTE: apps/web was removed in this fork (quangdang46/agents_environment_setup);
+  // web outputs are intentionally not generated.
+
   // --diff mode: compare against existing files
   if (diffMode) {
     let hasDiff = false;
@@ -2296,7 +2894,9 @@ async function main(): Promise<void> {
     console.log('');
 
     for (const [filepath, { content }] of filesToGenerate) {
-      const filename = filepath.replace(OUTPUT_DIR + '/', '');
+      const filename = filepath.startsWith(WEB_OUTPUT_DIR)
+        ? 'web/' + filepath.replace(WEB_OUTPUT_DIR + '/', '')
+        : filepath.replace(OUTPUT_DIR + '/', '');
       if (existsSync(filepath)) {
         const existing = readFileSync(filepath, 'utf-8');
         if (existing !== content) {
@@ -2330,7 +2930,9 @@ async function main(): Promise<void> {
   // --dry-run mode: just show what would be generated
   if (dryRun) {
     for (const [filepath, { content }] of filesToGenerate) {
-      const filename = filepath.replace(OUTPUT_DIR + '/', '');
+      const filename = filepath.startsWith(WEB_OUTPUT_DIR)
+        ? 'web/' + filepath.replace(WEB_OUTPUT_DIR + '/', '')
+        : filepath.replace(OUTPUT_DIR + '/', '');
       console.log(`[DRY-RUN] Would generate: ${filename}`);
       if (verbose) {
         console.log('---');
@@ -2349,13 +2951,15 @@ async function main(): Promise<void> {
   const generatedFiles: string[] = [];
   for (const [filepath, { content, mode }] of filesToGenerate) {
     writeFileSync(filepath, content, { mode });
-    const filename = filepath.replace(OUTPUT_DIR + '/', '');
+    const filename = filepath.startsWith(WEB_OUTPUT_DIR)
+      ? 'web/' + filepath.replace(WEB_OUTPUT_DIR + '/', '')
+      : filepath.replace(OUTPUT_DIR + '/', '');
     console.log(`Generated: ${filename}`);
     generatedFiles.push(filepath);
   }
 
   console.log('');
-  console.log(`Generated ${generatedFiles.length} files (${OUTPUT_DIR})`);
+  console.log(`Generated ${generatedFiles.length} files (${OUTPUT_DIR} + ${WEB_OUTPUT_DIR})`);
 }
 
 function isDirectInvocation(): boolean {

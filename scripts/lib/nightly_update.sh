@@ -131,6 +131,39 @@ passwd_home_from_entry() {
   printf '%s\n' "$passwd_home"
 }
 
+read_state_string_from_file() {
+    local state_file="${1:-}"
+    local key="${2:-}"
+    local jq_expr="${3:-}"
+    local value=""
+    local jq_bin=""
+    local sed_bin=""
+    local head_bin=""
+
+    [[ -f "$state_file" ]] || return 1
+    [[ "$key" =~ ^[A-Za-z0-9_-]+$ ]] || return 1
+
+    jq_bin="$(system_binary_path jq 2>/dev/null || true)"
+    if [[ -n "$jq_bin" && -n "$jq_expr" ]]; then
+        value="$("$jq_bin" -r "$jq_expr" "$state_file" 2>/dev/null || true)"
+        value="${value%%$'\n'*}"
+    fi
+
+    if [[ -z "$value" ]]; then
+        sed_bin="$(system_binary_path sed 2>/dev/null || true)"
+        head_bin="$(system_binary_path head 2>/dev/null || true)"
+        if [[ -n "$sed_bin" && -n "$head_bin" ]]; then
+            value="$("$sed_bin" -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$state_file" 2>/dev/null | "$head_bin" -n 1 || true)"
+        elif [[ -n "$sed_bin" ]]; then
+            value="$("$sed_bin" -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$state_file" 2>/dev/null || true)"
+            value="${value%%$'\n'*}"
+        fi
+    fi
+
+    [[ -n "$value" ]] || return 1
+    printf '%s\n' "$value"
+}
+
 resolve_current_home() {
     local current_user=""
     local home_candidate=""
@@ -200,15 +233,7 @@ read_bin_dir_from_state_file() {
     local state_file="$1"
     local bin_dir=""
 
-    [[ -f "$state_file" ]] || return 1
-
-    if command -v jq &>/dev/null; then
-        bin_dir="$(jq -r '.bin_dir // empty' "$state_file" 2>/dev/null || true)"
-    fi
-
-    if [[ -z "$bin_dir" ]]; then
-        bin_dir="$(sed -n 's/.*"bin_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$state_file" | head -n 1)"
-    fi
+    bin_dir="$(read_state_string_from_file "$state_file" bin_dir '.bin_dir // empty' 2>/dev/null || true)"
 
     if [[ -n "$bin_dir" ]] && [[ "$bin_dir" == /* ]] && [[ "$bin_dir" != "/" ]]; then
         printf '%s\n' "${bin_dir%/}"
@@ -222,15 +247,7 @@ read_target_home_from_state_file() {
     local state_file="$1"
     local target_home=""
 
-    [[ -f "$state_file" ]] || return 1
-
-    if command -v jq &>/dev/null; then
-        target_home="$(jq -r '.target_home // empty' "$state_file" 2>/dev/null || true)"
-    fi
-
-    if [[ -z "$target_home" ]]; then
-        target_home="$(sed -n 's/.*"target_home"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$state_file" | head -n 1)"
-    fi
+    target_home="$(read_state_string_from_file "$state_file" target_home '.target_home // empty' 2>/dev/null || true)"
 
     target_home="$(sanitize_abs_nonroot_path "$target_home" 2>/dev/null || true)"
     [[ -n "$target_home" ]] || return 1
@@ -387,7 +404,7 @@ log "Host: $(hostname)"
 _ACFS_NOTIFY_LIB=""
 for _candidate in \
     "$HOME/.acfs/scripts/lib/notify.sh" \
-    "/data/projects/agentic_coding_flywheel_setup/scripts/lib/notify.sh"; do
+    "/data/projects/agents_environment_setup/scripts/lib/notify.sh"; do
     if [[ -f "$_candidate" ]]; then
         _ACFS_NOTIFY_LIB="$_candidate"
         break
@@ -484,7 +501,7 @@ if [[ -n "${ACFS_BIN_DIR:-}" ]]     && [[ "$ACFS_BIN_DIR" != "$HOME/.acfs/bin" ]
 fi
 update_candidates+=(
     "$HOME/.acfs/scripts/lib/update.sh"
-    "/data/projects/agentic_coding_flywheel_setup/scripts/acfs-update"
+    "/data/projects/agents_environment_setup/scripts/acfs-update"
 )
 
 for candidate in "${update_candidates[@]}"; do
@@ -504,7 +521,12 @@ fi
 # ACFS_NIGHTLY_SELF_UPDATE=true in a systemd override or the unit environment.
 NIGHTLY_UPDATE_ARGS=(--yes --quiet)
 if [[ "${ACFS_NIGHTLY_SELF_UPDATE:-false}" != "true" ]]; then
-    NIGHTLY_UPDATE_ARGS+=(--no-self-update)
+    # Only pass --no-self-update if this acfs-update supports it; older
+    # acfs-update versions lack the flag and would error out on an unknown arg
+    # (e.g. ACFS 0.1.0/0.5.0), which fails the whole nightly update.
+    if "$ACFS_UPDATE" --help 2>&1 | grep -q -- '--no-self-update'; then
+        NIGHTLY_UPDATE_ARGS+=(--no-self-update)
+    fi
 fi
 
 log "Running: $ACFS_UPDATE ${NIGHTLY_UPDATE_ARGS[*]}"

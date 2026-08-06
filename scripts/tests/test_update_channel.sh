@@ -344,7 +344,7 @@ dry_run_self_update_output=$(
 
             case "$*" in
                 *"remote get-url origin"*)
-                    printf "https://github.com/Dicklesworthstone/agentic_coding_flywheel_setup.git\n"
+                    printf "https://github.com/quangdang46/agents_environment_setup.git\n"
                     return 0
                     ;;
                 *"branch --show-current"*)
@@ -954,15 +954,15 @@ if [[ -f "$ZSHRC" ]]; then
             fi
         fi
 
-        # Check 3: codex and gemini are preserved in the alias chain
+        # Check 3: codex and agy are preserved in the alias chain
         has_codex=false
-        has_gemini=false
+        has_agy=false
         echo "$uca_line" | grep -q 'codex' && has_codex=true
-        echo "$uca_line" | grep -q 'gemini' && has_gemini=true
-        if $has_codex && $has_gemini; then
-            pass "uca alias preserves codex and gemini components"
+        echo "$uca_line" | grep -q 'agy' && has_agy=true
+        if $has_codex && $has_agy; then
+            pass "uca alias preserves codex and agy components"
         else
-            fail "uca alias missing components: codex=$has_codex gemini=$has_gemini"
+            fail "uca alias missing components: codex=$has_codex agy=$has_agy"
         fi
     fi
 else

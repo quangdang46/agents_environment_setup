@@ -229,27 +229,48 @@ unset _ACFS_USER_EXPLICIT_TARGET_HOME _ACFS_USER_CURRENT_USER _ACFS_USER_RESOLVE
 
 # Generate a random password robustly
 _generate_random_password() {
+    local password=""
+    local digest=""
+
     # Try openssl first (most standard)
     if command -v openssl &>/dev/null; then
-        openssl rand -base64 32
-        return 0
+        password="$(openssl rand -base64 32 2>/dev/null || true)"
+        if [[ -n "$password" ]]; then
+            printf '%s\n' "$password"
+            return 0
+        fi
     fi
 
     # Fallback to python3 (standard on Ubuntu)
     if command -v python3 &>/dev/null; then
-        python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-        return 0
+        password="$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || true)"
+        if [[ -n "$password" ]]; then
+            printf '%s\n' "$password"
+            return 0
+        fi
     fi
 
     # Fallback to /dev/urandom (standard on Linux)
-    if [[ -r /dev/urandom ]]; then
+    if [[ -r /dev/urandom ]] && command -v tr &>/dev/null && command -v head &>/dev/null; then
         # Take first 32 alphanumeric chars
-        tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32
-        return 0
+        password="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
+        if [[ -n "$password" ]]; then
+            printf '%s\n' "$password"
+            return 0
+        fi
     fi
 
     # Last resort: date hash (better than empty)
-    date +%s%N | sha256sum | head -c 32
+    if command -v sha256sum &>/dev/null; then
+        digest="$(date +%s%N | sha256sum 2>/dev/null || true)"
+        digest="${digest%% *}"
+        if [[ -n "$digest" ]]; then
+            printf '%s\n' "${digest:0:32}"
+            return 0
+        fi
+    fi
+
+    return 1
 }
 
 # Ensure target user exists
@@ -265,7 +286,7 @@ ensure_user() {
 
         # Generate random password (user will use SSH key)
         local passwd
-        passwd=$(_generate_random_password)
+        passwd="$(_generate_random_password 2>/dev/null || true)"
         
         if [[ -n "$passwd" ]]; then
             echo "$target:$passwd" | $SUDO chpasswd
@@ -329,6 +350,7 @@ migrate_ssh_keys() {
     current_user="$(user_resolve_current_user 2>/dev/null || true)"
     local target="$TARGET_USER"
     local target_home="${TARGET_HOME:-}"
+    local current_home="${HOME:-}"
 
     user_require_valid_target_user "$target"
 
@@ -351,8 +373,8 @@ migrate_ssh_keys() {
     local source_keys=""
 
     # Check for keys in current user's home
-    if [[ -f "$HOME/.ssh/authorized_keys" ]]; then
-        source_keys="$HOME/.ssh/authorized_keys"
+    if [[ -n "$current_home" && "$current_home" == /* && "$current_home" != "/" && -f "$current_home/.ssh/authorized_keys" ]]; then
+        source_keys="$current_home/.ssh/authorized_keys"
     fi
 
     # Check for root keys specifically
@@ -366,6 +388,23 @@ migrate_ssh_keys() {
         else
             log_warn "No SSH keys found to migrate to $target user"
             log_warn "You connected with password - SSH key not configured for $target"
+            local target_user_repair_command="cat ~/.ssh/acfs_ed25519.pub | ssh ${target}@YOUR_SERVER_IP \"read -r acfs_pubkey && test ! -L ~/.ssh && install -d -m 700 ~/.ssh && chmod 700 ~/.ssh && test ! -L ~/.ssh/authorized_keys && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && { [ ! -s ~/.ssh/authorized_keys ] || tail -c 1 ~/.ssh/authorized_keys | od -An -t u1 | grep -qw 10 || printf '\\n' >> ~/.ssh/authorized_keys; } && if ! grep -qxF \\\"\\\$acfs_pubkey\\\" ~/.ssh/authorized_keys; then printf '%s\\n' \\\"\\\$acfs_pubkey\\\" >> ~/.ssh/authorized_keys; fi\""
+            local target_ssh_dir="$target_home/.ssh"
+            local target_authorized_keys="$target_ssh_dir/authorized_keys"
+            local target_owner="$target:$target"
+            local target_ssh_dir_q=""
+            local target_authorized_keys_q=""
+            local target_q=""
+            local target_owner_q=""
+            printf -v target_ssh_dir_q '%q' "$target_ssh_dir"
+            printf -v target_authorized_keys_q '%q' "$target_authorized_keys"
+            printf -v target_q '%q' "$target"
+            printf -v target_owner_q '%q' "$target_owner"
+            local root_remote_command="read -r acfs_pubkey && test ! -L $target_ssh_dir_q && install -d -m 700 -o $target_q -g $target_q $target_ssh_dir_q && test ! -L $target_authorized_keys_q && touch $target_authorized_keys_q && { [ ! -s $target_authorized_keys_q ] || tail -c 1 $target_authorized_keys_q | od -An -t u1 | grep -qw 10 || printf \"\\n\" >> $target_authorized_keys_q; } && if ! grep -qxF \"\$acfs_pubkey\" $target_authorized_keys_q; then printf \"%s\\n\" \"\$acfs_pubkey\" >> $target_authorized_keys_q; fi && chown $target_owner_q $target_authorized_keys_q && chmod 600 $target_authorized_keys_q"
+            local root_remote_command_q="$root_remote_command"
+            root_remote_command_q=${root_remote_command_q//\'/\'\\\'\'}
+            printf -v root_remote_command_q "'%s'" "$root_remote_command_q"
+            local root_repair_command="cat ~/.ssh/acfs_ed25519.pub | ssh root@YOUR_SERVER_IP $root_remote_command_q"
             echo ""
             echo "════════════════════════════════════════════════════════════"
             echo "  ⚠  SSH KEY SETUP REQUIRED FOR USER: $target"
@@ -374,19 +413,24 @@ migrate_ssh_keys() {
             echo "  You connected with a password, so no SSH key was migrated."
             echo "  After installation, you'll need to set up SSH access."
             echo ""
-            echo "  EASIEST FIX - from your LOCAL machine, run:"
+            echo "  EASIEST FIX - from your LOCAL machine, first try this only if"
+            echo "  you can already sign in as $target:"
             echo ""
-            echo "    ssh-copy-id ${target}@YOUR_SERVER_IP"
+            echo "    $target_user_repair_command"
             echo ""
-            echo "  Or manually: SSH in as root and run these commands:"
+            echo "  This uses the $target account; passwordless sudo is not a login password."
             echo ""
-            echo "    mkdir -p ${target_home}/.ssh"
-            echo "    cat >> ${target_home}/.ssh/authorized_keys << 'EOF'"
-            echo "    YOUR_PUBLIC_KEY_HERE"
-            echo "    EOF"
-            echo "    chown -R ${target}:${target} ${target_home}/.ssh"
-            echo "    chmod 700 ${target_home}/.ssh"
-            echo "    chmod 600 ${target_home}/.ssh/authorized_keys"
+            echo "  If you only have the VPS root password or that cannot connect,"
+            echo "  use the root fallback:"
+            echo ""
+            echo "    $root_repair_command"
+            echo ""
+            echo "  The root fallback asks for the VPS root password once."
+            echo ""
+            echo "  ssh-copy-id is optional and only works if you know the ${target}"
+            echo "  Linux account password:"
+            echo ""
+            echo "    ssh-copy-id -i ~/.ssh/acfs_ed25519.pub ${target}@YOUR_SERVER_IP"
             echo ""
             echo "════════════════════════════════════════════════════════════"
             echo ""
@@ -430,7 +474,7 @@ migrate_ssh_keys() {
         # We use a robust check that handles files without any newlines at all.
         if [[ -s "$target_keys" ]]; then
             local last_char
-            last_char=$(tail -c 1 "$target_keys" | od -An -t u1 | tr -d ' ')
+            last_char=$($SUDO tail -c 1 "$target_keys" 2>/dev/null | od -An -t u1 | tr -d ' ' || true)
             if [[ "$last_char" != "10" ]]; then
                 # Last char is not \n (ASCII 10)
                 printf '\n' | $SUDO tee -a "$target_keys" >/dev/null
@@ -512,9 +556,15 @@ set_default_shell() {
     fi
 
     passwd_entry="$(user_getent_passwd_entry "$target" 2>/dev/null || true)"
+    # Track the match with an explicit flag: inferring "not found" from the
+    # loop variable being empty breaks when /etc/passwd lacks a trailing
+    # newline (the final read leaves the last line in the variable), and the
+    # `|| [[ -n ... ]]` guard still processes that unterminated last line.
+    local user_in_local_passwd=false
     if [[ -r /etc/passwd ]]; then
-        while IFS= read -r local_entry; do
+        while IFS= read -r local_entry || [[ -n "$local_entry" ]]; do
             [[ "${local_entry%%:*}" == "$target" ]] || continue
+            user_in_local_passwd=true
             break
         done < /etc/passwd
     fi
@@ -523,7 +573,7 @@ set_default_shell() {
         target_home="$(user_passwd_home_from_entry "$passwd_entry" 2>/dev/null || true)"
     fi
 
-    if [[ -n "$passwd_entry" ]] && [[ -z "$local_entry" ]]; then
+    if [[ -n "$passwd_entry" ]] && [[ "$user_in_local_passwd" == "false" ]]; then
         log_warn "Shell for $target is managed outside /etc/passwd; installing a bash-to-zsh handoff instead of using chsh"
         if [[ -n "$target_home" ]] && ! user_external_shell_handoff_configured "$target_home"; then
             user_append_external_shell_handoff "$target_home" || return 1
@@ -590,14 +640,8 @@ prompt_ssh_key() {
         fi
     fi
 
-    if [[ "${YES_MODE:-false}" == "true" ]]; then
-        if [[ "$has_existing_key" == "true" ]]; then
-            log_detail "SSH keys already present; keeping existing keys (--yes mode)"
-        else
-            log_warn "No SSH public key found for root; skipping SSH key prompt in --yes mode"
-            log_detail "After install, add your key with: ssh-copy-id ${TARGET_USER:-ubuntu}@<ip>"
-            export ACFS_SSH_KEY_WARNING="true"
-        fi
+    if [[ "${YES_MODE:-false}" == "true" && "$has_existing_key" == "true" ]]; then
+        log_detail "SSH keys already present; keeping existing keys (--yes mode)"
         return 0
     fi
 
@@ -613,13 +657,24 @@ prompt_ssh_key() {
         fi
     fi
 
+    if [[ "${YES_MODE:-false}" == "true" ]]; then
+        if [[ -z "$prompt_fd" ]]; then
+            log_warn "No SSH public key found for root; skipping SSH key prompt in --yes mode"
+            log_detail "After install, use the final summary's root fallback if you only have the VPS root password"
+            export ACFS_SSH_KEY_WARNING="true"
+            return 0
+        fi
+        log_warn "No SSH public key found for root; prompting for one even in --yes mode"
+    fi
+
     if [[ -z "$prompt_fd" ]]; then
         if [[ "$has_existing_key" == "true" ]]; then
             log_detail "SSH key already present (non-interactive mode)"
             return 0
         fi
         log_warn "Non-interactive mode detected (no TTY), skipping SSH key prompt"
-        log_detail "You can add your key later with: ssh-copy-id root@<ip>"
+        log_detail "After install, use the final summary's root fallback if you only have the VPS root password"
+        export ACFS_SSH_KEY_WARNING="true"
         return 0
     fi
 
@@ -671,8 +726,9 @@ prompt_ssh_key() {
             log_detail "Keeping existing SSH keys"
         else
             log_warn "SSH key setup skipped"
-            log_detail "You can add your key later by running:"
-            log_detail "  echo 'your-key-here' >> ~/.ssh/authorized_keys"
+            log_detail "From your local machine, you can add your key later by running:"
+            log_detail "  Use the final summary's root fallback if you only have the VPS root password"
+            export ACFS_SSH_KEY_WARNING="true"
         fi
         return 0
     fi
@@ -725,7 +781,8 @@ prompt_ssh_key() {
     chmod 600 "$authorized_keys"
 
     log_success "SSH key installed successfully"
-    log_detail "You can now connect with: ssh -i ~/.ssh/your_key root@<this_ip>"
+    log_detail "ACFS will copy this key to ${TARGET_USER:-ubuntu}; after install, reconnect with the matching private key:"
+    log_detail "  ssh -i ~/.ssh/your_key ${TARGET_USER:-ubuntu}@<this_ip>"
 
     return 0
 }

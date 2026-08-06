@@ -230,200 +230,57 @@ describe('authChecks', () => {
     }
   });
 
-  test('checkGemini returns authenticated when google_accounts.json has an active account', () => {
-    const accountsPath = path.join(HOME, '.gemini', 'google_accounts.json');
+  test('checkAntigravity returns authenticated when the Antigravity OAuth token exists', () => {
+    const tokenPath = path.join(HOME, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
     const checks = createAuthChecks(
       makeDeps({
-        commandExists: (command) => command === 'gemini',
-        readFileSync: (filePath) =>
-          filePath === accountsPath
-            ? JSON.stringify({ active: 'gemini-user@example.com', old: [] })
-            : '',
+        commandExists: (command) => command === 'agy',
+        existsSync: (filePath) => filePath === tokenPath,
+        readFileSync: (filePath) => (filePath === tokenPath ? 'antigravity-token' : ''),
       }),
     );
 
-    expect(checks.checkGemini()).toEqual({
-      authenticated: true,
-      details: 'gemini-user@example.com',
-    });
+    expect(checks.checkAntigravity()).toEqual({ authenticated: true });
   });
 
-  test('checkGemini returns authenticated when oauth_creds.json has a refresh token', () => {
-    const oauthPath = path.join(HOME, '.gemini', 'oauth_creds.json');
+  test('checkAntigravity rejects placeholder Antigravity token values', () => {
+    const tokenPath = path.join(HOME, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
     const checks = createAuthChecks(
       makeDeps({
-        commandExists: (command) => command === 'gemini',
-        readFileSync: (filePath) =>
-          filePath === oauthPath ? JSON.stringify({ refresh_token: 'refresh-token' }) : '',
+        commandExists: (command) => command === 'agy',
+        existsSync: (filePath) => filePath === tokenPath,
+        readFileSync: (filePath) => (filePath === tokenPath ? 'your-token-here' : ''),
       }),
     );
 
-    expect(checks.checkGemini()).toEqual({ authenticated: true });
+    expect(checks.checkAntigravity()).toEqual({ authenticated: false });
   });
 
-  test('checkGemini returns authenticated with GEMINI_API_KEY env var', () => {
+  test('checkAntigravity rejects stale credentials when agy is not installed', () => {
+    const tokenPath = path.join(HOME, '.gemini', 'antigravity-cli', 'antigravity-oauth-token');
     const checks = createAuthChecks(
       makeDeps({
-        commandExists: (command) => command === 'gemini',
-        env: { GEMINI_API_KEY: 'gemini-key-123' } as NodeJS.ProcessEnv,
+        existsSync: (filePath) => filePath === tokenPath,
+        readFileSync: (filePath) => (filePath === tokenPath ? 'antigravity-token' : ''),
       }),
     );
 
-    expect(checks.checkGemini()).toEqual({ authenticated: true, details: 'via GEMINI_API_KEY' });
+    expect(checks.checkAntigravity()).toEqual({ authenticated: false });
   });
 
-  test('checkGemini rejects placeholder GEMINI_API_KEY values', () => {
+  test('checkAntigravity respects ANTIGRAVITY_HOME when locating the OAuth token', () => {
+    const antigravityHome = '/tmp/antigravity-home';
+    const tokenPath = path.join(antigravityHome, 'antigravity-oauth-token');
     const checks = createAuthChecks(
       makeDeps({
-        commandExists: (command) => command === 'gemini',
-        env: { GEMINI_API_KEY: 'your-gemini-api-key' } as NodeJS.ProcessEnv,
+        commandExists: (command) => command === 'agy',
+        env: { ANTIGRAVITY_HOME: antigravityHome } as NodeJS.ProcessEnv,
+        existsSync: (filePath) => filePath === tokenPath,
+        readFileSync: (filePath) => (filePath === tokenPath ? 'antigravity-token' : ''),
       }),
     );
 
-    expect(checks.checkGemini()).toEqual({ authenticated: false });
-  });
-
-  test('checkGemini rejects quoted placeholder GEMINI_API_KEY values with trailing comments', () => {
-    const envPath = path.join(HOME, '.gemini', '.env');
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        existsSync: (filePath) => filePath === envPath,
-        readFileSync: (filePath) =>
-          filePath === envPath ? 'GEMINI_API_KEY="YOUR_GEMINI_API_KEY" # replace me\n' : '',
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: false });
-  });
-
-  test('checkGemini reads GEMINI_API_KEY from ~/.gemini/.env', () => {
-    const envPath = path.join(HOME, '.gemini', '.env');
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        existsSync: (filePath) => filePath === envPath,
-        readFileSync: (filePath) =>
-          filePath === envPath ? 'GEMINI_API_KEY="gemini-from-env-file"\n' : '',
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: true, details: 'via GEMINI_API_KEY' });
-  });
-
-  test('checkGemini accepts quoted GEMINI_API_KEY values with trailing comments', () => {
-    const envPath = path.join(HOME, '.gemini', '.env');
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        existsSync: (filePath) => filePath === envPath,
-        readFileSync: (filePath) =>
-          filePath === envPath ? 'GEMINI_API_KEY="gemini-from-env-file" # installed by ACFS\n' : '',
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: true, details: 'via GEMINI_API_KEY' });
-  });
-
-  test('checkGemini supports Vertex AI API-key auth when enabled', () => {
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        env: {
-          GOOGLE_GENAI_USE_VERTEXAI: 'true',
-          GOOGLE_API_KEY: 'vertex-key-123',
-        } as NodeJS.ProcessEnv,
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: true, details: 'via GOOGLE_API_KEY (Vertex AI)' });
-  });
-
-  test('checkGemini rejects placeholder Vertex AI project settings', () => {
-    const credentialsPath = '/tmp/gcp-key.json';
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        existsSync: (filePath) => filePath === credentialsPath,
-        env: {
-          GOOGLE_GENAI_USE_VERTEXAI: 'true',
-          GOOGLE_CLOUD_PROJECT: 'YOUR_PROJECT_ID',
-          GOOGLE_CLOUD_LOCATION: 'YOUR_PROJECT_LOCATION',
-          GOOGLE_APPLICATION_CREDENTIALS: credentialsPath,
-        } as NodeJS.ProcessEnv,
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: false });
-  });
-
-  test('checkGemini rejects blank Gemini auth artifacts', () => {
-    const accountsPath = path.join(HOME, '.gemini', 'google_accounts.json');
-    const oauthPath = path.join(HOME, '.gemini', 'oauth_creds.json');
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        readFileSync: (filePath) => {
-          if (filePath === accountsPath) {
-            return JSON.stringify({ active: '   ', old: [] });
-          }
-          if (filePath === oauthPath) {
-            return JSON.stringify({ access_token: '   ' });
-          }
-          return '';
-        },
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: false });
-  });
-
-  test('checkGemini rejects placeholder Gemini auth artifacts', () => {
-    const accountsPath = path.join(HOME, '.gemini', 'google_accounts.json');
-    const oauthPath = path.join(HOME, '.gemini', 'oauth_creds.json');
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        readFileSync: (filePath) => {
-          if (filePath === accountsPath) {
-            return JSON.stringify({ active: 'replace-me', old: [] });
-          }
-          if (filePath === oauthPath) {
-            return JSON.stringify({ refresh_token: 'your-token-here' });
-          }
-          return '';
-        },
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: false });
-  });
-
-  test('checkGemini respects GEMINI_CLI_HOME when locating auth files', () => {
-    const altHome = '/tmp/gemini-home';
-    const accountsPath = path.join(altHome, '.gemini', 'google_accounts.json');
-    const checks = createAuthChecks(
-      makeDeps({
-        commandExists: (command) => command === 'gemini',
-        env: { GEMINI_CLI_HOME: altHome } as NodeJS.ProcessEnv,
-        readFileSync: (filePath) =>
-          filePath === accountsPath ? JSON.stringify({ active: 'alt@example.com', old: [] }) : '',
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: true, details: 'alt@example.com' });
-  });
-
-  test('checkGemini rejects stale credentials when gemini is not installed', () => {
-    const oauthPath = path.join(HOME, '.gemini', 'oauth_creds.json');
-    const checks = createAuthChecks(
-      makeDeps({
-        readFileSync: (filePath) =>
-          filePath === oauthPath ? JSON.stringify({ refresh_token: 'refresh-token' }) : '',
-      }),
-    );
-
-    expect(checks.checkGemini()).toEqual({ authenticated: false });
+    expect(checks.checkAntigravity()).toEqual({ authenticated: true });
   });
 
   test('checkGitHub reads gh auth status when available', () => {
@@ -696,7 +553,7 @@ describe('authChecks', () => {
     const checks = createAuthChecks(makeDeps());
     const ids = Object.keys(checks.AUTH_CHECKS).sort();
     expect(ids).toEqual(
-      ['tailscale', 'claude-code', 'codex-cli', 'gemini-cli', 'github', 'vercel', 'supabase', 'cloudflare'].sort(),
+      ['tailscale', 'claude-code', 'codex-cli', 'antigravity-cli', 'github', 'vercel', 'supabase', 'cloudflare'].sort(),
     );
   });
 });

@@ -866,7 +866,7 @@ infer_category() {
   local name="${1:-}"
   local cmd="${2:-}"
   case "$name" in
-    cc|cod|gmi|am) echo "Agents" ;;
+    cc|cod|agy|gmi|am) echo "Agents" ;;
     br|bl|bt) echo "Bun" ;;
     dev|proj|dots|p) echo "Directories" ;;
     g*) [[ "$cmd" == git* ]] && { echo "Git"; return 0; } ;;

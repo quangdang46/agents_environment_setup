@@ -682,6 +682,23 @@ test_target_home_resolution_rejects_missing_user_guess() {
     fi
 }
 
+test_target_home_resolution_accepts_explicit_new_user_home_for_root() {
+    log_test "Target Home Resolution Accepts Explicit New User Home For Root"
+
+    local result=""
+    if result="$(
+        TARGET_HOME="/srv/alice"
+        HOME="/root"
+        ubuntu_lookup_passwd_home() { return 1; }
+        ubuntu_resolve_current_user() { printf '%s\n' 'root'; }
+        ubuntu_resolve_target_home 'alice'
+    )"; then
+        assert_equals "/srv/alice" "$result" "root bootstrap explicit TARGET_HOME works before user creation"
+    else
+        log_fail "root bootstrap explicit TARGET_HOME should be accepted before user creation"
+    fi
+}
+
 test_upgrade_setup_infrastructure_persists_resolved_target_home() {
     log_test "Resume Infrastructure Persists Resolved Target Home"
 
@@ -721,6 +738,44 @@ test_upgrade_setup_infrastructure_persists_resolved_target_home() {
         fi
     else
         log_fail "resume infrastructure should succeed with passwd-resolved target home"
+    fi
+}
+
+test_upgrade_setup_infrastructure_persists_explicit_new_user_home_for_root() {
+    log_test "Resume Infrastructure Persists Explicit New User Home For Root"
+
+    local test_dir=""
+    local result=""
+    test_dir="$(mktemp -d "${TMPDIR:-/tmp}/acfs-ubuntu-upgrade-test.XXXXXX")"
+
+    if result="$(
+        ACFS_RESUME_DIR="$test_dir/resume"
+        TARGET_USER="alice"
+        TARGET_HOME="/srv/alice"
+        unset ACFS_HOME ACFS_STATE_FILE
+        HOME="/root"
+        ubuntu_lookup_passwd_home() { return 1; }
+        ubuntu_resolve_current_user() { printf '%s\n' 'root'; }
+        cp() { :; }
+        chmod() { :; }
+        systemctl() { :; }
+        mkdir() {
+            [[ "$*" == "-p /var/log/acfs" ]] && return 0
+            command mkdir "$@"
+        }
+        state_get_file() { return 1; }
+        upgrade_setup_infrastructure "$PROJECT_ROOT" --yes >/dev/null 2>&1 || exit 1
+        # shellcheck disable=SC1090
+        source "$ACFS_RESUME_DIR/continue_context.env"
+        printf 'target=%s\nacfs=%s\nstate=%s\nhome=%s\n'             "$CONTINUE_TARGET_HOME" "$CONTINUE_ACFS_HOME" "$CONTINUE_ACFS_STATE_FILE" "$CONTINUE_HOME"
+    )"; then
+        if [[ "$result" == $'target=/srv/alice\nacfs=/srv/alice/.acfs\nstate=/srv/alice/.acfs/state.json\nhome=/srv/alice' ]]; then
+            log_pass "resume context keeps explicit new-user target home"
+        else
+            log_fail "resume context keeps explicit new-user target home: unexpected output: $result"
+        fi
+    else
+        log_fail "resume infrastructure should accept explicit new-user target home for root bootstrap"
     fi
 }
 
@@ -922,7 +977,9 @@ run_all_tests() {
     echo "--- Target Home Resolution Tests ---"
     test_target_home_resolution_current_user_home_fallback || true
     test_target_home_resolution_rejects_missing_user_guess || true
+    test_target_home_resolution_accepts_explicit_new_user_home_for_root || true
     test_upgrade_setup_infrastructure_persists_resolved_target_home || true
+    test_upgrade_setup_infrastructure_persists_explicit_new_user_home_for_root || true
     test_upgrade_setup_infrastructure_rejects_unresolved_target_home || true
     echo ""
 

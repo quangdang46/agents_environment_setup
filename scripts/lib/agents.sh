@@ -2,7 +2,7 @@
 # shellcheck disable=SC1091
 # ============================================================
 # ACFS Installer - Coding Agents Library
-# Installs Claude Code, Codex CLI, and Gemini CLI
+# Installs Claude Code, Codex CLI, and Antigravity CLI
 # ============================================================
 
 AGENTS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,12 +25,13 @@ CODEX_FALLBACK_PACKAGE=""
 if [[ -n "$CODEX_FALLBACK_VERSION" ]]; then
     CODEX_FALLBACK_PACKAGE="@openai/codex@${CODEX_FALLBACK_VERSION}"
 fi
-GEMINI_PACKAGE="@google/gemini-cli@latest"
+GEMINI_PACKAGE="@google/gemini-cli@latest" # legacy explicit-install path only
 
 # Binary names after installation
 CLAUDE_BIN="claude"
 CODEX_BIN="codex"
 GEMINI_BIN="gemini"
+ANTIGRAVITY_BIN="agy"
 
 # ============================================================
 # Helper Functions
@@ -91,16 +92,18 @@ _agent_json_file_has_usable_jq_value() {
     local file_path="${1:-}"
     local jq_expr="${2:-}"
     local candidate=""
+    local jq_bin=""
 
     [[ -s "$file_path" ]] || return 1
     [[ -n "$jq_expr" ]] || return 1
-    command -v jq >/dev/null 2>&1 || return 1
+    jq_bin="$(_agent_system_binary_path jq 2>/dev/null || true)"
+    [[ -n "$jq_bin" ]] || return 1
 
     while IFS= read -r candidate; do
         if _agent_has_usable_secret "$candidate"; then
             return 0
         fi
-    done < <(jq -r "$jq_expr" "$file_path" 2>/dev/null || true)
+    done < <("$jq_bin" -r "$jq_expr" "$file_path" 2>/dev/null || true)
 
     return 1
 }
@@ -448,7 +451,7 @@ _agent_run_as_user() {
 
     sudo_bin="$(_agent_system_binary_path sudo 2>/dev/null || true)"
     if [[ -n "$sudo_bin" ]]; then
-        "$sudo_bin" -u "$target_user" -H "$bash_bin" -c "$wrapped_cmd"
+        "$sudo_bin" -n -u "$target_user" -H "$bash_bin" -c "$wrapped_cmd"
         return $?
     fi
 
@@ -568,6 +571,148 @@ _agent_create_bun_wrapper() {
     _agent_run_as_user "printf '%s\\n' '#!/bin/bash' $wrapper_exec_line_q > $wrapper_path_q" || return 1
     _agent_run_as_user "chmod +x $wrapper_path_q" || return 1
     return 0
+}
+
+_agent_find_target_executable() {
+    local name="${1:-}"
+    local target_home="${2:-}"
+    local primary_bin=""
+    local candidate=""
+
+    [[ -n "$name" ]] || return 1
+    case "$name" in
+        .|..|*[!A-Za-z0-9._+-]*) return 1 ;;
+    esac
+
+    if [[ -z "$target_home" ]]; then
+        target_home="$(_agent_target_home "${TARGET_USER:-ubuntu}" 2>/dev/null || true)"
+    fi
+    [[ -n "$target_home" ]] || return 1
+
+    primary_bin="$(_agent_preferred_bin_dir "$target_home" 2>/dev/null || true)"
+    [[ -n "$primary_bin" ]] || primary_bin="$target_home/.local/bin"
+
+    for candidate in \
+        "$primary_bin/$name" \
+        "$target_home/.local/bin/$name" \
+        "$target_home/.acfs/bin/$name" \
+        "$target_home/.bun/bin/$name" \
+        "$target_home/.cargo/bin/$name" \
+        "$target_home/.atuin/bin/$name" \
+        "$target_home/go/bin/$name"; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+_agent_run_verified_upstream_installer() {
+    local tool="${1:-}"
+    local runner="${2:-bash}"
+    local installer_url=""
+    local installer_sha=""
+    local security_lib_q=""
+    local installer_url_q=""
+    local installer_sha_q=""
+    local tool_q=""
+    local runner_q=""
+
+    [[ -n "$tool" ]] || return 1
+    case "$runner" in
+        bash|sh) ;;
+        *) log_error "Unsupported verified installer runner: $runner"; return 1 ;;
+    esac
+
+    if [[ ! -f "$AGENTS_SCRIPT_DIR/security.sh" ]]; then
+        log_error "security.sh unavailable; refusing to run verified installer for $tool"
+        return 1
+    fi
+
+    # shellcheck source=security.sh
+    source "$AGENTS_SCRIPT_DIR/security.sh"
+    if ! load_checksums; then
+        log_error "Checksum metadata unavailable; refusing to run verified installer for $tool"
+        return 1
+    fi
+
+    installer_url="${KNOWN_INSTALLERS[$tool]:-}"
+    installer_sha="$(get_checksum "$tool")"
+    if [[ -z "$installer_url" || -z "$installer_sha" ]]; then
+        log_error "Missing verified installer metadata for $tool"
+        return 1
+    fi
+
+    printf -v security_lib_q '%q' "$AGENTS_SCRIPT_DIR/security.sh"
+    printf -v installer_url_q '%q' "$installer_url"
+    printf -v installer_sha_q '%q' "$installer_sha"
+    printf -v tool_q '%q' "$tool"
+    printf -v runner_q '%q' "$runner"
+    _agent_run_as_user "source $security_lib_q; verify_checksum $installer_url_q $installer_sha_q $tool_q | $runner_q"
+}
+
+_agent_install_agy_locked_launchers() {
+    local target_user="${TARGET_USER:-ubuntu}"
+    local target_home=""
+    local target_bin=""
+    local source_file=""
+    local source_file_q=""
+    local target_bin_q=""
+    local agy_locked_q=""
+    local gmi_q=""
+
+    target_home="$(_agent_target_home "$target_user")"
+    target_bin="$(_agent_preferred_bin_dir "$target_home" 2>/dev/null || true)"
+    [[ -n "$target_bin" ]] || target_bin="$target_home/.local/bin"
+
+    for source_file in \
+        "$AGENTS_SCRIPT_DIR/agy_locked.py" \
+        "${ACFS_HOME:-}/scripts/lib/agy_locked.py"; do
+        [[ -f "$source_file" ]] && break
+        source_file=""
+    done
+
+    if [[ -z "$source_file" ]]; then
+        log_warn "agy locked launcher asset not found"
+        return 1
+    fi
+
+    printf -v source_file_q '%q' "$source_file"
+    printf -v target_bin_q '%q' "$target_bin"
+    printf -v agy_locked_q '%q' "$target_bin/agy-locked"
+    printf -v gmi_q '%q' "$target_bin/gmi"
+
+    _agent_run_as_user "mkdir -p $target_bin_q" || return 1
+    _agent_run_as_user "install -m 0755 $source_file_q $agy_locked_q" || return 1
+    _agent_run_as_user "install -m 0755 $source_file_q $gmi_q" || return 1
+    return 0
+}
+
+_configure_antigravity_settings() {
+    local target_home="${1:-}"
+    local target_bin=""
+    local agy_locked=""
+    local agy_locked_q=""
+
+    [[ -n "$target_home" ]] || target_home="$(_agent_target_home "${TARGET_USER:-ubuntu}")"
+    _agent_install_agy_locked_launchers || return 1
+
+    target_bin="$(_agent_preferred_bin_dir "$target_home" 2>/dev/null || true)"
+    [[ -n "$target_bin" ]] || target_bin="$target_home/.local/bin"
+    agy_locked="$target_bin/agy-locked"
+    if [[ ! -x "$agy_locked" ]]; then
+        log_warn "agy-locked launcher missing after install"
+        return 1
+    fi
+
+    printf -v agy_locked_q '%q' "$agy_locked"
+    if _agent_run_as_user "$agy_locked_q --acfs-prime-settings" 2>/dev/null; then
+        log_detail "Antigravity locked settings and DCG hook primed"
+    else
+        log_warn "Antigravity settings will be primed on first agy launch"
+    fi
 }
 
 _agent_has_nvm_node() {
@@ -867,7 +1012,7 @@ upgrade_codex_cli() {
 }
 
 # ============================================================
-# Gemini CLI Installation (Google)
+# Legacy Gemini CLI Installation (Google)
 # ============================================================
 
 # Configure Gemini CLI settings for tmux/agent compatibility and OAuth authentication
@@ -917,15 +1062,31 @@ GEMINI_EOF"
     fi
 
     # Settings file exists - merge our settings if jq is available
-    if command -v jq &>/dev/null; then
+    local jq_bin=""
+    local jq_bin_q=""
+    jq_bin="$(_agent_system_binary_path jq 2>/dev/null || true)"
+    if [[ -n "$jq_bin" ]]; then
+        local mv_bin=""
+        local mv_bin_q=""
+        local rm_bin=""
+        local rm_bin_q=""
         local tmp_file="$settings_dir/.settings.tmp.$$"
         local tmp_file_q=""
         local needs_update=false
+        mv_bin="$(_agent_system_binary_path mv 2>/dev/null || true)"
+        rm_bin="$(_agent_system_binary_path rm 2>/dev/null || true)"
+        if [[ -z "$mv_bin" || -z "$rm_bin" ]]; then
+            log_detail "mv/rm not available; skipping Gemini settings merge"
+            return 0
+        fi
+        printf -v jq_bin_q '%q' "$jq_bin"
+        printf -v mv_bin_q '%q' "$mv_bin"
+        printf -v rm_bin_q '%q' "$rm_bin"
         printf -v tmp_file_q '%q' "$tmp_file"
 
         # Check if enableInteractiveShell is already set correctly
         local shell_value
-        shell_value=$(_agent_run_as_user "jq -r 'if .tools.shell | has(\"enableInteractiveShell\") then .tools.shell.enableInteractiveShell | tostring else \"unset\" end' $settings_file_q" 2>/dev/null || echo "error")
+        shell_value=$(_agent_run_as_user "$jq_bin_q -r 'if .tools.shell | has(\"enableInteractiveShell\") then .tools.shell.enableInteractiveShell | tostring else \"unset\" end' $settings_file_q" 2>/dev/null || echo "error")
 
         if [[ "$shell_value" != "false" ]]; then
             needs_update=true
@@ -933,7 +1094,7 @@ GEMINI_EOF"
 
         # Check if selectedType is set to oauth-personal (fix gemini-api-key if found)
         local auth_value
-        auth_value=$(_agent_run_as_user "jq -r '.selectedType // \"unset\"' $settings_file_q" 2>/dev/null || echo "error")
+        auth_value=$(_agent_run_as_user "$jq_bin_q -r '.selectedType // \"unset\"' $settings_file_q" 2>/dev/null || echo "error")
 
         if [[ "$auth_value" == "gemini-api-key" ]]; then
             log_detail "Fixing Gemini auth from API key to OAuth..."
@@ -944,7 +1105,7 @@ GEMINI_EOF"
 
         # Check if MCP Agent Mail server is configured (fixes #158)
         local mcp_value
-        mcp_value=$(_agent_run_as_user "jq -r '.mcpServers.\"mcp-agent-mail\".httpUrl // \"unset\"' $settings_file_q" 2>/dev/null || echo "error")
+        mcp_value=$(_agent_run_as_user "$jq_bin_q -r '.mcpServers.\"mcp-agent-mail\".httpUrl // \"unset\"' $settings_file_q" 2>/dev/null || echo "error")
         if [[ "$mcp_value" != "$am_mcp_url" ]]; then
             needs_update=true
         fi
@@ -952,10 +1113,10 @@ GEMINI_EOF"
         if [[ "$needs_update" == "true" ]]; then
             log_detail "Configuring Gemini settings for tmux compatibility, OAuth, and MCP Agent Mail..."
             # Update shell settings, auth type, and MCP server config
-            if _agent_run_as_user "jq --arg http_url $am_mcp_url_q '.selectedType = \"oauth-personal\" | .tools = (.tools // {}) | .tools.shell = (.tools.shell // {}) | .tools.shell.enableInteractiveShell = false | .mcpServers = (.mcpServers // {}) | .mcpServers.\"mcp-agent-mail\" = {\"httpUrl\": \$http_url}' $settings_file_q > $tmp_file_q && mv $tmp_file_q $settings_file_q" 2>/dev/null; then
+            if _agent_run_as_user "$jq_bin_q --arg http_url $am_mcp_url_q '.selectedType = \"oauth-personal\" | .tools = (.tools // {}) | .tools.shell = (.tools.shell // {}) | .tools.shell.enableInteractiveShell = false | .mcpServers = (.mcpServers // {}) | .mcpServers.\"mcp-agent-mail\" = {\"httpUrl\": \$http_url}' $settings_file_q > $tmp_file_q && $mv_bin_q $tmp_file_q $settings_file_q" 2>/dev/null; then
                 log_detail "Gemini settings configured (OAuth + tmux + MCP Agent Mail)"
             else
-                _agent_run_as_user "rm -f $tmp_file_q" 2>/dev/null
+                _agent_run_as_user "$rm_bin_q -f $tmp_file_q" 2>/dev/null
                 log_warn "Could not update Gemini settings automatically"
             fi
         else
@@ -1046,6 +1207,73 @@ upgrade_gemini_cli() {
 }
 
 # ============================================================
+# Antigravity CLI Installation (Google)
+# ============================================================
+
+install_antigravity_cli() {
+    local target_user="${TARGET_USER:-ubuntu}"
+    local target_home=""
+    local agy_bin=""
+
+    target_home="$(_agent_target_home "$target_user")"
+    agy_bin="$(_agent_find_target_executable "$ANTIGRAVITY_BIN" "$target_home" 2>/dev/null || true)"
+
+    if [[ -n "$agy_bin" ]]; then
+        log_detail "Antigravity CLI already installed at $agy_bin"
+        _configure_antigravity_settings "$target_home" || true
+        return 0
+    fi
+
+    log_detail "Installing Antigravity CLI for $target_user..."
+    if _agent_run_verified_upstream_installer "antigravity" "bash"; then
+        agy_bin="$(_agent_find_target_executable "$ANTIGRAVITY_BIN" "$target_home" 2>/dev/null || true)"
+        if [[ -n "$agy_bin" ]]; then
+            _configure_antigravity_settings "$target_home" || true
+            log_success "Antigravity CLI installed"
+            log_detail "Note: Run 'agy' to complete Google login"
+            return 0
+        fi
+    fi
+
+    log_warn "Antigravity CLI installation may have failed"
+    return 1
+}
+
+upgrade_antigravity_cli() {
+    local target_user="${TARGET_USER:-ubuntu}"
+    local target_home=""
+    local agy_bin=""
+    local agy_bin_q=""
+
+    target_home="$(_agent_target_home "$target_user")"
+    agy_bin="$(_agent_find_target_executable "$ANTIGRAVITY_BIN" "$target_home" 2>/dev/null || true)"
+
+    if [[ -z "$agy_bin" ]]; then
+        log_detail "Antigravity CLI not installed; installing..."
+        install_antigravity_cli
+        return $?
+    fi
+
+    printf -v agy_bin_q '%q' "$agy_bin"
+    log_detail "Upgrading Antigravity CLI..."
+    if _agent_run_as_user "$agy_bin_q update"; then
+        _configure_antigravity_settings "$target_home" || true
+        log_success "Antigravity CLI upgraded"
+        return 0
+    fi
+
+    log_warn "Antigravity CLI self-update failed, attempting verified reinstall..."
+    if _agent_run_verified_upstream_installer "antigravity" "bash"; then
+        _configure_antigravity_settings "$target_home" || true
+        log_success "Antigravity CLI upgraded via verified installer"
+        return 0
+    fi
+
+    log_warn "Antigravity CLI upgrade failed"
+    return 1
+}
+
+# ============================================================
 # Verification Functions
 # ============================================================
 
@@ -1075,22 +1303,32 @@ verify_agents() {
     fi
 
     # Check Codex CLI
-    if [[ -x "$bun_bin_dir/$CODEX_BIN" ]]; then
+    local codex_path=""
+    codex_path="$(_agent_find_target_executable "$CODEX_BIN" "$target_home" 2>/dev/null || true)"
+    if [[ -n "$codex_path" ]]; then
         local version
-        version=$(_agent_run_as_user "\"$bun_bin_dir/$CODEX_BIN\" --version" 2>/dev/null || echo "installed")
+        version=$(_agent_run_as_user "\"$codex_path\" --version" 2>/dev/null || echo "installed")
         log_detail "  codex: $version"
     else
         log_warn "  Missing: codex (Codex CLI)"
         all_pass=false
     fi
 
-    # Check Gemini CLI
-    if [[ -x "$bun_bin_dir/$GEMINI_BIN" ]]; then
+    # Check Antigravity CLI
+    local agy_path=""
+    agy_path="$(_agent_find_target_executable "$ANTIGRAVITY_BIN" "$target_home" 2>/dev/null || true)"
+    if [[ -n "$agy_path" ]]; then
         local version
-        version=$(_agent_run_as_user "\"$bun_bin_dir/$GEMINI_BIN\" --version" 2>/dev/null || echo "installed")
-        log_detail "  gemini: $version"
+        version=$(_agent_run_as_user "\"$agy_path\" --version" 2>/dev/null || echo "installed")
+        log_detail "  agy: $version"
+        if _agent_find_target_executable "agy-locked" "$target_home" >/dev/null 2>&1; then
+            log_detail "  agy-locked: installed"
+        else
+            log_warn "  Missing: agy-locked (Antigravity locked launcher)"
+            all_pass=false
+        fi
     else
-        log_warn "  Missing: gemini (Gemini CLI)"
+        log_warn "  Missing: agy (Antigravity CLI)"
         all_pass=false
     fi
 
@@ -1115,7 +1353,7 @@ check_agent_auth() {
     # Claude: require a non-empty OAuth token, not just a config file.
     local claude_creds_file="$target_home/.claude/.credentials.json"
     local claude_configured=false
-    if command -v jq &>/dev/null; then
+    if _agent_system_binary_path jq >/dev/null 2>&1; then
         if _agent_json_file_has_usable_jq_value "$claude_creds_file" '.claudeAiOauth.accessToken // empty | strings'; then
             claude_configured=true
         fi
@@ -1133,7 +1371,7 @@ check_agent_auth() {
     local codex_home="${CODEX_HOME:-$target_home/.codex}"
     local codex_auth_file="$codex_home/auth.json"
     local codex_configured=false
-    if command -v jq &>/dev/null; then
+    if _agent_system_binary_path jq >/dev/null 2>&1; then
         if _agent_json_file_has_usable_jq_value "$codex_auth_file" '[.tokens.access_token, .access_token, .accessToken, .OPENAI_API_KEY] | .[]? | strings'; then
             codex_configured=true
         fi
@@ -1147,29 +1385,12 @@ check_agent_auth() {
         log_warn "  Codex: not configured (run 'codex login --device-auth' to authenticate)"
     fi
 
-    # Gemini: require a non-empty active account or token, not just file presence.
-    local gemini_accounts_file="$target_home/.gemini/google_accounts.json"
-    local gemini_oauth_file="$target_home/.gemini/oauth_creds.json"
-    local gemini_configured=false
-
-    if command -v jq &>/dev/null; then
-        if _agent_json_file_has_usable_jq_value "$gemini_accounts_file" '.active // empty | strings'; then
-            gemini_configured=true
-        elif _agent_json_file_has_usable_jq_value "$gemini_oauth_file" '[.access_token, .refresh_token] | .[]? | strings'; then
-            gemini_configured=true
-        fi
+    # Antigravity: require the non-empty OAuth token file used by agy.
+    local antigravity_token_file="$target_home/.gemini/antigravity-cli/antigravity-oauth-token"
+    if [[ -s "$antigravity_token_file" ]]; then
+        log_detail "  Antigravity: configured"
     else
-        if _agent_json_file_has_usable_string_key "$gemini_accounts_file" "active"; then
-            gemini_configured=true
-        elif _agent_json_file_has_usable_string_key "$gemini_oauth_file" "access_token" "refresh_token"; then
-            gemini_configured=true
-        fi
-    fi
-
-    if [[ "$gemini_configured" == "true" ]]; then
-        log_detail "  Gemini: configured"
-    else
-        log_warn "  Gemini: not configured (run 'gemini' to login via browser)"
+        log_warn "  Antigravity: not configured (run 'agy' to login via browser)"
     fi
 }
 
@@ -1192,8 +1413,10 @@ get_agent_versions() {
     if [[ -x "$bun_bin_dir/$CODEX_BIN" ]]; then
         echo "  codex: $(_agent_run_as_user "\"$bun_bin_dir/$CODEX_BIN\" --version" 2>/dev/null || echo 'installed')"
     fi
-    if [[ -x "$bun_bin_dir/$GEMINI_BIN" ]]; then
-        echo "  gemini: $(_agent_run_as_user "\"$bun_bin_dir/$GEMINI_BIN\" --version" 2>/dev/null || echo 'installed')"
+    local agy_path=""
+    agy_path="$(_agent_find_target_executable "$ANTIGRAVITY_BIN" "$target_home" 2>/dev/null || true)"
+    if [[ -n "$agy_path" ]]; then
+        echo "  agy: $(_agent_run_as_user "\"$agy_path\" --version" 2>/dev/null || echo 'installed')"
     fi
 }
 
@@ -1214,7 +1437,7 @@ upgrade_all_agents() {
     if ! upgrade_codex_cli; then
         failed=$((failed + 1))
     fi
-    if ! upgrade_gemini_cli; then
+    if ! upgrade_antigravity_cli; then
         failed=$((failed + 1))
     fi
 
@@ -1248,7 +1471,7 @@ install_all_agents() {
     # Install each agent
     install_claude_code
     install_codex_cli
-    install_gemini_cli
+    install_antigravity_cli
 
     # Verify installation
     verify_agents
@@ -1258,7 +1481,7 @@ install_all_agents() {
     log_detail "Next steps: Login to each agent"
     log_detail "  • Claude: Run 'claude' and follow prompts"
     log_detail "  • Codex:  Run 'codex login --device-auth' (uses ChatGPT Pro account, not API key)"
-    log_detail "  • Gemini: Run 'gemini' and complete Google login"
+    log_detail "  • Antigravity: Run 'agy' and complete Google login"
     echo ""
 
     log_success "Coding agents installation complete"

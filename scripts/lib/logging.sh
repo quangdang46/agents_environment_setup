@@ -236,15 +236,17 @@ if ! declare -f log_sensitive >/dev/null; then
     log_sensitive() {
         local message="$1"
 
-        # If stderr is being tee'd, fd 3 is the original terminal stderr.
-        if { true >&3; } 2>/dev/null; then
-            printf "${ACFS_YELLOW}⚠ %s${ACFS_NC}\n" "$message" >&3
+        # If stderr is being tee'd, write to the ACFS-owned saved stderr fd so
+        # secrets still reach the operator without entering the install log.
+        if [[ "${ACFS_LOG_STDERR_CAPTURED:-false}" == "true" ]] &&
+            [[ "${ACFS_LOG_ORIGINAL_STDERR_FD:-}" =~ ^[0-9]+$ ]] &&
+            { true >&"${ACFS_LOG_ORIGINAL_STDERR_FD}"; } 2>/dev/null; then
+            printf "${ACFS_YELLOW}⚠ %s${ACFS_NC}\n" "$message" >&"${ACFS_LOG_ORIGINAL_STDERR_FD}"
             return 0
         fi
 
         # Fall back to /dev/tty when available to avoid log capture.
-        if [[ -w /dev/tty ]]; then
-            printf "${ACFS_YELLOW}⚠ %s${ACFS_NC}\n" "$message" > /dev/tty
+        if [[ -w /dev/tty ]] && printf "${ACFS_YELLOW}⚠ %s${ACFS_NC}\n" "$message" > /dev/tty 2>/dev/null; then
             return 0
         fi
 

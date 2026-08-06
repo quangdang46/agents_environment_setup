@@ -52,6 +52,89 @@ teardown() {
     assert_failure
 }
 
+@test "state: init sudo fallback is noninteractive" {
+    [[ "$EUID" -ne 0 ]] || skip "sudo fallback is bypassed when tests run as root"
+
+    local fake_bin
+    local real_id
+    local real_mkdir
+    local state_root
+    local sudo_log
+
+    fake_bin=$(create_temp_dir)
+    real_id="$(command -v id)"
+    real_mkdir="$(command -v mkdir)"
+    state_root="$BATS_TEST_TMPDIR/state-sudo-fallback"
+    sudo_log="$BATS_TEST_TMPDIR/state-sudo-argv.txt"
+
+    export ACFS_FAKE_CHOWN="$fake_bin/chown"
+    export ACFS_FAKE_MKDIR="$fake_bin/mkdir"
+    export ACFS_FAKE_SUDO="$fake_bin/sudo"
+    export ACFS_FAKE_SUDO_LOG="$sudo_log"
+    export ACFS_REAL_ID="$real_id"
+    export ACFS_REAL_MKDIR="$real_mkdir"
+    export ACFS_STATE_FILE="$state_root/state.json"
+
+    cat > "$ACFS_FAKE_MKDIR" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${ACFS_FAKE_SUDO_ACTIVE:-}" != "1" ]]; then
+    exit 73
+fi
+exec "$ACFS_REAL_MKDIR" "$@"
+EOF
+    chmod +x "$ACFS_FAKE_MKDIR"
+
+    cat > "$ACFS_FAKE_SUDO" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != "-n" ]]; then
+    printf 'missing -n\n' >> "$ACFS_FAKE_SUDO_LOG"
+    exit 91
+fi
+printf '%s\n' "$@" >> "$ACFS_FAKE_SUDO_LOG"
+shift
+ACFS_FAKE_SUDO_ACTIVE=1 exec "$@"
+EOF
+    chmod +x "$ACFS_FAKE_SUDO"
+
+    cat > "$ACFS_FAKE_CHOWN" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+    chmod +x "$ACFS_FAKE_CHOWN"
+
+    state_system_binary_path() {
+        case "${1:-}" in
+            chown) printf '%s\n' "$ACFS_FAKE_CHOWN" ;;
+            id) printf '%s\n' "$ACFS_REAL_ID" ;;
+            mkdir) printf '%s\n' "$ACFS_FAKE_MKDIR" ;;
+            sudo) printf '%s\n' "$ACFS_FAKE_SUDO" ;;
+            *) command -v "${1:-}" ;;
+        esac
+    }
+
+    run state_init
+    assert_success
+
+    run test -f "$ACFS_STATE_FILE"
+    assert_success
+    run grep -Fx -- "$ACFS_FAKE_MKDIR" "$sudo_log"
+    assert_success
+    run grep -Fx -- "$ACFS_FAKE_CHOWN" "$sudo_log"
+    assert_success
+}
+
+@test "state: privileged directory fallback source is noninteractive" {
+    local state_lib="$PROJECT_ROOT/scripts/lib/state.sh"
+
+    run grep -F '"$sudo_bin" -n "$mkdir_bin" -p "$state_dir"' "$state_lib"
+    assert_success
+    run grep -F '"$sudo_bin" -n "$chown_bin"' "$state_lib"
+    assert_success
+}
+
 @test "state: save and load round trip" {
     state_init
     

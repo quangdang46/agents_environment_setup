@@ -227,6 +227,9 @@ EOF
     cat > "$fake_sudo" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$CAPTURE_FILE"
+if [[ "${1:-}" == "-n" ]]; then
+    shift
+fi
 exec "$@"
 EOF
     chmod +x "$fake_sudo"
@@ -241,6 +244,7 @@ EOF
     local wrapper=""
     local command_arg=""
     local idx
+    [[ "${argv[0]:-}" == "-n" ]] || fail "Expected noninteractive sudo (-n), got: ${argv[*]}"
     for idx in "${!argv[@]}"; do
         if [[ "${argv[$idx]}" == "-c" ]]; then
             wrapper="${argv[$((idx + 1))]:-}"
@@ -252,6 +256,68 @@ EOF
     [[ "$wrapper" == *'eval "$1"'* ]] || fail "Expected sudo shell wrapper to eval argv command, got: $wrapper"
     [[ "$wrapper" != *"root-ok"* ]] || fail "Command was embedded in sudo shell wrapper: $wrapper"
     [[ "$command_arg" == "printf 'root-ok\n'" ]] || fail "Expected command as argv data, got: $command_arg"
+}
+
+@test "run_as_root_shell: sudo stdin path is noninteractive" {
+    [[ "$EUID" -ne 0 ]] || skip "sudo path is bypassed when tests run as root"
+
+    local fake_sudo="$BATS_TEST_TMPDIR/fake-sudo-stdin"
+    local out
+    export CAPTURE_FILE="$BATS_TEST_TMPDIR/root-shell-sudo-stdin-argv.txt"
+    export SUDO="$fake_sudo"
+
+    cat > "$fake_sudo" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$CAPTURE_FILE"
+if [[ "${1:-}" == "-n" ]]; then
+    shift
+fi
+exec "$@"
+EOF
+    chmod +x "$fake_sudo"
+
+    out="$(printf "printf 'stdin-ok\\n'\n" | run_as_root_shell)"
+    [[ "$out" == "stdin-ok" ]] || fail "Expected stdin-ok, got: $out"
+
+    local -a argv=()
+    mapfile -t argv < "$CAPTURE_FILE"
+    [[ "${argv[0]:-}" == "-n" ]] || fail "Expected noninteractive sudo (-n), got: ${argv[*]}"
+}
+
+@test "run_as_root_shell: discovered sudo path is noninteractive" {
+    [[ "$EUID" -ne 0 ]] || skip "sudo path is bypassed when tests run as root"
+
+    local fake_sudo="$BATS_TEST_TMPDIR/fake-discovered-sudo"
+    export CAPTURE_FILE="$BATS_TEST_TMPDIR/root-shell-discovered-sudo-argv.txt"
+    export FAKE_DISCOVERED_SUDO="$fake_sudo"
+    unset SUDO
+
+    cat > "$fake_sudo" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$CAPTURE_FILE"
+if [[ "${1:-}" == "-n" ]]; then
+    shift
+fi
+exec "$@"
+EOF
+    chmod +x "$fake_sudo"
+
+    _acfs_system_binary_path() {
+        case "${1:-}" in
+            sudo) printf '%s\n' "$FAKE_DISCOVERED_SUDO" ;;
+            env) printf '/usr/bin/env\n' ;;
+            bash) printf '/usr/bin/bash\n' ;;
+            *) return 1 ;;
+        esac
+    }
+
+    run run_as_root_shell "printf 'discovered-ok\n'"
+    assert_success
+    assert_output "discovered-ok"
+
+    local -a argv=()
+    mapfile -t argv < "$CAPTURE_FILE"
+    [[ "${argv[0]:-}" == "-n" ]] || fail "Expected noninteractive sudo (-n), got: ${argv[*]}"
 }
 
 @test "run_as_target_shell stdin mode treats ACFS_BIN_DIR as inert PATH data" {
@@ -290,6 +356,33 @@ EOF
     captured="$(cat "$STUB_DIR/sudo.log")"
     [[ "$captured" == *"PATH=/home/testuser/.local/bin:/home/testuser/.local/bin:/home/testuser/.acfs/bin:/home/testuser/.cargo/bin:/home/testuser/.bun/bin:/home/testuser/.atuin/bin:/home/testuser/go/bin:"* ]] \
         || fail "Expected run_as_target to extend PATH for target-user bins, got: $captured"
+}
+
+@test "installer target-user runners use noninteractive sudo" {
+    local helpers="$PROJECT_ROOT/scripts/lib/install_helpers.sh"
+    local installer="$PROJECT_ROOT/install.sh"
+
+    run grep -F '"$sudo_bin" -n -u "$user" "$env_bin" "${env_args[@]}" "$sh_bin"' "$helpers"
+    assert_success
+
+    run grep -F '"$sudo_bin" -n -u "$user" "$env_bin" "${env_args[@]}" "$sh_bin"' "$installer"
+    assert_success
+
+    run grep -F 'postgres_runner=("$postgres_sudo_bin" -n -u postgres -H)' "$installer"
+    assert_success
+}
+
+@test "installer upgrade setup uses noninteractive sudo fallbacks" {
+    local installer="$PROJECT_ROOT/install.sh"
+
+    run grep -F '"$sudo_bin" -n "$apt_get_bin" update -qq && "$sudo_bin" -n "$apt_get_bin" install -y jq' "$installer"
+    assert_success
+
+    run grep -F '"$sudo_bin" -n "$mkdir_bin" -p "${ACFS_RESUME_DIR:-/var/lib/acfs}"' "$installer"
+    assert_success
+
+    run grep -F '"$sudo_bin" -n "$chown_bin" "$("$id_bin" -u):$("$id_bin" -g)" "${ACFS_RESUME_DIR:-/var/lib/acfs}"' "$installer"
+    assert_success
 }
 
 @test "run_as_target: passwd home overrides stale TARGET_HOME and home-scoped bin dir" {

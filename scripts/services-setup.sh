@@ -488,9 +488,9 @@ run_as_user() {
     if [[ -n "$sudo_bin" ]]; then
         if [[ -n "$target_home_for_cd" ]]; then
             # shellcheck disable=SC2016  # $HOME/$@ expand inside sh -c.
-            "$sudo_bin" -u "$TARGET_USER" -H "${env_cmd[@]}" "$sh_bin" -c 'cd "$HOME" || exit 1; exec "$@"' _ "${command_argv[@]}"
+            "$sudo_bin" -n -u "$TARGET_USER" -H "${env_cmd[@]}" "$sh_bin" -c 'cd "$HOME" || exit 1; exec "$@"' _ "${command_argv[@]}"
         else
-            "$sudo_bin" -u "$TARGET_USER" -H "${env_cmd[@]}" "${command_argv[@]}"
+            "$sudo_bin" -n -u "$TARGET_USER" -H "${env_cmd[@]}" "${command_argv[@]}"
         fi
         return $?
     fi
@@ -570,9 +570,9 @@ run_as_user_shell() {
     elif sudo_bin="$(services_setup_system_binary_path sudo 2>/dev/null || true)" && [[ -n "$sudo_bin" ]]; then
         if [[ -n "$target_home_for_cd" ]]; then
             # shellcheck disable=SC2016  # $HOME/$@ expand inside bash -c.
-            "$sudo_bin" -u "$TARGET_USER" -H "${env_cmd[@]}" "$bash_bin" -c 'cd "$HOME" || exit 1; exec "$@"' _ "$bash_bin" -c "$cmd"
+            "$sudo_bin" -n -u "$TARGET_USER" -H "${env_cmd[@]}" "$bash_bin" -c 'cd "$HOME" || exit 1; exec "$@"' _ "$bash_bin" -c "$cmd"
         else
-            "$sudo_bin" -u "$TARGET_USER" -H "${env_cmd[@]}" "$bash_bin" -c "$cmd"
+            "$sudo_bin" -n -u "$TARGET_USER" -H "${env_cmd[@]}" "$bash_bin" -c "$cmd"
         fi
     elif runuser_bin="$(services_setup_system_binary_path runuser 2>/dev/null || true)" && [[ -n "$runuser_bin" ]]; then
         if [[ -n "$target_home_for_cd" ]]; then
@@ -885,32 +885,42 @@ select_dcg_packs() {
 
 remove_dcg_hook_from_settings() {
     local settings_file="$1"
+    local dirname_bin=""
     local jq_bin=""
+    local mktemp_bin=""
+    local mv_bin=""
+    local rm_bin=""
+    local tee_bin=""
 
     if [[ -L "$settings_file" ]]; then
         gum_warn "Skipping DCG hook cleanup (symlink): $settings_file"
         return 1
     fi
 
+    dirname_bin="$(services_setup_system_binary_path dirname 2>/dev/null || true)"
     jq_bin="$(services_setup_system_binary_path jq 2>/dev/null || true)"
-    if [[ -z "$jq_bin" ]]; then
-        gum_warn "jq not available; cannot remove DCG hook automatically"
+    mktemp_bin="$(services_setup_system_binary_path mktemp 2>/dev/null || true)"
+    mv_bin="$(services_setup_system_binary_path mv 2>/dev/null || true)"
+    rm_bin="$(services_setup_system_binary_path rm 2>/dev/null || true)"
+    tee_bin="$(services_setup_system_binary_path tee 2>/dev/null || true)"
+    if [[ -z "$dirname_bin" || -z "$jq_bin" || -z "$mktemp_bin" || -z "$mv_bin" || -z "$rm_bin" || -z "$tee_bin" ]]; then
+        gum_warn "Required system helper not available; cannot remove DCG hook automatically"
         gum_detail "Remove the dcg hook entry from: $settings_file"
         return 1
     fi
 
     local settings_dir
-    settings_dir="$(dirname "$settings_file")"
+    settings_dir="$("$dirname_bin" "$settings_file")"
 
     local tmp
-    tmp="$(run_as_user mktemp "${settings_dir}/.acfs_dcg_cleanup.XXXXXX" 2>/dev/null || true)"
+    tmp="$(run_as_user "$mktemp_bin" "${settings_dir}/.acfs_dcg_cleanup.XXXXXX" 2>/dev/null || true)"
     if [[ -z "$tmp" ]]; then
         gum_warn "Could not update $settings_file (mktemp failed)"
         return 1
     fi
 
     local jq_program
-    jq_program="$(cat <<'JQ'
+    IFS= read -r -d '' jq_program <<'JQ' || true
 def strip_dcg:
   if (type == "object" and has("hooks") and (.hooks | type) == "array") then
     .hooks |= [ .[]? | select(.type != "command" or ((.command // "") | test("dcg") | not)) ] |
@@ -929,16 +939,15 @@ else
   ]
 end
 JQ
-)"
 
-    if run_as_user "$jq_bin" "$jq_program" "$settings_file" 2>/dev/null | run_as_user tee "$tmp" >/dev/null; then
-        run_as_user mv -- "$tmp" "$settings_file" 2>/dev/null || {
-            run_as_user rm -f -- "$tmp" 2>/dev/null || true
+    if run_as_user "$jq_bin" "$jq_program" "$settings_file" 2>/dev/null | run_as_user "$tee_bin" "$tmp" >/dev/null; then
+        run_as_user "$mv_bin" -- "$tmp" "$settings_file" 2>/dev/null || {
+            run_as_user "$rm_bin" -f -- "$tmp" 2>/dev/null || true
             gum_warn "Could not update $settings_file (mv failed)"
             return 1
         }
     else
-        run_as_user rm -f -- "$tmp" 2>/dev/null || true
+        run_as_user "$rm_bin" -f -- "$tmp" 2>/dev/null || true
         gum_warn "Could not update $settings_file (invalid JSON?)"
         return 1
     fi
@@ -1367,7 +1376,7 @@ It also supports optional protection packs (database, Kubernetes, cloud)."
         else
             if [[ "$SERVICES_SETUP_NONINTERACTIVE" == "true" ]]; then
                 gum_detail "Registering DCG hook (noninteractive)"
-                run_as_user "$dcg_bin" install --yes || gum_warn "DCG hook registration failed"
+                run_as_user "$dcg_bin" install || gum_warn "DCG hook registration failed"
             else
                 if gum_confirm "Register DCG hook for Claude Code?"; then
                     run_as_user "$dcg_bin" install || gum_warn "DCG hook registration failed"
@@ -1386,7 +1395,7 @@ It also supports optional protection packs (database, Kubernetes, cloud)."
         gum_warn "DCG doctor reported issues"
         if [[ "$SERVICES_SETUP_NONINTERACTIVE" == "true" ]]; then
             gum_detail "Attempting DCG repair (noninteractive)"
-            run_as_user "$dcg_bin" install --force --yes || gum_warn "DCG repair failed"
+            run_as_user "$dcg_bin" install --force || gum_warn "DCG repair failed"
         else
             if gum_confirm "Attempt DCG repair by re-registering the hook?"; then
                 run_as_user "$dcg_bin" install --force || gum_warn "DCG repair failed"
@@ -1414,6 +1423,8 @@ It also supports optional protection packs (database, Kubernetes, cloud)."
 
     local config_dir="$TARGET_HOME/.config/dcg"
     local config_file="$config_dir/config.toml"
+    local mkdir_bin=""
+    local tee_bin=""
 
     if [[ -L "$config_dir" || -L "$config_file" ]]; then
         gum_error "Refusing to operate: $config_dir or $config_file is a symlink"
@@ -1427,7 +1438,14 @@ It also supports optional protection packs (database, Kubernetes, cloud)."
         fi
     fi
 
-    run_as_user mkdir -p "$config_dir"
+    mkdir_bin="$(services_setup_system_binary_path mkdir 2>/dev/null || true)"
+    tee_bin="$(services_setup_system_binary_path tee 2>/dev/null || true)"
+    if [[ -z "$mkdir_bin" || -z "$tee_bin" ]]; then
+        gum_error "Required system helper not available; cannot write DCG config"
+        return 1
+    fi
+
+    run_as_user "$mkdir_bin" -p "$config_dir"
 
     {
         echo "[packs]"
@@ -1436,7 +1454,7 @@ It also supports optional protection packs (database, Kubernetes, cloud)."
             echo "    \"${pack}\","
         done
         echo "]"
-    } | run_as_user tee "$config_file" >/dev/null
+    } | run_as_user "$tee_bin" "$config_file" >/dev/null
 
     gum_success "DCG config written to $config_file"
 }
@@ -1682,14 +1700,22 @@ setup_postgres() {
                     gum_error "sudo not found; cannot start PostgreSQL service"
                     return 1
                 fi
-                sudo_cmd=("$sudo_bin")
+                sudo_cmd=("$sudo_bin" -n)
             fi
             if [[ -z "$systemctl_bin" ]]; then
                 gum_error "systemctl not found; cannot start PostgreSQL service"
                 return 1
             fi
-            "${sudo_cmd[@]}" "$systemctl_bin" start postgresql
-            "${sudo_cmd[@]}" "$systemctl_bin" enable postgresql
+            if ! "${sudo_cmd[@]}" "$systemctl_bin" start postgresql; then
+                gum_error "Could not start PostgreSQL without prompting for sudo"
+                gum_detail "Run acfs services-setup from a root shell, or re-run the main installer in vibe mode to enable passwordless sudo."
+                return 1
+            fi
+            if ! "${sudo_cmd[@]}" "$systemctl_bin" enable postgresql; then
+                gum_error "Could not enable PostgreSQL without prompting for sudo"
+                gum_detail "Run acfs services-setup from a root shell, or re-run the main installer in vibe mode to enable passwordless sudo."
+                return 1
+            fi
             gum_success "PostgreSQL service started and enabled"
         fi
     fi
@@ -1871,7 +1897,9 @@ $(gum style --foreground "$ACFS_PINK" --bold "Setting up $label...")"
     fi
     setup_postgres
 
-    # Generate /AGENTS.md with current tool versions
+    # Refresh the canonical agent guide (~/.acfs/docs/flywheel-agent-guide.md)
+    # with current tool versions. Deployment into instruction files stays an
+    # explicit user action (`acfs agents install ...`).
     local agents_script="$SCRIPT_DIR/generate-root-agents-md.sh"
     if [[ -x "$agents_script" ]]; then
         "$agents_script" 2>/dev/null || true

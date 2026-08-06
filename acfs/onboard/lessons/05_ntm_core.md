@@ -37,7 +37,7 @@ Verifies all required tools are installed.
 ### Create a Project Session
 
 ```bash
-ntm spawn myproject --cc=2 --cod=1 --gmi=1
+ntm spawn myproject --cc=2 --cod=1 --agy=1
 ```
 
 This creates:
@@ -94,7 +94,7 @@ That's the power of multi-agent development!
 For a typical project:
 
 ```bash
-ntm spawn myproject --cc=2 --cod=1 --gmi=1
+ntm spawn myproject --cc=2 --cod=1 --agy=1
 ```
 
 Why this ratio?

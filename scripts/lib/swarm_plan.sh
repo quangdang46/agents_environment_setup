@@ -179,20 +179,20 @@ def check($id; $status; $summary; $details; $commands):
 def agent_mix($count; $profile):
   if $profile == "codex-heavy" then
     (($count / 4) | floor) as $cc
-    | (($count / 5) | floor) as $gmi
-    | {cc: $cc, cod: ($count - $cc - $gmi), gmi: $gmi}
+    | (($count / 5) | floor) as $agy
+    | {cc: $cc, cod: ($count - $cc - $agy), agy: $agy}
   elif $profile == "docs-heavy" then
     (($count / 4) | floor) as $cc
     | (($count / 4) | floor) as $cod
-    | {cc: $cc, cod: $cod, gmi: ($count - $cc - $cod)}
+    | {cc: $cc, cod: $cod, agy: ($count - $cc - $cod)}
   elif $profile == "review-heavy" then
     (($count / 3) | floor) as $cc
     | (($count / 3) | floor) as $cod
-    | {cc: $cc, cod: $cod, gmi: ($count - $cc - $cod)}
+    | {cc: $cc, cod: $cod, agy: ($count - $cc - $cod)}
   else
     (($count * 2 / 5) | floor) as $cc
     | (($count * 2 / 5) | floor) as $cod
-    | {cc: $cc, cod: $cod, gmi: ($count - $cc - $cod)}
+    | {cc: $cc, cod: $cod, agy: ($count - $cc - $cod)}
   end;
 
 def example_plan($count; $safe; $recommended; $has_warnings; $has_failures):
@@ -419,7 +419,7 @@ $status as $s
           "ntm spawn myproject --label swarm-" + ($launch_agents | tostring)
           + " --cc=" + ($mix.cc | tostring)
           + " --cod=" + ($mix.cod | tostring)
-          + " --gmi=" + ($mix.gmi | tostring)
+          + " --agy=" + ($mix.agy | tostring)
           + " --assign --stagger-mode=smart"
         else null end)
     },

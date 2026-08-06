@@ -283,7 +283,7 @@ find_changelog() {
         locations+=("${_CHANGELOG_ACFS_HOME}/CHANGELOG.md")
     fi
     if [[ "$explicit_target_requested" != "true" ]]; then
-        locations+=("/data/projects/agentic_coding_flywheel_setup/CHANGELOG.md")
+        locations+=("/data/projects/agents_environment_setup/CHANGELOG.md")
         [[ -n "$_CHANGELOG_CURRENT_HOME" ]] && locations+=("${_CHANGELOG_CURRENT_HOME}/.acfs/CHANGELOG.md")
     fi
 

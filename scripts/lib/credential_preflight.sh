@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+CRED_PREFLIGHT_SYSTEM_PATH="/usr/bin:/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/sbin"
+PATH="$CRED_PREFLIGHT_SYSTEM_PATH"
+export PATH
+
 CRED_PREFLIGHT_JSON=false
 CRED_PREFLIGHT_ROOT=""
 CRED_PREFLIGHT_HOME="${HOME:-}"
@@ -23,6 +27,7 @@ CRED_PREFLIGHT_EXCLUDES=()
 CRED_PREFLIGHT_FINDINGS=()
 CRED_PREFLIGHT_SKIPPED=()
 CRED_PREFLIGHT_FILES_SCANNED=0
+CRED_PREFLIGHT_JQ_BIN=""
 
 credential_preflight_usage() {
     cat <<'EOF'
@@ -102,23 +107,47 @@ credential_preflight_parse_args() {
 
 credential_preflight_binary_path() {
     local name="${1:-}"
-    local path_value=""
+    local candidate=""
 
     [[ -n "$name" ]] || return 1
     case "$name" in
-        .|..|*/*) return 1 ;;
+        .|..|*/*|*[!A-Za-z0-9._+-]*) return 1 ;;
     esac
 
-    path_value="$(command -v "$name" 2>/dev/null || true)"
-    [[ -n "$path_value" && -x "$path_value" ]] || return 1
-    printf '%s\n' "$path_value"
+    for candidate in \
+        "/usr/bin/$name" \
+        "/bin/$name" \
+        "/usr/local/bin/$name" \
+        "/usr/local/sbin/$name" \
+        "/usr/sbin/$name" \
+        "/sbin/$name"
+    do
+        [[ -x "$candidate" ]] || continue
+        printf '%s\n' "$candidate"
+        return 0
+    done
+
+    return 1
 }
 
 credential_preflight_require_jq() {
-    if ! credential_preflight_binary_path jq >/dev/null 2>&1; then
+    CRED_PREFLIGHT_JQ_BIN="$(credential_preflight_binary_path jq 2>/dev/null || true)"
+    if [[ -z "$CRED_PREFLIGHT_JQ_BIN" ]]; then
         echo "Error: jq is required for acfs credential-preflight" >&2
         return 2
     fi
+}
+
+credential_preflight_jq() {
+    local jq_bin="$CRED_PREFLIGHT_JQ_BIN"
+
+    if [[ -z "$jq_bin" || ! -x "$jq_bin" ]]; then
+        jq_bin="$(credential_preflight_binary_path jq 2>/dev/null || true)"
+        [[ -n "$jq_bin" ]] || return 2
+        CRED_PREFLIGHT_JQ_BIN="$jq_bin"
+    fi
+
+    "$jq_bin" "$@"
 }
 
 credential_preflight_abs_path() {
@@ -253,7 +282,7 @@ credential_preflight_json_array_from_objects() {
     if [[ $# -eq 0 ]]; then
         printf '[]\n'
     else
-        printf '%s\n' "$@" | jq -s .
+        printf '%s\n' "$@" | credential_preflight_jq -s .
     fi
 }
 
@@ -264,7 +293,7 @@ credential_preflight_add_skipped() {
     local reason="$4"
     local object=""
 
-    object="$(jq -n \
+    object="$(credential_preflight_jq -n \
         --arg file "$(credential_preflight_display_path "$root" "$path")" \
         --arg source "$source" \
         --arg reason "$reason" \
@@ -293,7 +322,7 @@ credential_preflight_add_finding() {
     local evidence="$6"
     local object=""
 
-    object="$(jq -n \
+    object="$(credential_preflight_jq -n \
         --arg category "$category" \
         --arg severity "warning" \
         --arg file "$(credential_preflight_display_path "$root" "$path")" \
@@ -320,7 +349,6 @@ credential_preflight_value_is_placeholder() {
     lower="${value,,}"
     [[ -z "$lower" ]] && return 0
     [[ "$lower" =~ ^[0-9]+$ ]] && return 0
-    [[ "$lower" =~ ^[a-f0-9]{32,64}$ ]] && return 0
     [[ "$lower" == *"<redacted"* ||
        "$lower" == *"redacted"* ||
        "$lower" == *"example"* ||
@@ -338,6 +366,46 @@ credential_preflight_value_is_placeholder() {
        "$lower" == *"test_token"* ]]
 }
 
+credential_preflight_key_is_secret_like() {
+    local key="${1:-}"
+    local lower=""
+
+    lower="${key,,}"
+    case "$lower" in
+        *api_key*|*api-key*|\
+        *api_secret*|*api-secret*|\
+        *secret_key*|*secret-key*|\
+        *access_key*|*access-key*|\
+        *access_token*|*access-token*|\
+        *refresh_token*|*refresh-token*|\
+        *auth_token*|*auth-token*|\
+        *client_secret*|*client-secret*|\
+        *private_key*|*private-key*|\
+        *password*|*passwd*|*secret*|*token*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+credential_preflight_value_has_specific_pattern() {
+    local value="${1:-}"
+    local lower=""
+
+    lower="${value,,}"
+    [[ "$lower" =~ sk-[a-z0-9_-]{20,} ]] && return 0
+    [[ "$lower" =~ akia[a-z0-9]{16} ]] && return 0
+    [[ "$lower" =~ gh[pousr]_[a-z0-9_]{20,} ]] && return 0
+    [[ "$lower" =~ github_pat_[a-z0-9_]{22,} ]] && return 0
+    [[ "$lower" =~ hvs\.[a-z0-9]{20,} ]] && return 0
+    [[ "$lower" =~ xox[bpsar]-[a-z0-9-]{10,} ]] && return 0
+    [[ "$lower" =~ eyj[a-z0-9_-]{10,}\.[a-z0-9_-]{10,}\.[a-z0-9_-]{10,} ]] && return 0
+    [[ "$lower" =~ [a-z][a-z0-9+.-]*://[^/@[:space:]]+:[^/@[:space:]]+@ ]] && return 0
+
+    return 1
+}
+
 credential_preflight_scan_line() {
     local root="$1"
     local path="$2"
@@ -345,75 +413,76 @@ credential_preflight_scan_line() {
     local line_number="$4"
     local line="$5"
     local lower=""
-    local specific=false
+    local rest=""
+    local match=""
+    local key=""
     local value=""
 
     lower="${line,,}"
 
     if [[ "$line" =~ -----BEGIN[[:space:]][^-]*PRIVATE[[:space:]]KEY[^-]*----- ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "private_key" "private key block marker"
-        specific=true
     fi
     if [[ "$line" =~ sk-[A-Za-z0-9_-]{20,} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "api_key" "sk-style API key pattern"
-        specific=true
     fi
     if [[ "$line" =~ AKIA[A-Z0-9]{16} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "aws_key" "AWS access key pattern"
-        specific=true
     fi
     if [[ "$line" =~ gh[pousr]_[A-Za-z0-9_]{20,} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "github_token" "GitHub token pattern"
-        specific=true
     fi
     if [[ "$line" =~ github_pat_[A-Za-z0-9_]{22,} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "github_pat" "GitHub fine-grained PAT pattern"
-        specific=true
     fi
     if [[ "$line" =~ hvs\.[A-Za-z0-9]{20,} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "vault_token" "Vault token pattern"
-        specific=true
     fi
     if [[ "$line" =~ xox[bpsar]-[A-Za-z0-9-]{10,} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "slack_token" "Slack token pattern"
-        specific=true
     fi
     if [[ "$line" =~ Bearer[[:space:]][A-Za-z0-9._/-]{20,} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "bearer_token" "Bearer token pattern"
-        specific=true
     fi
     if [[ "$line" =~ eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,} ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "jwt" "JWT pattern"
-        specific=true
     fi
     if [[ "$line" =~ [A-Za-z][A-Za-z0-9+.-]*://[^/@[:space:]]+:[^/@[:space:]]+@ ]]; then
         credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "credential_url" "URL with embedded credentials"
-        specific=true
     fi
 
-    [[ "$specific" == true ]] && return 0
-
-    if [[ "$lower" =~ \"([a-z][a-z0-9_-]*(api[_-]?key|api[_-]?secret|secret[_-]?key|access[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key|password|passwd|secret|token))\"[[:space:]]*:[[:space:]]*\"([^\"]{4,})\" ]]; then
-        value="$lower"
-        if ! credential_preflight_value_is_placeholder "$value"; then
-            if [[ "$lower" == *"password"* || "$lower" == *"passwd"* ]]; then
+    rest="$lower"
+    while [[ "$rest" =~ \"([a-z][a-z0-9_-]*)\"[[:space:]]*:[[:space:]]*\"([^\"]{4,})\" ]]; do
+        match="${BASH_REMATCH[0]}"
+        key="${BASH_REMATCH[1]:-}"
+        value="${BASH_REMATCH[2]:-}"
+        if credential_preflight_key_is_secret_like "$key" &&
+            ! credential_preflight_value_is_placeholder "$value" &&
+            ! credential_preflight_value_has_specific_pattern "$value"; then
+            if [[ "$key" == *"password"* || "$key" == *"passwd"* ]]; then
                 credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "password" "secret-like JSON key"
             else
                 credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "generic_secret" "secret-like JSON key"
             fi
-            return 0
         fi
-    fi
+        rest="${rest#*"$match"}"
+    done
 
-    if [[ "$lower" =~ (^|[^a-z0-9_-])([a-z][a-z0-9_-]*(api[_-]?key|api[_-]?secret|secret[_-]?key|access[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key|password|passwd|secret|token))[[:space:]]*[:=][[:space:]]*[\"\']?([^\"\'\<\>\ 	]{4,}) ]]; then
-        value="${BASH_REMATCH[4]:-}"
-        if ! credential_preflight_value_is_placeholder "$value"; then
-            case "${BASH_REMATCH[2]:-}" in
+    rest="$lower"
+    while [[ "$rest" =~ (^|[^a-z0-9_-])([a-z][a-z0-9_-]*)[[:space:]]*[:=][[:space:]]*[\"\']?([^\"\'\<\>\ 	]{4,}) ]]; do
+        match="${BASH_REMATCH[0]}"
+        key="${BASH_REMATCH[2]:-}"
+        value="${BASH_REMATCH[3]:-}"
+        if credential_preflight_key_is_secret_like "$key" &&
+            ! credential_preflight_value_is_placeholder "$value" &&
+            ! credential_preflight_value_has_specific_pattern "$value"; then
+            case "$key" in
                 *password*|*passwd*) credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "password" "secret-like assignment key" ;;
                 *) credential_preflight_add_finding "$root" "$path" "$source" "$line_number" "generic_secret" "secret-like assignment key" ;;
             esac
         fi
-    fi
+        rest="${rest#*"$match"}"
+    done
 }
 
 credential_preflight_file_is_binary() {
@@ -468,7 +537,7 @@ credential_preflight_render_json() {
 
     findings_json="$(credential_preflight_json_array_from_objects "${CRED_PREFLIGHT_FINDINGS[@]}")"
     skipped_json="$(credential_preflight_json_array_from_objects "${CRED_PREFLIGHT_SKIPPED[@]}")"
-    categories_json="$(jq -n --argjson findings "$findings_json" '
+    categories_json="$(credential_preflight_jq -n --argjson findings "$findings_json" '
       $findings
       | group_by(.category)
       | map({category: .[0].category, count: length})
@@ -478,7 +547,7 @@ credential_preflight_render_json() {
         status="warn"
     fi
 
-    jq -n \
+    credential_preflight_jq -n \
         --arg generated_at "$CRED_PREFLIGHT_GENERATED_AT" \
         --arg status "$status" \
         --argjson files_scanned "$CRED_PREFLIGHT_FILES_SCANNED" \
@@ -523,7 +592,7 @@ credential_preflight_render_human() {
         "${#CRED_PREFLIGHT_FINDINGS[@]}" \
         "$CRED_PREFLIGHT_FILES_SCANNED"
     for object in "${CRED_PREFLIGHT_FINDINGS[@]}"; do
-        jq -r '"\(.file):\(.line): \(.category) - \(.evidence)\n  Remediation: \(.remediation)"' <<<"$object"
+        credential_preflight_jq -r '"\(.file):\(.line): \(.category) - \(.evidence)\n  Remediation: \(.remediation)"' <<<"$object"
     done
     if [[ ${#CRED_PREFLIGHT_SKIPPED[@]} -gt 0 ]]; then
         printf 'Skipped %d file(s); use --json for reasons.\n' "${#CRED_PREFLIGHT_SKIPPED[@]}"

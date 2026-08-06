@@ -50,7 +50,7 @@ YELLOW="${ACFS_YELLOW-\033[0;33m}"
 # ============================================================
 
 ACFS_REPO_OWNER="${ACFS_REPO_OWNER:-Dicklesworthstone}"
-ACFS_REPO_NAME="${ACFS_REPO_NAME:-agentic_coding_flywheel_setup}"
+ACFS_REPO_NAME="${ACFS_REPO_NAME:-agents_environment_setup}"
 ACFS_CHECKSUMS_REF="${ACFS_CHECKSUMS_REF:-main}"
 
 acfs_security_system_binary_path() {
@@ -333,6 +333,7 @@ fi
 # Format: URL|SHA256 (computed from the install script content)
 # These are reference checksums - actual scripts may change
 declare -gA KNOWN_INSTALLERS=(
+    [antigravity]="https://antigravity.google/cli/install.sh"
     [bun]="https://bun.sh/install"
     [claude]="https://claude.ai/install.sh"
     [uv]="https://astral.sh/uv/install.sh"
@@ -341,7 +342,7 @@ declare -gA KNOWN_INSTALLERS=(
     [ohmyzsh]="https://install.ohmyz.sh/"
     [opencode]="https://opencode.ai/install"
     [zoxide]="https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh"
-    [atuin]="https://setup.atuin.sh"
+    [atuin]="https://github.com/atuinsh/atuin/releases/latest/download/atuin-installer.sh"
     [ntm]="https://raw.githubusercontent.com/Dicklesworthstone/ntm/main/install.sh"
     [mcp_agent_mail]="https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail_rust/refs/heads/main/install.sh"
     [ubs]="https://raw.githubusercontent.com/Dicklesworthstone/ultimate_bug_scanner/main/install.sh"
@@ -602,12 +603,59 @@ acfs_offline_pack_path_is_safe() {
     local rel_path="${1:-}"
 
     case "$rel_path" in
-        ""|.|..|/*|../*|*/..|*"/../"*|*"/./"*|*"/")
+        ""|.|..|/*|./*|../*|*/..|*"/../"*|*"/./"*|*"/")
             return 1
             ;;
     esac
 
     return 0
+}
+
+acfs_offline_pack_resolve_existing_path() {
+    local path="${1:-}"
+    local realpath_bin=""
+    local dir=""
+    local base=""
+
+    [[ -n "$path" && -e "$path" ]] || return 1
+
+    realpath_bin="$(acfs_security_system_binary_path realpath 2>/dev/null || true)"
+    if [[ -n "$realpath_bin" ]]; then
+        "$realpath_bin" -e -- "$path"
+        return $?
+    fi
+
+    if [[ -d "$path" ]]; then
+        (cd "$path" 2>/dev/null && pwd -P)
+        return $?
+    fi
+
+    case "$path" in
+        */*)
+            dir="${path%/*}"
+            base="${path##*/}"
+            ;;
+        *)
+            dir="."
+            base="$path"
+            ;;
+    esac
+
+    (cd "$dir" 2>/dev/null && printf '%s/%s\n' "$(pwd -P)" "$base")
+}
+
+acfs_offline_pack_artifact_is_contained() {
+    local pack_root="${1:-}"
+    local artifact_file="${2:-}"
+    local pack_root_real=""
+    local artifact_real=""
+
+    pack_root_real="$(acfs_offline_pack_resolve_existing_path "$pack_root" 2>/dev/null || true)"
+    artifact_real="$(acfs_offline_pack_resolve_existing_path "$artifact_file" 2>/dev/null || true)"
+
+    [[ -n "$pack_root_real" && "$pack_root_real" != "/" ]] || return 1
+    [[ -n "$artifact_real" ]] || return 1
+    [[ "$artifact_real" == "$pack_root_real/"* ]]
 }
 
 acfs_offline_pack_validate_manifest() {
@@ -792,7 +840,15 @@ acfs_offline_pack_verify_artifact() {
     fi
 
     artifact_file="$pack_root/$rel_path"
-    if [[ ! -f "$artifact_file" || -L "$artifact_file" ]]; then
+    if [[ ! -f "$artifact_file" ]]; then
+        acfs_offline_pack_error "pack_unbundled_required_module" "$name" "artifact file is missing or unsafe: $rel_path"
+        return 1
+    fi
+    if ! acfs_offline_pack_artifact_is_contained "$pack_root" "$artifact_file"; then
+        acfs_offline_pack_error "pack_path_escape" "$name" "artifact path resolves outside the pack: $rel_path"
+        return 1
+    fi
+    if [[ -L "$artifact_file" ]]; then
         acfs_offline_pack_error "pack_unbundled_required_module" "$name" "artifact file is missing or unsafe: $rel_path"
         return 1
     fi
@@ -1169,6 +1225,7 @@ print_current_checksums() {
         mapfile -t installer_names < <(printf '%s\n' "${installer_names[@]}" | acfs_security_sort_lines)
     fi
 
+    local wrote_entry=false
     for name in "${installer_names[@]}"; do
         local url="${KNOWN_INSTALLERS[$name]}"
         local sha256
@@ -1188,11 +1245,14 @@ print_current_checksums() {
         echo "done" >&2
 
         {
+            if [[ "$wrote_entry" == "true" ]]; then
+                echo ""
+            fi
             echo "  $name:"
             echo "    url: \"$url\""
             echo "    sha256: \"$sha256\""
-            echo ""
         } >>"$tmp_output"
+        wrote_entry=true
     done
 
     if [[ "$had_failure" == "true" ]]; then

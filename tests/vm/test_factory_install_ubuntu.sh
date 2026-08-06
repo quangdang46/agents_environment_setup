@@ -186,7 +186,7 @@ if [[ -n "$PUBLIC_KEY_FILE" && ! -r "$PUBLIC_KEY_FILE" ]]; then
 fi
 
 if [[ -z "$INSTALL_URL" ]]; then
-    INSTALL_URL="https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/${REF}/install.sh?acfs_factory_e2e=${TIMESTAMP}"
+    INSTALL_URL="https://raw.githubusercontent.com/quangdang46/agents_environment_setup/${REF}/install.sh?acfs_factory_e2e=${TIMESTAMP}"
 fi
 
 if [[ -z "$ARTIFACTS_DIR" ]]; then

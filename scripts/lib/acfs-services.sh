@@ -23,13 +23,31 @@ set -euo pipefail
 
 # --- Constants ---
 readonly ACFS_SVC_SESSION="acfs-svc"
-readonly ACFS_SVC_VERSION="1.0.0"
+readonly ACFS_SVC_VERSION="1.1.0"
+
+# --- HTTP service endpoints ---
+# Both `am serve-http` and `cm serve` default to 127.0.0.1:8765, so launching
+# them together makes the second one fail to bind ("address already in use").
+# Assign explicit, distinct ports and expose env overrides so they never collide.
+#   cm:          keeps the upstream default port 8765 (its documented default).
+#   agent-mail:  moved to 8766 to avoid the clash.
+readonly ACFS_DEFAULT_AGENT_MAIL_HOST="127.0.0.1"
+readonly ACFS_DEFAULT_AGENT_MAIL_PORT="8766"
+readonly ACFS_DEFAULT_CM_HOST="127.0.0.1"
+readonly ACFS_DEFAULT_CM_PORT="8765"
+
+ACFS_AGENT_MAIL_HOST="${ACFS_AGENT_MAIL_HOST:-$ACFS_DEFAULT_AGENT_MAIL_HOST}"
+ACFS_AGENT_MAIL_PORT="${ACFS_AGENT_MAIL_PORT:-$ACFS_DEFAULT_AGENT_MAIL_PORT}"
+ACFS_CM_HOST="${ACFS_CM_HOST:-$ACFS_DEFAULT_CM_HOST}"
+ACFS_CM_PORT="${ACFS_CM_PORT:-$ACFS_DEFAULT_CM_PORT}"
 
 # Service definitions: name|command|description
 # Order matters: index 0 = first pane, 1 = second pane, etc.
+# The HTTP service commands include explicit --host/--port resolved from the
+# env-overridable values above; cass is the indexer (no listening port).
 readonly -a ACFS_SERVICES=(
-    "agent-mail|am serve-http --no-tui|Agent Mail HTTP server"
-    "cm|cm serve|CASS Memory server"
+    "agent-mail|am serve-http --no-tui --host $ACFS_AGENT_MAIL_HOST --port $ACFS_AGENT_MAIL_PORT|Agent Mail HTTP server"
+    "cm|cm serve --host $ACFS_CM_HOST --port $ACFS_CM_PORT|CASS Memory server"
     "cass|cass index --watch|CASS indexer (watch mode)"
 )
 
@@ -62,6 +80,62 @@ _err()   { printf '%s[acfs-services]%s %s%s%s\n' "$_C_CYAN" "$_C_RESET" "$_C_RED
 
 _session_exists() {
     tmux has-session -t "$ACFS_SVC_SESSION" 2>/dev/null
+}
+
+# Validate a value is a usable TCP port (1-65535).
+_is_valid_port() {
+    local p="$1"
+    [[ "$p" =~ ^[0-9]+$ ]] && (( p >= 1 && p <= 65535 ))
+}
+
+# Return 0 if something is already listening on host:port, 1 if free,
+# 2 if we have no tool to check (treated as "free" by callers).
+_port_is_listening() {
+    local host="$1" port="$2"
+    if command -v ss &>/dev/null; then
+        ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}\$"
+        return $?
+    elif command -v lsof &>/dev/null; then
+        lsof -iTCP:"$port" -sTCP:LISTEN -n -P &>/dev/null
+        return $?
+    fi
+    return 2
+}
+
+# Validate the resolved HTTP endpoints before we create the tmux session.
+# Fails fast (non-zero) with an actionable message on bad/duplicate/occupied
+# ports so we never leave a dead pane behind a "started" report.
+_validate_http_endpoints() {
+    local rc=0
+    local p
+    for p in "ACFS_AGENT_MAIL_PORT:$ACFS_AGENT_MAIL_PORT" "ACFS_CM_PORT:$ACFS_CM_PORT"; do
+        local name="${p%%:*}" val="${p#*:}"
+        if ! _is_valid_port "$val"; then
+            _err "$name='$val' is not a valid TCP port (1-65535)."
+            rc=1
+        fi
+    done
+    (( rc )) && return 1
+
+    if [[ "$ACFS_AGENT_MAIL_HOST:$ACFS_AGENT_MAIL_PORT" == "$ACFS_CM_HOST:$ACFS_CM_PORT" ]]; then
+        _err "Agent Mail and CM resolve to the same endpoint ($ACFS_AGENT_MAIL_HOST:$ACFS_AGENT_MAIL_PORT)."
+        _err "They cannot share a port. Override with ACFS_AGENT_MAIL_PORT / ACFS_CM_PORT."
+        return 1
+    fi
+
+    # During --dry-run we only validate config, not live socket state.
+    $_DRY_RUN && return 0
+
+    # Warn-and-fail if a port is already taken (e.g. a stray earlier instance).
+    if _port_is_listening "$ACFS_AGENT_MAIL_HOST" "$ACFS_AGENT_MAIL_PORT"; then
+        _err "Port $ACFS_AGENT_MAIL_PORT (Agent Mail) is already in use. Stop the other process or set ACFS_AGENT_MAIL_PORT."
+        rc=1
+    fi
+    if _port_is_listening "$ACFS_CM_HOST" "$ACFS_CM_PORT"; then
+        _err "Port $ACFS_CM_PORT (CM) is already in use. Stop the other process or set ACFS_CM_PORT."
+        rc=1
+    fi
+    return $rc
 }
 
 _require_tmux() {
@@ -116,8 +190,13 @@ cmd_start() {
         return 1
     fi
 
+    # Fail fast on bad/duplicate/occupied HTTP ports before touching tmux.
+    _validate_http_endpoints || return 1
+
     if $_DRY_RUN; then
         _info "[dry-run] Would create tmux session '$ACFS_SVC_SESSION' with ${#ACFS_SERVICES[@]} panes:"
+        _info "  Agent Mail -> $ACFS_AGENT_MAIL_HOST:$ACFS_AGENT_MAIL_PORT"
+        _info "  CM         -> $ACFS_CM_HOST:$ACFS_CM_PORT"
         for i in "${!ACFS_SERVICES[@]}"; do
             local svc="${ACFS_SERVICES[$i]}"
             _info "  Pane $i ($(_svc_name "$svc")): $(_svc_cmd "$svc")"
@@ -348,9 +427,16 @@ Commands:
   logs [service]  Attach to tmux session (optionally select a pane)
 
 Services managed:
-  agent-mail      am serve-http (Agent Mail HTTP/MCP server)
-  cm              cm serve (CASS Memory server)
+  agent-mail      am serve-http (Agent Mail HTTP/MCP server)  [default 127.0.0.1:8766]
+  cm              cm serve (CASS Memory server)               [default 127.0.0.1:8765]
   cass            cass index --watch (CASS indexer, watch mode)
+
+Agent Mail and CM both default to port 8765 upstream; ACFS assigns them
+distinct ports so they don't collide. Override the defaults with:
+  ACFS_AGENT_MAIL_HOST   (default 127.0.0.1)
+  ACFS_AGENT_MAIL_PORT   (default 8766)
+  ACFS_CM_HOST           (default 127.0.0.1)
+  ACFS_CM_PORT           (default 8765)
 
 Options:
   --dry-run       Show what would be done without doing it

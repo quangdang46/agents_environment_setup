@@ -974,7 +974,7 @@ check_network_installers() {
         )
     fi
 
-    urls+=("https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/README.md:ACFS raw content")
+    urls+=("https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/README.md:ACFS raw content")
 
     local all_ok=true
     local failed_urls=()

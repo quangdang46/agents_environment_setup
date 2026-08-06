@@ -201,7 +201,7 @@ NTM remains the launcher. Inventory can suggest labels and per-host agent counts
 that feed an operator command such as:
 
 ```bash
-ntm spawn acfs-main --label swarm-25 --cc=10 --cod=10 --gmi=5 --assign --stagger-mode=smart
+ntm spawn acfs-main --label swarm-25 --cc=10 --cod=10 --agy=5 --assign --stagger-mode=smart
 ```
 
 The inventory command must not launch NTM sessions.

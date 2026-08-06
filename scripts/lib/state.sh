@@ -418,14 +418,14 @@ state_init() {
             local sudo_bin=""
             sudo_bin="$(state_system_binary_path sudo 2>/dev/null || true)"
             if [[ $EUID -ne 0 && -n "$sudo_bin" ]]; then
-                "$sudo_bin" "$mkdir_bin" -p "$state_dir" || return 1
+                "$sudo_bin" -n "$mkdir_bin" -p "$state_dir" || return 1
                 # Fix ownership so current user can write to it
                 local chown_bin=""
                 local id_bin=""
                 chown_bin="$(state_system_binary_path chown 2>/dev/null || true)"
                 id_bin="$(state_system_binary_path id 2>/dev/null || true)"
                 if [[ -n "$chown_bin" && -n "$id_bin" ]]; then
-                    "$sudo_bin" "$chown_bin" "$("$id_bin" -u):$("$id_bin" -g)" "$state_dir" 2>/dev/null || true
+                    "$sudo_bin" -n "$chown_bin" "$("$id_bin" -u):$("$id_bin" -g)" "$state_dir" 2>/dev/null || true
                 fi
             else
                 return 1
@@ -928,8 +928,19 @@ state_get() {
         # Basic fallback for simple keys (no nested paths)
         # This is a simplified parser - prefer having jq installed
         # Uses sed instead of grep -oP for POSIX compatibility (macOS, BSD)
+        # The state file is jq-pretty-printed (arrays span lines), so flatten
+        # before matching. Array values are returned as one-line JSON with the
+        # element quotes intact so callers can test membership against the
+        # exact quoted element; scalar values are returned unquoted.
         local simple_key="${key#.}"
-        echo "$state" | sed -n "s/.*\"${simple_key}\"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p" | tr -d '"' | head -1
+        local flat array_value
+        flat="$(printf '%s' "$state" | tr '\n\t' '  ')"
+        array_value="$(printf '%s' "$flat" | sed -n "s/.*\"${simple_key}\"[[:space:]]*:[[:space:]]*\(\[[^]]*\]\).*/\1/p")"
+        if [[ -n "$array_value" ]]; then
+            printf '%s\n' "$array_value"
+        else
+            printf '%s' "$flat" | sed -n "s/.*\"${simple_key}\"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p" | tr -d '"' | head -1
+        fi
     fi
 }
 

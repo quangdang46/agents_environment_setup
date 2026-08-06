@@ -1003,7 +1003,7 @@ main() {
             echo "Next steps:"
             echo "  1. Log out and back in (or run: source ~/.zshrc)"
             echo "  2. Run: onboard"
-            echo "  3. Start coding with: cc, cod, or gmi"
+            echo "  3. Start coding with: cc, cod, or agy"
         elif [[ "$status" == "failed" ]]; then
             local failed_phase failed_step resume_hint
             failed_phase=$(get_failed_phase)

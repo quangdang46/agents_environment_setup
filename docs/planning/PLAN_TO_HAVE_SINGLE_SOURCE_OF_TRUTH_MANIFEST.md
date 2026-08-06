@@ -398,7 +398,7 @@ source "$ACFS_LIB_DIR/security.sh"
 | Variable | Required | Description | Example |
 |----------|----------|-------------|---------|
 | `ACFS_REPO_OWNER` | Yes | GitHub org/user | `Dicklesworthstone` |
-| `ACFS_REPO_NAME` | Yes | Repository name | `agentic_coding_flywheel_setup` |
+| `ACFS_REPO_NAME` | Yes | Repository name | `agents_environment_setup` |
 | `ACFS_REF` | Yes | Branch, tag, or SHA | `main`, `v1.2.3`, `abc1234` |
 | `ACFS_BOOTSTRAP_DIR` | No | Override temp dir | `/tmp/acfs-bootstrap` |
 | `ACFS_KEEP_BOOTSTRAP` | No | Keep extracted tree | `1` (for debugging) |
@@ -937,7 +937,7 @@ SUDO="sudo"                       # sudo command (empty if root)
 
 # Repo identity (used for curl|bash bootstrap)
 ACFS_REPO_OWNER="Dicklesworthstone"
-ACFS_REPO_NAME="agentic_coding_flywheel_setup"
+ACFS_REPO_NAME="agents_environment_setup"
 ACFS_REF="main"                   # branch | tag | sha
 
 # Remote source location (optional if archive bootstrap is used)

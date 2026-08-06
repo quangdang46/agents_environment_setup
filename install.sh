@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090,SC1091
 # ============================================================
-# ACFS - Agentic Coding Flywheel Setup
+# ACFS - Agents Environment Setup
 # Main installer script
 #
 # Usage:
@@ -619,7 +619,7 @@ print_banner() {
     echo -e "\r\033[K" >&2
 
     # Build version line with proper padding (63 chars inner width)
-    local version_text="Agentic Coding Flywheel Setup v${ACFS_VERSION}"
+    local version_text="Agents Environment Setup v${ACFS_VERSION}"
     local padding=$(( (63 - ${#version_text}) / 2 ))
     local version_line
     version_line=$(printf "║%*s%s%*s║" "$padding" "" "$version_text" "$((63 - padding - ${#version_text}))" "")

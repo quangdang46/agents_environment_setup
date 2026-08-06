@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 # ============================================================
 # AUTO-GENERATED FROM acfs.manifest.yaml - DO NOT EDIT
 # Regenerate: bun run generate (from packages/manifest)
@@ -254,7 +254,68 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
 
     export TARGET_USER TARGET_HOME MODE ACFS_BIN_DIR
     export ACFS_BOOTSTRAP_DIR ACFS_LIB_DIR ACFS_GENERATED_DIR ACFS_ASSETS_DIR ACFS_CHECKSUMS_YAML ACFS_MANIFEST_YAML
+
+    # Defensive ownership repair (#306): when running as root, make sure the
+    # target user owns their XDG bin dir before the user-space language
+    # installers (uv/rust/bun) write into it. uv installs via an atomic
+    # mktemp+rename inside ~/.local/bin, so a root-owned ~/.local/bin makes its
+    # mktemp fail with "Permission denied (os error 13)" once the installer is
+    # re-exec'd as the (non-root) target user. The ownership repair is
+    # deliberately non-recursive: only the two directories themselves are
+    # touched, never their contents.
+    if [[ $EUID -eq 0 ]] && [[ -n "${TARGET_USER:-}" ]] && [[ "${TARGET_USER}" != "root" ]]; then
+        # SECURITY: never chown through a symlink. If an untrusted target user
+        # pre-staged ~/.local or ~/.local/bin as a symlink (e.g. -> /etc) before
+        # the root install, a chown that follows it would transfer ownership of
+        # the link target to them (local privilege escalation). chown -h /
+        # nofollow is not portable, so refuse the repair entirely when either
+        # path already exists as a symlink.
+        if [[ -L "$TARGET_HOME/.local" ]] || [[ -L "$TARGET_HOME/.local/bin" ]]; then
+            log_warn "Skipping ~/.local ownership repair: $TARGET_HOME/.local or .local/bin is a symlink (refusing to chown through it)"
+        else
+            _acfs_repair_mkdir="$(_acfs_system_binary_path mkdir 2>/dev/null || true)"
+            _acfs_repair_chown="$(_acfs_system_binary_path chown 2>/dev/null || true)"
+            if [[ -n "$_acfs_repair_mkdir" ]] && [[ -n "$_acfs_repair_chown" ]]; then
+                if "$_acfs_repair_mkdir" -p "$TARGET_HOME/.local/bin" 2>/dev/null; then
+                    "$_acfs_repair_chown" "${TARGET_USER}" "$TARGET_HOME/.local" "$TARGET_HOME/.local/bin" 2>/dev/null || true
+                fi
+            fi
+            unset _acfs_repair_mkdir _acfs_repair_chown
+        fi
+    fi
 fi
+
+acfs_generated_ensure_selection() {
+    if [[ "${ACFS_MANIFEST_INDEX_LOADED:-false}" != "true" ]]; then
+        local manifest_index="${ACFS_GENERATED_DIR:-$ACFS_GENERATED_SCRIPT_DIR}/manifest_index.sh"
+        if [[ ! -f "$manifest_index" ]]; then
+            log_error "Manifest index not found: $manifest_index"
+            return 1
+        fi
+        source "$manifest_index"
+        ACFS_MANIFEST_INDEX_LOADED=true
+        export ACFS_MANIFEST_INDEX_LOADED
+    fi
+
+    if [[ "${ACFS_GENERATED_SELECTION_READY:-false}" != "true" ]]; then
+        if ! declare -f acfs_resolve_selection >/dev/null 2>&1; then
+            log_error "Install selection helper not loaded"
+            return 1
+        fi
+        acfs_resolve_selection || return 1
+        ACFS_GENERATED_SELECTION_READY=true
+        export ACFS_GENERATED_SELECTION_READY
+    fi
+
+    return 0
+}
+
+acfs_generated_should_run_module() {
+    local module_id="${1:-}"
+    [[ -n "$module_id" ]] || return 1
+    acfs_generated_ensure_selection || return 1
+    should_run_module "$module_id"
+}
 
 # Source contract validation
 if [[ -f "$ACFS_GENERATED_SCRIPT_DIR/../lib/contract.sh" ]]; then
@@ -295,6 +356,11 @@ acfs_security_init() {
 install_tools_lazygit() {
     local module_id="tools.lazygit"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping tools.lazygit (not selected)"
+        return 0
+    fi
     log_step "Installing tools.lazygit"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -350,6 +416,11 @@ INSTALL_TOOLS_LAZYGIT
 install_tools_lazydocker() {
     local module_id="tools.lazydocker"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping tools.lazydocker (not selected)"
+        return 0
+    fi
     log_step "Installing tools.lazydocker"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -397,10 +468,15 @@ INSTALL_TOOLS_LAZYDOCKER
     log_success "tools.lazydocker installed"
 }
 
-# Atuin shell history (Ctrl-R superpowers)
+# Atuin CLI with guarded agent-safe shim
 install_tools_atuin() {
     local module_id="tools.atuin"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping tools.atuin (not selected)"
+        return 0
+    fi
     log_step "Installing tools.atuin"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -427,7 +503,7 @@ install_tools_atuin() {
                     fi
 
                     if [[ -n "$url" ]] && [[ -n "$expected_sha256" ]]; then
-                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'sh' '-s' '--' '--non-interactive'; then
+                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'env' 'ATUIN_NO_MODIFY_PATH=1' 'sh' '-s'; then
                             install_success=true
                         else
                             log_error "tools.atuin: verify_checksum or installer execution failed"
@@ -459,6 +535,93 @@ install_tools_atuin() {
             return 1
         fi
     fi
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: install Atuin guard wrapper (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_TOOLS_ATUIN'
+# acfs-summary: install Atuin guard wrapper
+real_bin="$HOME/.atuin/bin/atuin"
+primary_dir="${ACFS_BIN_DIR:-$HOME/.local/bin}"
+fallback_dir="$HOME/.local/bin"
+
+write_atuin_guard_wrapper() {
+  local wrapper_path="${1:-}"
+  local real_bin_path="${2:-}"
+  local real_bin_q=""
+  local backup_path=""
+
+  [[ -n "$wrapper_path" && -n "$real_bin_path" && -x "$real_bin_path" ]] || return 1
+  printf -v real_bin_q "%q" "$real_bin_path"
+
+  if [[ -e "$wrapper_path" || -L "$wrapper_path" ]]; then
+    if [[ ! -L "$wrapper_path" ]] && grep -Fq "agent hook integration disabled by ACFS" "$wrapper_path" 2>/dev/null; then
+      :
+    else
+      backup_path="${wrapper_path}.acfs-backup.$(date +%s).$$"
+      mv "$wrapper_path" "$backup_path" 2>/dev/null || return 1
+    fi
+  fi
+
+  {
+    cat <<\ATUIN_ACFS_WRAPPER_HEAD
+#!/usr/bin/env bash
+set -euo pipefail
+
+real_atuin_bin="${ATUIN_REAL_BIN:-}"
+if [[ -z "$real_atuin_bin" ]]; then
+ATUIN_ACFS_WRAPPER_HEAD
+    printf "    real_atuin_bin=%s\n" "$real_bin_q"
+    cat <<\ATUIN_ACFS_WRAPPER_TAIL
+fi
+
+if [[ ! -x "$real_atuin_bin" ]]; then
+    echo "atuin wrapper: real atuin binary not found at $real_atuin_bin" >&2
+    exit 127
+fi
+
+if [[ "${1:-}" == "hook" ]]; then
+    # atuin wrapper: agent hook integration disabled by ACFS
+    # Drain retained hook payloads so stale agent processes do not see EPIPE.
+    cat >/dev/null || true
+    exit 0
+fi
+
+_acfs_atuin_agent_context() {
+    local parent_comm=""
+
+    if [[ -n "${CODEX_CI:-}" || -n "${CODEX_THREAD_ID:-}" || -n "${CLAUDE_PROJECT_DIR:-}" || -n "${AGENT_NAME:-}" ]]; then
+        return 0
+    fi
+
+    parent_comm="$(ps -o comm= -p "${PPID:-0}" 2>/dev/null || true)"
+    case "$parent_comm" in
+        claude|codex|cod|cc|agy|antigravity|agy-locked|gmi|gemini|bun|node) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if [[ "${1:-}" == "history" && ( "${2:-}" == "start" || "${2:-}" == "end" ) ]] && _acfs_atuin_agent_context; then
+    exit 0
+fi
+
+exec "$real_atuin_bin" "$@"
+ATUIN_ACFS_WRAPPER_TAIL
+  } > "$wrapper_path"
+  chmod 0755 "$wrapper_path"
+}
+
+for dir in "$primary_dir" "$fallback_dir"; do
+  [[ -n "$dir" ]] || continue
+  mkdir -p "$dir"
+  write_atuin_guard_wrapper "$dir/atuin" "$real_bin"
+  [[ "$fallback_dir" != "$primary_dir" ]] || break
+done
+INSTALL_TOOLS_ATUIN
+        then
+            log_error "tools.atuin: install command failed: install Atuin guard wrapper"
+            return 1
+        fi
+    fi
 
     # Verify
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -480,6 +643,11 @@ INSTALL_TOOLS_ATUIN
 install_tools_zoxide() {
     local module_id="tools.zoxide"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping tools.zoxide (not selected)"
+        return 0
+    fi
     log_step "Installing tools.zoxide"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -559,6 +727,11 @@ INSTALL_TOOLS_ZOXIDE
 install_tools_ast_grep() {
     local module_id="tools.ast_grep"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping tools.ast_grep (not selected)"
+        return 0
+    fi
     log_step "Installing tools.ast_grep"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -593,6 +766,11 @@ INSTALL_TOOLS_AST_GREP
 install_tools_vault() {
     local module_id="tools.vault"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping tools.vault (not selected)"
+        return 0
+    fi
     log_step "Installing tools.vault"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -656,6 +834,11 @@ INSTALL_TOOLS_VAULT
 install_utils_giil() {
     local module_id="utils.giil"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.giil (not selected)"
+        return 0
+    fi
     log_step "Installing utils.giil"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -745,6 +928,11 @@ INSTALL_UTILS_GIIL
 install_utils_csctf() {
     local module_id="utils.csctf"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.csctf (not selected)"
+        return 0
+    fi
     log_step "Installing utils.csctf"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -834,6 +1022,11 @@ INSTALL_UTILS_CSCTF
 install_utils_xf() {
     local module_id="utils.xf"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.xf (not selected)"
+        return 0
+    fi
     log_step "Installing utils.xf"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -923,6 +1116,11 @@ INSTALL_UTILS_XF
 install_utils_toon_rust() {
     local module_id="utils.toon_rust"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.toon_rust (not selected)"
+        return 0
+    fi
     log_step "Installing utils.toon_rust"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1012,6 +1210,11 @@ INSTALL_UTILS_TOON_RUST
 install_utils_rano() {
     local module_id="utils.rano"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.rano (not selected)"
+        return 0
+    fi
     log_step "Installing utils.rano"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1101,6 +1304,11 @@ INSTALL_UTILS_RANO
 install_utils_mdwb() {
     local module_id="utils.mdwb"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.mdwb (not selected)"
+        return 0
+    fi
     log_step "Installing utils.mdwb"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1190,6 +1398,11 @@ INSTALL_UTILS_MDWB
 install_utils_s2p() {
     local module_id="utils.s2p"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.s2p (not selected)"
+        return 0
+    fi
     log_step "Installing utils.s2p"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1256,15 +1469,15 @@ install_utils_s2p() {
 
     # Verify
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
-        log_info "dry-run: verify: s2p --help || s2p --version (target_user)"
+        log_info "dry-run: verify: s2p --help (target_user)"
     else
         if ! run_as_target_shell <<'INSTALL_UTILS_S2P'
-s2p --help || s2p --version
+s2p --help
 INSTALL_UTILS_S2P
         then
-            log_warn "utils.s2p: verify failed: s2p --help || s2p --version"
+            log_warn "utils.s2p: verify failed: s2p --help"
             if type -t record_skipped_tool >/dev/null 2>&1; then
-              record_skipped_tool "utils.s2p" "verify failed: s2p --help || s2p --version"
+              record_skipped_tool "utils.s2p" "verify failed: s2p --help"
             elif type -t state_tool_skip >/dev/null 2>&1; then
               state_tool_skip "utils.s2p"
             fi
@@ -1279,6 +1492,11 @@ INSTALL_UTILS_S2P
 install_utils_rust_proxy() {
     local module_id="utils.rust_proxy"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.rust_proxy (not selected)"
+        return 0
+    fi
     log_step "Installing utils.rust_proxy"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1329,6 +1547,11 @@ INSTALL_UTILS_RUST_PROXY
 install_utils_aadc() {
     local module_id="utils.aadc"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.aadc (not selected)"
+        return 0
+    fi
     log_step "Installing utils.aadc"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1379,6 +1602,11 @@ INSTALL_UTILS_AADC
 install_utils_caut() {
     local module_id="utils.caut"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.caut (not selected)"
+        return 0
+    fi
     log_step "Installing utils.caut"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1429,6 +1657,11 @@ INSTALL_UTILS_CAUT
 install_utils_openproxy() {
     local module_id="utils.openproxy"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.openproxy (not selected)"
+        return 0
+    fi
     log_step "Installing utils.openproxy"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
@@ -1473,6 +1706,11 @@ INSTALL_UTILS_OPENPROXY
 install_utils_fast_file_search() {
     local module_id="utils.fast_file_search"
     acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.fast_file_search (not selected)"
+        return 0
+    fi
     log_step "Installing utils.fast_file_search"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then

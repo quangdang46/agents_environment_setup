@@ -8,13 +8,13 @@ Internal maintainer reference for the manifest-driven installer system.
 
 ## Overview
 
-The ACFS manifest (`acfs.manifest.yaml`) is the single source of truth for all tools installed by the Agentic Coding Flywheel Setup. This document describes the schema vNext fields, validation rules, and maintainer workflows.
+The ACFS manifest (`acfs.manifest.yaml`) is the single source of truth for all tools installed by the Agents Environment Setup. This document describes the schema vNext fields, validation rules, and maintainer workflows.
 
 ## Manifest Structure
 
 ```yaml
 version: 2                # Schema version
-name: agentic_coding_flywheel_setup
+name: agents_environment_setup
 id: acfs                  # Short identifier (lowercase alphanumeric + underscores)
 
 defaults:
@@ -234,14 +234,14 @@ Dependency closure adds required prerequisites such as `base.system`, `users.ubu
 Default vibe install:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" \
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" \
   | bash -s -- --yes --mode vibe --print-plan
 ```
 
 Safe mode with the same default module set:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/main/install.sh" \
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh" \
   | bash -s -- --yes --mode safe --print-plan
 ```
 
@@ -660,7 +660,7 @@ When adding or modifying modulesâ€”especially ones that run upstream installersâ
      ```bash
      # Run against a tag/sha or branch ref
      curl -fsSL \
-       "https://raw.githubusercontent.com/Dicklesworthstone/agentic_coding_flywheel_setup/<ref>/install.sh" \
+       "https://raw.githubusercontent.com/quangdang46/agents_environment_setup/<ref>/install.sh" \
        | bash -s -- --print-plan --ref <ref>
      ```
    - The bootstrap flow validates script syntax and ensures `scripts/generated/manifest_index.sh`

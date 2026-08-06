@@ -19,7 +19,7 @@ Here's what's installed on your VPS:
 - **Three coding agents** ready to help you build:
   - Claude Code (`cc`)
   - Codex CLI (`cod`)
-  - Gemini CLI (`gmi`)
+  - Antigravity CLI (`agy`)
 - **The Dicklesworthstone stack** for agent coordination and memory
 
 ---
