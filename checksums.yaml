@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-06T01:38:43+00:00
+# checksums.yaml - Auto-generated 2026-08-07T16:44:16+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -74,17 +74,13 @@ installers:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/misc_coding_agent_tips_and_scripts/main/fix-gemini-cli-ebadf-crash.sh"
     sha256: "079fafa00535d2d28fa665716bd642a9ff699eedf4c05b49c9c99dca401d2396"
 
-  hashline:
-    url: "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh"
-    sha256: "8327e3ba44acb100c99842155450fa68cfe12cdc4f1b5cf6569d3bc91a02d96c"
-
-  rtco:
-    url: "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh"
-    sha256: "318933ed8f11ad61c66ca14c559986e5236c70cb4441155d84c2c885b589ddf9"
-
   giil:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/giil/main/install.sh"
     sha256: "7b9f886b42c593288978983490363c2e3d49ef908903fbd4bd9b25a7187fe63a"
+
+  hashline:
+    url: "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh"
+    sha256: "8327e3ba44acb100c99842155450fa68cfe12cdc4f1b5cf6569d3bc91a02d96c"
 
   jfp:
     url: "https://jeffreysprompts.com/install-cli.sh"
@@ -134,6 +130,10 @@ installers:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/remote_compilation_helper/main/install.sh"
     sha256: "2ee1335f2638dfe7b4379d5c09da79eb0e95aca3f4b941a3698baa97920cf6ce"
 
+  rtco:
+    url: "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh"
+    sha256: "318933ed8f11ad61c66ca14c559986e5236c70cb4441155d84c2c885b589ddf9"
+
   ru:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/repo_updater/main/install.sh"
     sha256: "4af6f6fc31979c775553fdb50da73f34395762eca8c769dea9ab6de77535dc94"
@@ -168,7 +168,7 @@ installers:
 
   uv:
     url: "https://astral.sh/uv/install.sh"
-    sha256: "58bee0cf8814385d5ffc2324e06d63db29de35ce8e740b9cadd2529bff929f50"
+    sha256: "a7e3924ea1cd06bf1518c577d635c624ae2e2db030e0fc8ff8cf426224384e17"
 
   xf:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/xf/main/install.sh"
