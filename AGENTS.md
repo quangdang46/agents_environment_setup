@@ -744,7 +744,7 @@ Returns structured results with file paths, line ranges, and extracted code snip
 
 ## Beads Workflow Integration
 
-This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`) for issue tracking. Issues are stored in `.beads/` and tracked in git.
+This project uses [beads_rust](https://github.com/quangdang46/beads_rust) (`br`) for issue tracking. Issues are stored in `.beads/` and tracked in git.
 
 **Important:** `br` is non-invasive—it NEVER executes git commands. After `br sync --flush-only`, you must manually run `git add .beads/ && git commit`.
 

@@ -247,7 +247,7 @@ test_fetch_valid_url() {
     trap 'rm -f -- "${tmp_file:-}" 2>/dev/null || true; trap - RETURN' RETURN
 
     # Use a small, stable GitHub file
-    if github_fetch_with_backoff "https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/README.md" "$tmp_file" "test" 2>/dev/null; then
+    if github_fetch_with_backoff "https://raw.githubusercontent.com/quangdang46/beads_rust/main/README.md" "$tmp_file" "test" 2>/dev/null; then
         if [[ -s "$tmp_file" ]]; then
             return 0
         fi
@@ -283,7 +283,7 @@ test_fetch_valid_url_without_base_args() {
         unset ACFS_CURL_BASE_ARGS
     fi
 
-    if github_fetch_with_backoff "https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/README.md" "$tmp_file" "test" 2>/dev/null; then
+    if github_fetch_with_backoff "https://raw.githubusercontent.com/quangdang46/beads_rust/main/README.md" "$tmp_file" "test" 2>/dev/null; then
         if [[ -s "$tmp_file" ]]; then
             status=0
         fi

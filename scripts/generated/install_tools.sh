@@ -350,7 +350,7 @@ acfs_security_init() {
 }
 
 # Category: tools
-# Modules: 18
+# Modules: 20
 
 # Lazygit (apt or binary fallback)
 install_tools_lazygit() {
@@ -1751,6 +1751,104 @@ INSTALL_UTILS_FAST_FILE_SEARCH
     log_success "utils.fast_file_search installed"
 }
 
+# rtco (Rust Token Cost Optimizer) - LLM output filter and context management for AI coding agents
+install_utils_rtco() {
+    local module_id="utils.rtco"
+    acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.rtco (not selected)"
+        return 0
+    fi
+    log_step "Installing utils.rtco"
+
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?\$(date +%s)\" | bash (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_RTCO'
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?$(date +%s)" | bash
+INSTALL_UTILS_RTCO
+        then
+            log_warn "utils.rtco: install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?\$(date +%s)\" | bash"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.rtco" "install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?\$(date +%s)\" | bash"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.rtco"
+            fi
+            return 0
+        fi
+    fi
+
+    # Verify
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: verify: command -v rtco (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_RTCO'
+command -v rtco
+INSTALL_UTILS_RTCO
+        then
+            log_warn "utils.rtco: verify failed: command -v rtco"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.rtco" "verify failed: command -v rtco"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.rtco"
+            fi
+            return 0
+        fi
+    fi
+
+    log_success "utils.rtco installed"
+}
+
+# hashline - stable line-addressed file editing using content-hashed anchors
+install_utils_hashline() {
+    local module_id="utils.hashline"
+    acfs_require_contract "module:${module_id}" || return 1
+    acfs_generated_ensure_selection || return 1
+    if ! should_run_module "${module_id}"; then
+        log_info "Skipping utils.hashline (not selected)"
+        return 0
+    fi
+    log_step "Installing utils.hashline"
+
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: install: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?\$(date +%s)\" | bash (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_HASHLINE'
+curl -fsSL "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?$(date +%s)" | bash
+INSTALL_UTILS_HASHLINE
+        then
+            log_warn "utils.hashline: install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?\$(date +%s)\" | bash"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.hashline" "install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?\$(date +%s)\" | bash"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.hashline"
+            fi
+            return 0
+        fi
+    fi
+
+    # Verify
+    if [[ "${DRY_RUN:-false}" = "true" ]]; then
+        log_info "dry-run: verify: command -v hashline (target_user)"
+    else
+        if ! run_as_target_shell <<'INSTALL_UTILS_HASHLINE'
+command -v hashline
+INSTALL_UTILS_HASHLINE
+        then
+            log_warn "utils.hashline: verify failed: command -v hashline"
+            if type -t record_skipped_tool >/dev/null 2>&1; then
+              record_skipped_tool "utils.hashline" "verify failed: command -v hashline"
+            elif type -t state_tool_skip >/dev/null 2>&1; then
+              state_tool_skip "utils.hashline"
+            fi
+            return 0
+        fi
+    fi
+
+    log_success "utils.hashline installed"
+}
+
 # Install all tools modules
 install_tools() {
     log_section "Installing tools modules"
@@ -1772,6 +1870,8 @@ install_tools() {
     install_utils_caut
     install_utils_openproxy
     install_utils_fast_file_search
+    install_utils_rtco
+    install_utils_hashline
 }
 
 # Run if executed directly

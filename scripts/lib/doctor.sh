@@ -2512,7 +2512,7 @@ check_stack() {
         check "stack.beads_rust" "beads_rust ($version)" "pass" "installed"
     else
         check "stack.beads_rust" "beads_rust (br)" "warn" "not installed" \
-            "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh | bash"
+            "Re-run: curl -fsSL https://raw.githubusercontent.com/quangdang46/beads_rust/main/install.sh | bash"
     fi
 
     # Check meta_skill (ms)

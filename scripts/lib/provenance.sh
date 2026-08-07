@@ -93,7 +93,7 @@ provenance_find_checksums_file() {
 
 provenance_default_tools() {
     cat <<'EOF'
-br|br|--version|verified_installer|https://github.com/Dicklesworthstone/beads_rust|br|
+br|br|--version|verified_installer|https://github.com/quangdang46/beads_rust|br|
 bv|bv|--version|verified_installer|https://github.com/Dicklesworthstone/beads_viewer|bv|
 ntm|ntm|--version|verified_installer|https://github.com/Dicklesworthstone/ntm|ntm|
 rch|rch|--version|verified_installer|https://github.com/Dicklesworthstone/remote_compilation_helper|rch|

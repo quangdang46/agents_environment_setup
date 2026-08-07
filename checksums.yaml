@@ -19,8 +19,8 @@ installers:
     sha256: "df2e45cc8b8476042c0f14cae7daf61181eac80398443a217970f7307f380b96"
 
   br:
-    url: "https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh"
-    sha256: "c398f2fbfbb5facaf255fd52cca22bb3ffe90f0a6e4660e4c34213a9c39863aa"
+    url: "https://raw.githubusercontent.com/quangdang46/beads_rust/main/install.sh"
+    sha256: "3ce3839590259e91a4e60a6876307b469792a2e2565a4333667dd49449f0f69f"
 
   brenner_bot:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/brenner_bot/main/install.sh"
@@ -73,6 +73,14 @@ installers:
   gemini_patch:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/misc_coding_agent_tips_and_scripts/main/fix-gemini-cli-ebadf-crash.sh"
     sha256: "079fafa00535d2d28fa665716bd642a9ff699eedf4c05b49c9c99dca401d2396"
+
+  hashline:
+    url: "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh"
+    sha256: "8327e3ba44acb100c99842155450fa68cfe12cdc4f1b5cf6569d3bc91a02d96c"
+
+  rtco:
+    url: "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh"
+    sha256: "318933ed8f11ad61c66ca14c559986e5236c70cb4441155d84c2c885b589ddf9"
 
   giil:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/giil/main/install.sh"

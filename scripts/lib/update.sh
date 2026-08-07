@@ -3445,7 +3445,8 @@ update_sync_known_installer_urls_from_checksums() {
 update_required_checksum_tools() {
     printf '%s\n' \
         antigravity apr asb atuin br brenner_bot bun bv caam casr cass claude cm csctf dcg dsr \
-        fsfs gemini_patch giil jfp mcp_agent_mail mdwb ms ntm nvm ohmyzsh opencode \
+        fsfs gemini_patch giil hashline jfp mcp_agent_mail mdwb ms ntm nvm ohmyzsh opencode \
+        rtco \
         pcr pt rano rch ru rust s2p sbh slb srps tru ubs uv xf zoxide
 }
 

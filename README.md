@@ -4818,7 +4818,7 @@ MIT License (with OpenAI/Anthropic Rider). See [LICENSE](LICENSE) for details.
   - [ntm](https://github.com/Dicklesworthstone/ntm) - Named Tmux Manager
   - [mcp_agent_mail_rust](https://github.com/Dicklesworthstone/mcp_agent_mail_rust) - Agent coordination
   - [ultimate_bug_scanner](https://github.com/Dicklesworthstone/ultimate_bug_scanner) - Bug scanning with guardrails
-  - [beads_rust](https://github.com/Dicklesworthstone/beads_rust) - Issue tracking (br)
+  - [beads_rust](https://github.com/quangdang46/beads_rust) - Issue tracking (br)
   - [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) - Task management TUI
   - [cass](https://github.com/Dicklesworthstone/coding_agent_session_search) - Agent session search
   - [cass_memory_system](https://github.com/Dicklesworthstone/cass_memory_system) - Procedural memory (cm)
@@ -4852,6 +4852,8 @@ MIT License (with OpenAI/Anthropic Rider). See [LICENSE](LICENSE) for details.
   - [ms](https://github.com/quangdang46/ms) - Meta Skill (fork)
   - [openproxy](https://github.com/quangdang46/openproxy) - Lightweight HTTP/HTTPS proxy
   - [fast_file_search](https://github.com/quangdang46/fast_file_search) - Rapid file discovery
+  - [rust_token_cost_optimizer](https://github.com/quangdang46/rust_token_cost_optimizer) - LLM token cost optimizer (rtco)
+  - [hashline](https://github.com/quangdang46/hashline) - Stable line-addressed file editing
 
 ---
 

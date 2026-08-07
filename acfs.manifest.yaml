@@ -2101,7 +2101,7 @@ modules:
       tagline: "Local-first issue tracking for AI agents"
       icon: "list-todo"
       color: "#F59E0B"
-      href: "https://github.com/Dicklesworthstone/beads_rust"
+      href: "https://github.com/quangdang46/beads_rust"
       features:
         - "Local-first issue storage"
         - "Dependency graph tracking"
@@ -2125,7 +2125,7 @@ modules:
     verified_installer:
       tool: br
       runner: bash
-      url: "https://raw.githubusercontent.com/Dicklesworthstone/beads_rust/main/install.sh"
+      url: "https://raw.githubusercontent.com/quangdang46/beads_rust/main/install.sh"
     install: []
     verify:
       - br --version
@@ -3586,6 +3586,82 @@ modules:
   # ============================================================
   # PHASE 10: Finalization (onboard, doctor, verification)
   # ============================================================
+
+  - id: utils.rtco
+    description: rtco (Rust Token Cost Optimizer) - LLM output filter and context management for AI coding agents
+    category: tools
+    phase: 9
+    run_as: target_user
+    optional: true
+    enabled_by_default: false
+    tags: [utility, llm, optimizer]
+    web:
+      display_name: "Rust Token Cost Optimizer"
+      short_name: "RTCO"
+      tagline: "LLM output filter and context management for AI coding agents"
+      icon: "coins"
+      color: "#F59E0B"
+      href: "https://github.com/quangdang46/rust_token_cost_optimizer"
+      features:
+        - "LLM output filtering for token savings"
+        - "Context management for AI coding agents"
+        - "Easy one-line installation"
+        - "Rust-based for performance"
+      tech_stack: ["Rust"]
+      use_cases:
+        - "Optimizing token usage in AI coding sessions"
+        - "Filtering verbose LLM output"
+      language: "Rust"
+      stars: 5
+      cli_name: "rtco"
+    dependencies:
+      - base.system
+    installed_check:
+      run_as: target_user
+      command: "command -v rtco"
+    install:
+      - |
+        curl -fsSL "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?$(date +%s)" | bash
+    verify:
+      - command -v rtco
+
+  - id: utils.hashline
+    description: hashline - stable line-addressed file editing using content-hashed anchors
+    category: tools
+    phase: 9
+    run_as: target_user
+    optional: true
+    enabled_by_default: false
+    tags: [utility, editing, mcp]
+    web:
+      display_name: "Hashline"
+      short_name: "HL"
+      tagline: "Stable line-addressed file editing with content-hashed anchors"
+      icon: "hash"
+      color: "#8B5CF6"
+      href: "https://github.com/quangdang46/hashline"
+      features:
+        - "Content-hashed anchors instead of fragile string replacement"
+        - "Stable line addressing for file edits"
+        - "Works with Claude Code, Codex, and more"
+        - "Easy one-line installation"
+      tech_stack: ["Rust"]
+      use_cases:
+        - "Editing files in AI coding sessions"
+        - "Stable anchors for line-based edits"
+      language: "Rust"
+      stars: 5
+      cli_name: "hashline"
+    dependencies:
+      - base.system
+    installed_check:
+      run_as: target_user
+      command: "command -v hashline"
+    install:
+      - |
+        curl -fsSL "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?$(date +%s)" | bash
+    verify:
+      - command -v hashline
 
   - id: acfs.workspace
     description: Agent workspace with tmux session and project folder

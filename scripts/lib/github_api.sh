@@ -724,8 +724,8 @@ Commands:
 
 Examples:
   ./github_api.sh fetch https://raw.githubusercontent.com/user/repo/main/install.sh
-  ./github_api.sh api /repos/Dicklesworthstone/beads_rust/releases/latest
-  ./github_api.sh latest-release Dicklesworthstone/beads_rust
+  ./github_api.sh api /repos/quangdang46/beads_rust/releases/latest
+  ./github_api.sh latest-release quangdang46/beads_rust
 
 Environment:
   GITHUB_TOKEN       Authentication token for higher rate limits

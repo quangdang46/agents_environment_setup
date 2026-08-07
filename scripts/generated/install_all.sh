@@ -450,6 +450,8 @@ install_all() {
     install_utils_caut
     install_utils_openproxy
     install_utils_fast_file_search
+    install_utils_rtco
+    install_utils_hashline
     log_section "Category: acfs"
     install_acfs_workspace
     install_acfs_onboard
