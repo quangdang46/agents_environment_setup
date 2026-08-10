@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-07T16:44:16+00:00
+# checksums.yaml - Auto-generated 2026-08-10T09:55:07+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -132,7 +132,7 @@ installers:
 
   rtco:
     url: "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh"
-    sha256: "318933ed8f11ad61c66ca14c559986e5236c70cb4441155d84c2c885b589ddf9"
+    sha256: "6152e98c7976559d2347b3175099e346fde36f724c5696d6f6d02755b910b342"
 
   ru:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/repo_updater/main/install.sh"
