@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-13T22:01:53+00:00
+# checksums.yaml - Auto-generated 2026-08-14T06:51:16+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -40,7 +40,7 @@ installers:
 
   casr:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/cross_agent_session_resumer/main/install.sh"
-    sha256: "fc9b5199f040a757dec36484cb9dc329fe38872b957273d9e8402379304affe1"
+    sha256: "9758f9a2599610413b84e6901cf739892394c460e861bd58834bba3278a1e383"
 
   cass:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/main/install.sh"
@@ -172,7 +172,7 @@ installers:
 
   xf:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/xf/main/install.sh"
-    sha256: "84703873f65013d2ded6c311366bdf5dee5e3abe5bc92c63c9a9cbc9b633cc26"
+    sha256: "760e899895e01fc2c013a9968a3ef0e1d3ec362a05fa62e3fd4501d2808640b5"
 
   zoxide:
     url: "https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh"
