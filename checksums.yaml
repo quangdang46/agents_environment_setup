@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-17T03:25:38+00:00
+# checksums.yaml - Auto-generated 2026-08-17T19:07:03+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -100,7 +100,7 @@ installers:
 
   ntm:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/ntm/main/install.sh"
-    sha256: "46e25984f382a150f85fa65bb71d109a248d71506f53a2e64337409ac54330b6"
+    sha256: "02bb9f87cfe43e899017b5f8172744817ab98ceab2693fe6b4be768f106372f8"
 
   nvm:
     url: "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh"
