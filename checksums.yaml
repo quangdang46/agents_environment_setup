@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-24T03:36:54+00:00
+# checksums.yaml - Auto-generated 2026-08-24T06:40:37+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -68,7 +68,7 @@ installers:
 
   fsfs:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/frankensearch/refs/heads/main/install.sh"
-    sha256: "4f0270cd8c223001bf53d570e0acdf6670d561d908db162a57cfe25482d0510d"
+    sha256: "0091d0dbb399a94e1b588c3847c6e0a4a02aaeef551680384c6f3c41692cc892"
 
   gemini_patch:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/misc_coding_agent_tips_and_scripts/main/fix-gemini-cli-ebadf-crash.sh"
@@ -88,7 +88,7 @@ installers:
 
   mcp_agent_mail:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail_rust/refs/heads/main/install.sh"
-    sha256: "7d6ebb79715c6d0ced7a84f10f0ad7c1139a40278ef41364c0a7df8c61ce2d4e"
+    sha256: "d09dbcb7af75df7d72e705427206a8714b80154e2b66d641affed9548679c009"
 
   mdwb:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/markdown_web_browser/main/install.sh"
