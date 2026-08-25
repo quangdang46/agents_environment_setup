@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-25T20:01:37+00:00
+# checksums.yaml - Auto-generated 2026-08-25T20:43:47+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -16,7 +16,7 @@ installers:
 
   atuin:
     url: "https://github.com/atuinsh/atuin/releases/latest/download/atuin-installer.sh"
-    sha256: "df2e45cc8b8476042c0f14cae7daf61181eac80398443a217970f7307f380b96"
+    sha256: "e3fef338202d4070ff740e7456908067df85042e4eec328c0595551d78724e03"
 
   br:
     url: "https://raw.githubusercontent.com/quangdang46/beads_rust/main/install.sh"
@@ -88,7 +88,7 @@ installers:
 
   mcp_agent_mail:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail_rust/refs/heads/main/install.sh"
-    sha256: "904a73f79bf3326324719b2ae9a86a30236696fe612ea1d04175f413c03fa27e"
+    sha256: "55c09241161476b727636ea9f010c020411f368091142e7924d7dc744799df03"
 
   mdwb:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/markdown_web_browser/main/install.sh"
