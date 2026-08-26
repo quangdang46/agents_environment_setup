@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-08-26T02:21:09+00:00
+# checksums.yaml - Auto-generated 2026-08-26T13:13:52+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -60,7 +60,7 @@ installers:
 
   dcg:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/destructive_command_guard/main/install.sh"
-    sha256: "895fdd0f1cfd370f5a3e344c078da90d279742732b25e7e4eb20bbb9efa0b167"
+    sha256: "d45ad4dcd41b2102cf4bcef381a6d6496372dca087f444908412d9ef621ea907"
 
   dsr:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/doodlestein_self_releaser/main/install.sh"
@@ -88,7 +88,7 @@ installers:
 
   mcp_agent_mail:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/mcp_agent_mail_rust/refs/heads/main/install.sh"
-    sha256: "60e096f2a6356c1f261cb11d8043b6e6929c27abe67c50fb34039c54bb883af1"
+    sha256: "121c694dd8299dea1cab9f36d6ea2abef1da066736ea1115dcb7283dc8523b3c"
 
   mdwb:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/markdown_web_browser/main/install.sh"
