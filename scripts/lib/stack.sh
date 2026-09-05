@@ -2191,9 +2191,9 @@ verify_stack() {
 
     log_detail "Verifying Dicklesworthstone stack..."
 
-    for tool in ntm mcp_agent_mail ubs bv br cass cm caam slb ru dcg rch pt fsfs sbh casr dsr asb pcr; do
+    for tool in "${!STACK_COMMANDS[@]}"; do
         local cmd="${STACK_COMMANDS[$tool]}"
-        local name="${STACK_NAMES[$tool]}"
+        local name="${STACK_NAMES[$tool]:-$tool}"
 
         if _stack_tool_ready "$tool"; then
             log_detail "  $cmd: installed"
@@ -2219,7 +2219,7 @@ verify_stack_help() {
 
     log_detail "Testing stack tools --help..."
 
-    for tool in ntm mcp_agent_mail ubs bv br cass cm caam slb ru dcg rch pt fsfs sbh casr dsr asb pcr; do
+    for tool in "${!STACK_COMMANDS[@]}"; do
         local cmd="${STACK_COMMANDS[$tool]}"
 
         if _stack_is_installed "$tool"; then
@@ -2242,9 +2242,9 @@ verify_stack_help() {
 get_stack_versions() {
     echo "Dicklesworthstone Stack Versions:"
 
-    for tool in ntm mcp_agent_mail ubs bv br cass cm caam slb ru dcg rch pt fsfs sbh casr dsr asb pcr; do
+    for tool in "${!STACK_COMMANDS[@]}"; do
         local cmd="${STACK_COMMANDS[$tool]}"
-        local name="${STACK_NAMES[$tool]}"
+        local name="${STACK_NAMES[$tool]:-$tool}"
 
         if _stack_is_installed "$tool"; then
             local version
@@ -2252,43 +2252,6 @@ get_stack_versions() {
             echo "  $cmd: $version"
         fi
     done
-}
-
-# ============================================================
-# Main Installation Function
-# ============================================================
-
-# Install all stack tools (called by install.sh)
-install_all_stack() {
-    log_step "7/8" "Installing Dicklesworthstone stack..."
-
-    # Install in recommended order (original 10 tools)
-    install_ntm
-    install_mcp_agent_mail
-    install_ubs
-    install_bv
-    install_beads_rust
-    install_cass
-    install_cm
-    install_caam
-    install_slb
-    install_ru
-    install_dcg
-
-    # Additional tools (8 new integrations)
-    install_rch
-    install_pt
-    install_fsfs
-    install_sbh
-    install_casr
-    install_dsr
-    install_asb
-    install_pcr
-
-    # Verify installation
-    verify_stack
-
-    log_success "Dicklesworthstone stack installation complete"
 }
 
 # ============================================================

@@ -43,12 +43,6 @@ function stackModule(repo: string, tool: string, id = `stack.${tool}`): Module {
     dependencies: [],
     aliases: [],
     notes: [],
-    web: {
-      display_name: tool.toUpperCase(),
-      href: `https://github.com/Dicklesworthstone/${repo}`,
-      cli_name: tool,
-      visible: true,
-    },
   };
 }
 

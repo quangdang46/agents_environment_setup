@@ -7,8 +7,8 @@
  * surface is missing coverage.
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { parseManifestFile } from './parser.js';
@@ -81,10 +81,6 @@ const REQUIRED_README_SNIPPETS = [
   },
 ];
 
-function rel(root: string, path: string): string {
-  return relative(root, path) || '.';
-}
-
 function readText(
   root: string,
   relPath: string,
@@ -127,10 +123,9 @@ function extractManifestIndexModuleIds(content: string): Set<string> {
   return ids;
 }
 
-function lessonLinkedModules(manifest: Manifest): Module[] {
-  return manifest.modules.filter((module) =>
-    Boolean(module.web?.lesson_slug && module.web?.visible !== false)
-  );
+function lessonLinkedModules(_manifest: Manifest): Module[] {
+  // Web metadata removed — no lesson-linked modules
+  return [];
 }
 
 function expectedDoctorCheckIds(manifest: Manifest): Array<{ module: Module; id: string }> {
@@ -167,36 +162,11 @@ function addMissingModuleIds(
 }
 
 function checkOnboardingLessons(
-  root: string,
-  modules: Module[],
-  mismatches: DriftContractMismatch[]
+  _root: string,
+  _modules: Module[],
+  _mismatches: DriftContractMismatch[]
 ): void {
-  const lessonsDir = join(root, 'acfs/onboard/lessons');
-  let files: string[] = [];
-  if (!existsSync(lessonsDir)) {
-    mismatches.push({
-      code: 'MISSING_FILE',
-      file: rel(root, lessonsDir),
-      message: 'Onboarding lessons directory is missing',
-    });
-    return;
-  }
-
-  files = readdirSync(lessonsDir);
-  for (const module of modules) {
-    const slug = module.web?.lesson_slug;
-    if (!slug) continue;
-    const expectedSuffix = `_${slug}.md`;
-    if (!files.some((file) => file.endsWith(expectedSuffix))) {
-      mismatches.push({
-        code: 'ONBOARDING_LESSON_MISSING',
-        file: 'acfs/onboard/lessons',
-        moduleId: module.id,
-        expected: expectedSuffix,
-        message: `Onboarding lesson file ending in "${expectedSuffix}" is missing for "${module.id}"`,
-      });
-    }
-  }
+  // Web metadata removed — no lesson-linked modules to check
 }
 
 function checkReadmeSnippets(

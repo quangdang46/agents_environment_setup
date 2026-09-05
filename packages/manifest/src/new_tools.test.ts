@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { parseManifestFile } from './parser.js';
 import { detectDependencyCycles, validateDependencyExistence } from './validate.js';
-import type { Manifest, Module, VerifiedInstaller, ModuleWebMetadata } from './types.js';
+import type { Manifest, Module, VerifiedInstaller } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '../../..');
@@ -31,7 +31,6 @@ interface ToolExpectation {
   name: string;
   shortName: string;
   installerTool: string;
-  href: string;
   installedCheckToken?: string;
   verifyToken?: string;
 }
@@ -44,7 +43,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Remote Compilation Helper',
     shortName: 'RCH',
     installerTool: 'rch',
-    href: 'https://github.com/Dicklesworthstone/remote_compilation_helper',
+
   },
   {
     moduleId: 'stack.process_triage',
@@ -52,7 +51,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Process Triage',
     shortName: 'PT',
     installerTool: 'pt',
-    href: 'https://github.com/Dicklesworthstone/process_triage',
+
   },
   {
     moduleId: 'stack.frankensearch',
@@ -60,7 +59,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'FrankenSearch',
     shortName: 'FSFS',
     installerTool: 'fsfs',
-    href: 'https://github.com/Dicklesworthstone/frankensearch',
+
   },
   {
     moduleId: 'stack.storage_ballast_helper',
@@ -68,7 +67,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Storage Ballast Helper',
     shortName: 'SBH',
     installerTool: 'sbh',
-    href: 'https://github.com/Dicklesworthstone/storage_ballast_helper',
+
   },
   {
     moduleId: 'stack.cross_agent_session_resumer',
@@ -76,7 +75,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Cross-Agent Session Resumer',
     shortName: 'CASR',
     installerTool: 'casr',
-    href: 'https://github.com/Dicklesworthstone/cross_agent_session_resumer',
+
   },
   {
     moduleId: 'stack.doodlestein_self_releaser',
@@ -84,7 +83,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Doodlestein Self-Releaser',
     shortName: 'DSR',
     installerTool: 'dsr',
-    href: 'https://github.com/Dicklesworthstone/doodlestein_self_releaser',
+
   },
   {
     moduleId: 'stack.ru',
@@ -92,7 +91,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Repo Updater',
     shortName: 'RU',
     installerTool: 'ru',
-    href: 'https://github.com/Dicklesworthstone/repo_updater',
+
   },
   {
     moduleId: 'stack.agent_settings_backup',
@@ -100,7 +99,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Agent Settings Backup',
     shortName: 'ASB',
     installerTool: 'asb',
-    href: 'https://github.com/Dicklesworthstone/agent_settings_backup_script',
+
   },
   {
     moduleId: 'stack.pcr',
@@ -108,7 +107,7 @@ const NEW_TOOLS: ToolExpectation[] = [
     name: 'Post-Compact Reminder',
     shortName: 'PCR',
     installerTool: 'pcr',
-    href: 'https://github.com/Dicklesworthstone/post_compact_reminder',
+
     installedCheckToken: 'claude-post-compact-reminder',
     verifyToken: 'claude-post-compact-reminder',
   },
@@ -125,14 +124,6 @@ function getModuleOrThrow(manifest: Manifest, moduleId: string): Module {
     throw new Error(`Missing module ${moduleId}`);
   }
   return mod;
-}
-
-function getWebOrThrow(module: Module, moduleId: string): ModuleWebMetadata {
-  expect(module.web).toBeDefined();
-  if (!module.web) {
-    throw new Error(`Missing web metadata for ${moduleId}`);
-  }
-  return module.web;
 }
 
 function getVerifiedInstallerOrThrow(module: Module, moduleId: string): VerifiedInstaller {
@@ -204,26 +195,6 @@ describe('New tool manifest entries', () => {
           expect(command).toContain(expectedToken);
           syntaxCheckBash(command);
         }
-      });
-
-      test('has web metadata that is complete and well-formed', () => {
-        const mod = getModuleOrThrow(manifest, tool.moduleId);
-        const web = getWebOrThrow(mod, tool.moduleId);
-
-        expect(web.display_name).toBe(tool.name);
-        expect(web.short_name).toBe(tool.shortName);
-        expect(web.tagline).toBeTruthy();
-        expect(web.tagline?.length).toBeLessThan(100);
-        expect(web.icon).toMatch(/^[a-z][a-z0-9-]*$/);
-        expect(web.color).toMatch(/^#[0-9a-fA-F]{6}$/);
-        expect(web.features).toBeInstanceOf(Array);
-        expect(web.features?.length).toBeGreaterThanOrEqual(3);
-        expect(web.tech_stack).toBeInstanceOf(Array);
-        expect(web.tech_stack?.length).toBeGreaterThan(0);
-        expect(web.cli_name).toBe(tool.cli);
-        expect(web.command_example).toBeTruthy();
-        expect(web.href).toBe(tool.href);
-        expect(web.href?.startsWith('https://github.com/Dicklesworthstone/')).toBe(true);
       });
 
       test('depends only on modules that exist', () => {

@@ -82,106 +82,6 @@ const VerifiedInstallerSchema = z
       'verified_installer.fallback_url is unsupported. Verified installers fail closed; remove fallback_url.',
   });
 
-/**
- * Schema for module web metadata.
- * All fields are optional; the entire `web` block is optional on a module.
- * Constraints prevent unsafe content (no raw HTML, validated hex colors, bounded lengths).
- */
-export const ModuleWebMetadataSchema = z
-  .object({
-    display_name: z
-      .string()
-      .min(1, 'display_name cannot be empty')
-      .max(100, 'display_name must be at most 100 characters')
-      .optional(),
-    short_name: z
-      .string()
-      .min(1, 'short_name cannot be empty')
-      .max(30, 'short_name must be at most 30 characters')
-      .optional(),
-    tagline: z
-      .string()
-      .min(1, 'tagline cannot be empty')
-      .max(200, 'tagline must be at most 200 characters')
-      .optional(),
-    short_desc: z
-      .string()
-      .min(1, 'short_desc cannot be empty')
-      .max(500, 'short_desc must be at most 500 characters')
-      .optional(),
-    icon: z
-      .string()
-      .min(1, 'icon cannot be empty')
-      .max(50, 'icon must be at most 50 characters')
-      .regex(
-        /^[a-z][a-z0-9-]*$/,
-        'icon must be a lowercase kebab-case Lucide icon name (e.g., "mail", "terminal-square")'
-      )
-      .optional(),
-    // SECURITY: Restrict color to hex format to prevent CSS injection
-    color: z
-      .string()
-      .regex(
-        /^#[0-9a-fA-F]{6}$/,
-        'color must be a 6-digit hex code (e.g., "#3B82F6")'
-      )
-      .optional(),
-    category_label: z
-      .string()
-      .min(1, 'category_label cannot be empty')
-      .max(50, 'category_label must be at most 50 characters')
-      .optional(),
-    href: z
-      .string()
-      .regex(
-        /^(\/[a-z0-9/_-]*|https?:\/\/.+)$/,
-        'href must be an absolute path (e.g., "/tools/agent-mail") or a full URL (e.g., "https://github.com/...")'
-      )
-      .optional(),
-    features: z.array(z.string().min(1).max(200)).max(20).optional(),
-    tech_stack: z.array(z.string().min(1).max(50)).max(20).optional(),
-    use_cases: z.array(z.string().min(1).max(300)).max(20).optional(),
-    language: z
-      .string()
-      .min(1, 'language cannot be empty')
-      .max(30, 'language must be at most 30 characters')
-      .optional(),
-    stars: z.number().int().min(0).optional(),
-    cli_name: z
-      .string()
-      .min(1, 'cli_name cannot be empty')
-      .max(30, 'cli_name must be at most 30 characters')
-      .regex(
-        /^[a-z][a-z0-9_-]*$/,
-        'cli_name must be lowercase alphanumeric with hyphens/underscores'
-      )
-      .optional(),
-    cli_aliases: z
-      .array(z.string().min(1).max(30))
-      .max(10)
-      .optional(),
-    command_example: z
-      .string()
-      .min(1, 'command_example cannot be empty')
-      .max(200, 'command_example must be at most 200 characters')
-      .optional(),
-    lesson_slug: z
-      .string()
-      .min(1, 'lesson_slug cannot be empty')
-      .max(100, 'lesson_slug must be at most 100 characters')
-      .regex(
-        /^[a-z][a-z0-9-]*$/,
-        'lesson_slug must be lowercase kebab-case (e.g., "getting-started")'
-      )
-      .optional(),
-    tldr_snippet: z
-      .string()
-      .min(1, 'tldr_snippet cannot be empty')
-      .max(500, 'tldr_snippet must be at most 500 characters')
-      .optional(),
-    visible: z.boolean().default(true),
-  });
-
 export const ModuleSchema = z
   .object({
     id: z
@@ -263,7 +163,6 @@ export const ModuleSchema = z
     tags: z.array(z.string()).optional(),
     docs_url: z.string().url().optional(),
     aliases: z.array(z.string()).optional(),
-    web: ModuleWebMetadataSchema.optional(),
   })
   .refine(
     (module) =>
@@ -301,9 +200,6 @@ export type ManifestDefaultsOutput = z.output<typeof ManifestDefaultsSchema>;
 
 export type ModuleInput = z.input<typeof ModuleSchema>;
 export type ModuleOutput = z.output<typeof ModuleSchema>;
-
-export type ModuleWebMetadataInput = z.input<typeof ModuleWebMetadataSchema>;
-export type ModuleWebMetadataOutput = z.output<typeof ModuleWebMetadataSchema>;
 
 export type ManifestInput = z.input<typeof ManifestSchema>;
 export type ManifestOutput = z.output<typeof ManifestSchema>;

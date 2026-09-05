@@ -27,7 +27,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '../../..');
 const MANIFEST_PATH = resolve(PROJECT_ROOT, 'acfs.manifest.yaml');
 const GENERATED_DIR = resolve(PROJECT_ROOT, 'scripts/generated');
-const WEB_GENERATED_DIR = resolve(PROJECT_ROOT, 'apps/web/lib/generated');
 const MANIFEST_INDEX_PATH = resolve(GENERATED_DIR, 'manifest_index.sh');
 
 describe('Generator optional verify parsing', () => {

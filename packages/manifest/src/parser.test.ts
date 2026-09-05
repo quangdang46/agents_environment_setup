@@ -562,7 +562,7 @@ modules:
   });
 });
 
-describe('validateManifestData web metadata warnings', () => {
+describe('validateManifestData install entry warnings', () => {
   const baseManifest: Manifest = {
     version: 1,
     name: 'test',
@@ -570,109 +570,6 @@ describe('validateManifestData web metadata warnings', () => {
     defaults: { user: 'ubuntu', workspace_root: '/data/projects', mode: 'vibe' },
     modules: [],
   };
-
-  test('no warnings for modules without web metadata', () => {
-    const manifest: Manifest = {
-      ...baseManifest,
-      modules: [
-        {
-          id: 'base.system',
-          description: 'Base system',
-          run_as: 'target_user',
-          optional: false,
-          enabled_by_default: true,
-          generated: true,
-          install: ['apt-get update'],
-          verify: ['curl --version'],
-        },
-      ],
-    };
-    const result = validateManifestData(manifest);
-    expect(result.warnings.filter((w) => w.path.includes('.web.'))).toHaveLength(0);
-  });
-
-  test('warns when web-visible module is missing recommended fields', () => {
-    const manifest: Manifest = {
-      ...baseManifest,
-      modules: [
-        {
-          id: 'tools.test',
-          description: 'Test tool',
-          run_as: 'target_user',
-          optional: false,
-          enabled_by_default: true,
-          generated: true,
-          install: ['echo test'],
-          verify: ['true'],
-          web: {
-            visible: true,
-          },
-        },
-      ],
-    };
-    const result = validateManifestData(manifest);
-    const webWarnings = result.warnings.filter((w) => w.path.includes('.web.'));
-    // Should warn for display_name, short_name, tagline, icon, color
-    expect(webWarnings.length).toBe(5);
-    expect(webWarnings.some((w) => w.path.includes('display_name'))).toBe(true);
-    expect(webWarnings.some((w) => w.path.includes('short_name'))).toBe(true);
-    expect(webWarnings.some((w) => w.path.includes('tagline'))).toBe(true);
-    expect(webWarnings.some((w) => w.path.includes('icon'))).toBe(true);
-    expect(webWarnings.some((w) => w.path.includes('color'))).toBe(true);
-  });
-
-  test('no warnings when all recommended web fields are present', () => {
-    const manifest: Manifest = {
-      ...baseManifest,
-      modules: [
-        {
-          id: 'tools.test',
-          description: 'Test tool',
-          run_as: 'target_user',
-          optional: false,
-          enabled_by_default: true,
-          generated: true,
-          install: ['echo test'],
-          verify: ['true'],
-          web: {
-            display_name: 'Test Tool',
-            short_name: 'Test',
-            tagline: 'A test tool',
-            icon: 'wrench',
-            color: '#3B82F6',
-            visible: true,
-          },
-        },
-      ],
-    };
-    const result = validateManifestData(manifest);
-    const webWarnings = result.warnings.filter((w) => w.path.includes('.web.'));
-    expect(webWarnings).toHaveLength(0);
-  });
-
-  test('no warnings when web visible is false', () => {
-    const manifest: Manifest = {
-      ...baseManifest,
-      modules: [
-        {
-          id: 'tools.hidden',
-          description: 'Hidden tool',
-          run_as: 'target_user',
-          optional: false,
-          enabled_by_default: true,
-          generated: true,
-          install: ['echo test'],
-          verify: ['true'],
-          web: {
-            visible: false,
-          },
-        },
-      ],
-    };
-    const result = validateManifestData(manifest);
-    const webWarnings = result.warnings.filter((w) => w.path.includes('.web.'));
-    expect(webWarnings).toHaveLength(0);
-  });
 
   test('does not treat quoted commands as description-only entries', () => {
     const manifest: Manifest = {
@@ -766,84 +663,5 @@ modules:
 
     expect(validationErrors).toHaveLength(1);
     expect(validationErrors[0]?.code).toBe('INVALID_VERIFIED_INSTALLER_CHECKSUM');
-  });
-});
-
-describe('parseManifestString with web metadata', () => {
-  test('parses module with web metadata', () => {
-    const yaml = `
-version: 1
-name: test
-id: test
-defaults:
-  user: ubuntu
-  workspace_root: /data
-  mode: vibe
-modules:
-  - id: tools.br
-    description: Beads Rust issue tracker
-    install: ["cargo install beads-rust"]
-    verify: ["br --version"]
-    web:
-      display_name: Beads Rust
-      short_name: BR
-      tagline: Local-first issue tracking
-      icon: git-branch
-      color: "#F97316"
-      cli_name: br
-      visible: true
-`;
-    const result = parseManifestString(yaml);
-    expect(result.success).toBe(true);
-    if (result.success && result.data) {
-      expect(result.data.modules[0].web).toBeDefined();
-      expect(result.data.modules[0].web?.display_name).toBe('Beads Rust');
-      expect(result.data.modules[0].web?.icon).toBe('git-branch');
-      expect(result.data.modules[0].web?.color).toBe('#F97316');
-      expect(result.data.modules[0].web?.visible).toBe(true);
-    }
-  });
-
-  test('parses module without web metadata (backwards compatible)', () => {
-    const yaml = `
-version: 1
-name: test
-id: test
-defaults:
-  user: ubuntu
-  workspace_root: /data
-  mode: vibe
-modules:
-  - id: base.system
-    description: Base system
-    install: ["apt-get update"]
-    verify: ["curl --version"]
-`;
-    const result = parseManifestString(yaml);
-    expect(result.success).toBe(true);
-    if (result.success && result.data) {
-      expect(result.data.modules[0].web).toBeUndefined();
-    }
-  });
-
-  test('rejects module with invalid web color in YAML', () => {
-    const yaml = `
-version: 1
-name: test
-id: test
-defaults:
-  user: ubuntu
-  workspace_root: /data
-  mode: vibe
-modules:
-  - id: tools.test
-    description: Test
-    install: ["echo test"]
-    verify: ["true"]
-    web:
-      color: "red"
-`;
-    const result = parseManifestString(yaml);
-    expect(result.success).toBe(false);
   });
 });

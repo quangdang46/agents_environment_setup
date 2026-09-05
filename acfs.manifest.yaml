@@ -1489,26 +1489,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "Named Tmux Manager"
-      short_name: "NTM"
-      tagline: "Agent cockpit for multi-agent tmux sessions"
-      icon: "layout-grid"
-      color: "#0EA5E9"
-      href: "https://github.com/Dicklesworthstone/ntm"
-      features:
-        - "Named agent panes with type classification"
-        - "Broadcast prompts to agent types"
-        - "Session persistence across reboots"
-        - "Dashboard view of active agents"
-      tech_stack: ["Go", "Bubble Tea", "tmux"]
-      use_cases:
-        - "Running multiple Claude Code agents simultaneously"
-        - "Organizing dev environments by project"
-        - "Managing long-running agent sessions"
-      language: "Go"
-      stars: 69
-      cli_name: "ntm"
     dependencies:
       - cli.modern
     installed_check:
@@ -1530,26 +1510,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "MCP Agent Mail"
-      short_name: "Mail"
-      tagline: "Like Gmail for AI coding agents"
-      icon: "mail"
-      color: "#8B5CF6"
-      href: "https://github.com/Dicklesworthstone/mcp_agent_mail_rust"
-      features:
-        - "Threaded messaging between AI agents"
-        - "Advisory file reservations"
-        - "SQLite-backed persistent storage"
-        - "MCP integration for any compatible agent"
-      tech_stack: ["Rust", "SQLite"]
-      use_cases:
-        - "Coordinating file ownership across parallel agents"
-        - "Passing context between session restarts"
-        - "Building audit trails of agent decisions"
-      language: "Rust"
-      stars: 1400
-      cli_name: "am"
     dependencies:
       - lang.bun
       - lang.uv
@@ -1882,26 +1842,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended, agent-skills]
-    web:
-      display_name: "Meta Skill"
-      short_name: "MS"
-      tagline: "Skill management with MCP integration and adaptive suggestions"
-      icon: "sparkles"
-      color: "#14B8A6"
-      href: "https://github.com/quangdang46/ms"
-      features:
-        - "MCP server for native AI agent integration"
-        - "Thompson sampling optimizes suggestions"
-        - "Multi-layer security"
-        - "Hybrid search with RRF"
-      tech_stack: ["Rust", "SQLite", "Tantivy", "MCP"]
-      use_cases:
-        - "AI agents querying skills via MCP"
-        - "Building team-wide skill libraries"
-        - "Packaging and sharing skills"
-      language: "Rust"
-      stars: 10
-      cli_name: "ms"
     dependencies:
       - lang.rust
       - lang.uv
@@ -1925,26 +1865,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, agent-tools]
-    web:
-      display_name: "Automated Plan Reviser Pro"
-      short_name: "APR"
-      tagline: "Automated iterative spec refinement with extended AI reasoning"
-      icon: "file-text"
-      color: "#F59E0B"
-      href: "https://github.com/Dicklesworthstone/automated_plan_reviser_pro"
-      features:
-        - "Automated multi-pass refinement"
-        - "Extended AI reasoning integration"
-        - "Markdown-based plan processing"
-        - "Progressive structure improvement"
-      tech_stack: ["Bash", "Oracle CLI", "GPT Pro", "Markdown"]
-      use_cases:
-        - "Turning rough ideas into detailed specifications"
-        - "Catching architectural flaws early"
-        - "Creating implementation-ready plans for agents"
-      language: "Bash"
-      stars: 85
-      cli_name: "apr"
     dependencies:
       - lang.rust
     installed_check:
@@ -1967,26 +1887,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, agent-skills, prompts]
-    web:
-      display_name: "JeffreysPrompts CLI"
-      short_name: "JFP"
-      tagline: "Browse and install battle-tested prompts as Claude Code skills"
-      icon: "sparkles"
-      color: "#EC4899"
-      href: "https://jeffreysprompts.com"
-      features:
-        - "One-command skill installation"
-        - "Browsable prompt categories"
-        - "Claude Code skills integration"
-        - "MCP server for agent access"
-      tech_stack: ["TypeScript", "Bun", "Claude Code Skills API"]
-      use_cases:
-        - "Bootstrapping a new project with proven prompts"
-        - "Discovering prompts for specific domains"
-        - "Sharing effective prompts across teams"
-      language: "TypeScript"
-      stars: 120
-      cli_name: "jfp"
     installed_check:
       run_as: target_user
       command: "command -v jfp"
@@ -2006,28 +1906,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, system-tools]
-    web:
-      display_name: "Process Triage"
-      short_name: "PT"
-      tagline: "Intelligent process termination with Bayesian scoring"
-      icon: "activity"
-      color: "#EF4444"
-      href: "https://github.com/Dicklesworthstone/process_triage"
-      features:
-        - "Intelligent process scoring"
-        - "Interactive TUI selection"
-        - "Robot mode for automation"
-        - "Resource usage analysis"
-      tech_stack: ["Rust", "Bayesian inference", "procfs"]
-      use_cases:
-        - "Killing stuck build processes"
-        - "Cleaning up zombie processes"
-        - "Identifying memory hogs"
-      language: "Rust"
-      stars: 45
-      cli_name: "pt"
-      command_example: "pt --robot --top 10"
-      lesson_slug: "pt"
     dependencies:
       - lang.rust
     installed_check:
@@ -2050,27 +1928,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "Ultimate Bug Scanner"
-      short_name: "UBS"
-      tagline: "Pattern-based bug scanner with 1000+ detection rules"
-      icon: "bug"
-      color: "#F43F5E"
-      href: "https://github.com/Dicklesworthstone/ultimate_bug_scanner"
-      features:
-        - "1000+ built-in detection patterns"
-        - "Consistent JSON output format"
-        - "Multi-language support"
-        - "Perfect for pre-commit hooks"
-      tech_stack: ["Bash", "Pattern matching", "JSON output"]
-      use_cases:
-        - "Pre-commit validation across polyglot repos"
-        - "CI/CD pipeline integration"
-        - "Catching AI-generated code errors"
-      language: "Bash"
-      stars: 132
-      cli_name: "ubs"
-      command_example: "ubs file.ts"
     dependencies:
       - lang.bun
       - lang.uv
@@ -2095,28 +1952,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "beads_rust"
-      short_name: "BR"
-      tagline: "Local-first issue tracking for AI agents"
-      icon: "list-todo"
-      color: "#F59E0B"
-      href: "https://github.com/quangdang46/beads_rust"
-      features:
-        - "Local-first issue storage"
-        - "Dependency graph tracking"
-        - "Labels, priorities, comments"
-        - "JSON output for agents"
-      tech_stack: ["Rust", "Serde", "JSONL"]
-      use_cases:
-        - "Tracking tasks that travel with the code"
-        - "Building dependency graphs"
-        - "Enabling agents to manage work queues"
-      language: "Rust"
-      stars: 128
-      cli_name: "br"
-      cli_aliases: []
-      command_example: "br ready --json"
     dependencies:
       - lang.rust
     installed_check:
@@ -2139,27 +1974,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "Beads Viewer"
-      short_name: "BV"
-      tagline: "Graph-theory triage engine for task prioritization"
-      icon: "git-branch"
-      color: "#10B981"
-      href: "https://github.com/Dicklesworthstone/beads_viewer"
-      features:
-        - "PageRank-based issue prioritization"
-        - "Critical path analysis"
-        - "Robot mode for AI agent integration"
-        - "Interactive TUI with vim keybindings"
-      tech_stack: ["Go", "Bubble Tea", "Lip Gloss", "Graph algorithms"]
-      use_cases:
-        - "Identifying which task unblocks the most other work"
-        - "Visualizing complex dependency graphs"
-        - "Generating execution plans for AI agents"
-      language: "Go"
-      stars: 891
-      cli_name: "bv"
-      command_example: "bv --robot-triage"
     dependencies:
       - lang.go
       - stack.beads_rust
@@ -2181,27 +1995,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "Coding Agent Session Search"
-      short_name: "CASS"
-      tagline: "Blazing-fast search across AI coding agent sessions"
-      icon: "search"
-      color: "#06B6D4"
-      href: "https://github.com/Dicklesworthstone/coding_agent_session_search"
-      features:
-        - "Unified search across all agent types"
-        - "Sub-second search over millions of messages"
-        - "Robot mode for AI agent integration"
-        - "TUI for interactive exploration"
-      tech_stack: ["Rust", "Tantivy", "Ratatui", "JSONL parsing"]
-      use_cases:
-        - "Finding how a similar bug was fixed before"
-        - "Retrieving context from past project work"
-        - "Building on previous agent conversations"
-      language: "Rust"
-      stars: 307
-      cli_name: "cass"
-      command_example: "cass search \"auth error\" --robot"
     dependencies:
       - lang.rust
       - lang.uv
@@ -2225,27 +2018,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "CASS Memory System"
-      short_name: "CM"
-      tagline: "Procedural memory system for AI coding agents"
-      icon: "brain"
-      color: "#EC4899"
-      href: "https://github.com/Dicklesworthstone/cass_memory_system"
-      features:
-        - "Three memory layers: episodic, working, procedural"
-        - "MCP integration for any compatible agent"
-        - "Automatic memory consolidation"
-        - "Cross-session context persistence"
-      tech_stack: ["TypeScript", "Bun", "MCP Protocol", "SQLite"]
-      use_cases:
-        - "Remembering project conventions across sessions"
-        - "Learning from past debugging sessions"
-        - "Building institutional knowledge over time"
-      language: "TypeScript"
-      stars: 152
-      cli_name: "cm"
-      command_example: "cm context \"task\" --json"
     dependencies:
       - lang.rust
       - lang.uv
@@ -2269,27 +2041,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "Coding Agent Account Manager"
-      short_name: "CAAM"
-      tagline: "Sub-100ms auth switching for AI coding agents"
-      icon: "key-round"
-      color: "#A855F7"
-      href: "https://github.com/Dicklesworthstone/coding_agent_account_manager"
-      features:
-        - "Sub-100ms account switching"
-        - "Multi-provider support"
-        - "Automatic key rotation"
-        - "Session state preservation"
-      tech_stack: ["TypeScript", "Bun", "Keychain"]
-      use_cases:
-        - "Switching between API keys when hitting rate limits"
-        - "Managing multiple agent accounts"
-        - "Automated credential rotation"
-      language: "TypeScript"
-      stars: 45
-      cli_name: "caam"
-      command_example: "caam status"
     dependencies:
       - lang.bun
     installed_check:
@@ -2310,26 +2061,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [optional]
-    web:
-      display_name: "Simultaneous Launch Button"
-      short_name: "SLB"
-      tagline: "Two-person rule for dangerous command approval"
-      icon: "shield-check"
-      color: "#F59E0B"
-      href: "https://github.com/Dicklesworthstone/simultaneous_launch_button"
-      features:
-        - "Two-person rule enforcement"
-        - "Command queue with approval workflow"
-        - "Pattern-based risk detection"
-        - "SQLite persistence"
-      tech_stack: ["Go", "Bubble Tea", "SQLite"]
-      use_cases:
-        - "Requiring approval for rm -rf and git reset"
-        - "Adding safety gates to autonomous agent workflows"
-        - "Audit trail of dangerous command approvals"
-      language: "Go"
-      stars: 49
-      cli_name: "slb"
     dependencies:
       - lang.go
     installed_check:
@@ -2378,27 +2109,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended, safety]
-    web:
-      display_name: "Destructive Command Guard"
-      short_name: "DCG"
-      tagline: "SIMD-accelerated safety net for dangerous commands"
-      icon: "shield-alert"
-      color: "#EF4444"
-      href: "https://github.com/Dicklesworthstone/destructive_command_guard"
-      features:
-        - "Intercepts rm -rf, git reset --hard, etc."
-        - "SIMD-accelerated pattern matching"
-        - "Configurable allowlists"
-        - "Command audit logging"
-      tech_stack: ["Rust", "SIMD", "Shell integration"]
-      use_cases:
-        - "Protecting against accidental data loss"
-        - "Auditing dangerous commands from agents"
-        - "Training wheels for new AI agent setups"
-      language: "Rust"
-      stars: 89
-      cli_name: "dcg"
-      command_example: "dcg doctor"
     dependencies:
       - agents.claude   # dcg is a Claude Code hook, only useful if Claude is installed
     installed_check:
@@ -2466,27 +2176,6 @@ modules:
     optional: false
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "Repo Updater"
-      short_name: "RU"
-      tagline: "Multi-repo sync with AI-driven commit automation"
-      icon: "refresh-cw"
-      color: "#F97316"
-      href: "https://github.com/Dicklesworthstone/repo_updater"
-      features:
-        - "One-command multi-repo sync"
-        - "Parallel operations"
-        - "Conflict detection with resolution hints"
-        - "AI code review integration"
-      tech_stack: ["Bash", "Git plumbing", "GitHub CLI"]
-      use_cases:
-        - "Keeping development machines in sync"
-        - "CI/CD repo management"
-        - "Automated codebase maintenance"
-      language: "Bash"
-      stars: 67
-      cli_name: "ru"
-      command_example: "ru sync --parallel 4"
     dependencies:
       - cli.modern   # for gh, tmux
       - stack.ntm    # for session management
@@ -2510,26 +2199,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended]
-    web:
-      display_name: "Brenner Bot"
-      short_name: "Brenner"
-      tagline: "Research orchestration inspired by Sydney Brenner"
-      icon: "flask-conical"
-      color: "#F43F5E"
-      href: "https://github.com/Dicklesworthstone/brenner_bot"
-      features:
-        - "Primary source corpus with citations"
-        - "Multi-agent research sessions"
-        - "Discriminative test ranking"
-        - "Adversarial critique generation"
-      tech_stack: ["TypeScript", "Bun", "Agent Mail", "Multi-model AI"]
-      use_cases:
-        - "Structured hypothesis generation"
-        - "Multi-model research synthesis"
-        - "Scientific methodology workflows"
-      language: "TypeScript"
-      stars: 28
-      cli_name: "brenner"
     dependencies:
       - lang.rust
       - stack.cass  # for session search integration
@@ -2553,28 +2222,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, performance]
-    web:
-      display_name: "Remote Compilation Helper"
-      short_name: "RCH"
-      tagline: "Transparent Rust build offloading to remote workers"
-      icon: "cpu"
-      color: "#6366F1"
-      href: "https://github.com/Dicklesworthstone/remote_compilation_helper"
-      features:
-        - "Transparent cargo interception"
-        - "Multi-worker pool with priority scheduling"
-        - "Incremental artifact sync"
-        - "Daemon mode with status monitoring"
-      tech_stack: ["Rust", "rsync", "zstd", "SSH"]
-      use_cases:
-        - "Offloading builds during multi-agent sessions"
-        - "Reducing local CPU usage during heavy compilation"
-        - "Distributing builds across remote servers"
-      language: "Rust"
-      stars: 35
-      cli_name: "rch"
-      command_example: "rch status"
-      lesson_slug: "rch"
     dependencies:
       - lang.rust
     installed_check:
@@ -2597,26 +2244,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, automation]
-    web:
-      display_name: "WezTerm Automata"
-      short_name: "WA"
-      tagline: "Terminal hypervisor for multi-agent automation"
-      icon: "monitor"
-      color: "#06B6D4"
-      href: "https://github.com/Dicklesworthstone/wezterm_automata"
-      features:
-        - "Real-time terminal observation"
-        - "Intelligent pattern detection"
-        - "Robot Mode JSON API"
-        - "Event-driven automation"
-      tech_stack: ["Rust", "WezTerm API", "SQLite FTS5"]
-      use_cases:
-        - "Detecting agent rate limits and errors"
-        - "Coordinating multi-agent workflows"
-        - "Searching across captured terminal sessions"
-      language: "Rust"
-      stars: 42
-      cli_name: "wa"
     dependencies:
       - lang.rust
     installed_check:
@@ -2643,26 +2270,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, system-health]
-    web:
-      display_name: "System Resource Protection Script"
-      short_name: "SRPS"
-      tagline: "Auto-deprioritize background processes for responsive dev workstations"
-      icon: "shield"
-      color: "#EAB308"
-      href: "https://github.com/Dicklesworthstone/system_resource_protection_script"
-      features:
-        - "Automatic process deprioritization"
-        - "Real-time TUI monitoring"
-        - "1700+ pre-configured rules"
-        - "Custom rule creation"
-      tech_stack: ["Go", "C++", "ananicy-cpp", "systemd"]
-      use_cases:
-        - "Multi-agent coding sessions"
-        - "Large compilation jobs"
-        - "Heavy test suite runs"
-      language: "Go"
-      stars: 50
-      cli_name: "sysmoni"
     dependencies:
       - base.system
       - lang.go
@@ -2690,28 +2297,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, search]
-    web:
-      display_name: "FrankenSearch"
-      short_name: "FSFS"
-      tagline: "Two-tier hybrid search with progressive delivery"
-      icon: "search"
-      color: "#7C3AED"
-      href: "https://github.com/Dicklesworthstone/frankensearch"
-      features:
-        - "BM25 lexical + semantic retrieval"
-        - "Progressive delivery (fast initial + quality refinement)"
-        - "Local ML model support"
-        - "JSON API for agent integration"
-      tech_stack: ["Rust", "Tantivy", "ONNX", "BM25"]
-      use_cases:
-        - "Local code and document search"
-        - "AI agent knowledge retrieval"
-        - "Hybrid search across project artifacts"
-      language: "Rust"
-      stars: 30
-      cli_name: "fsfs"
-      command_example: "fsfs search \"query\""
-      lesson_slug: "fsfs"
     dependencies:
       - lang.rust
     installed_check:
@@ -2734,28 +2319,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, system-tools]
-    web:
-      display_name: "Storage Ballast Helper"
-      short_name: "SBH"
-      tagline: "Predictive disk-pressure defense for AI workloads"
-      icon: "hard-drive"
-      color: "#059669"
-      href: "https://github.com/Dicklesworthstone/storage_ballast_helper"
-      features:
-        - "Predictive disk space monitoring"
-        - "Safe cleanup policies"
-        - "Ballast file release"
-        - "Explainable policy decisions"
-      tech_stack: ["Rust", "SQLite", "procfs"]
-      use_cases:
-        - "Preventing disk-full failures during builds"
-        - "Automated cleanup of build artifacts"
-        - "Monitoring disk usage across projects"
-      language: "Rust"
-      stars: 20
-      cli_name: "sbh"
-      command_example: "sbh status"
-      lesson_slug: "sbh"
     dependencies:
       - lang.rust
     installed_check:
@@ -2777,28 +2340,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, agent-tools]
-    web:
-      display_name: "Cross-Agent Session Resumer"
-      short_name: "CASR"
-      tagline: "Resume coding sessions across AI providers"
-      icon: "repeat"
-      color: "#D946EF"
-      href: "https://github.com/Dicklesworthstone/cross_agent_session_resumer"
-      features:
-        - "Cross-provider session conversion"
-        - "Canonical session model"
-        - "14+ provider support"
-        - "Session diff and merge"
-      tech_stack: ["Rust", "SQLite", "JSONL"]
-      use_cases:
-        - "Resuming a Claude session in Codex"
-        - "Migrating session history between providers"
-        - "Building unified session archives"
-      language: "Rust"
-      stars: 25
-      cli_name: "casr"
-      command_example: "casr export --from claude"
-      lesson_slug: "casr"
     dependencies:
       - lang.rust
     installed_check:
@@ -2820,28 +2361,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, release]
-    web:
-      display_name: "Doodlestein Self-Releaser"
-      short_name: "DSR"
-      tagline: "Fallback release infra when CI is throttled"
-      icon: "package"
-      color: "#F97316"
-      href: "https://github.com/Dicklesworthstone/doodlestein_self_releaser"
-      features:
-        - "Reuses existing GitHub Actions YAML"
-        - "Local builds via nektos/act"
-        - "Multi-platform support"
-        - "Artifact signing with minisign"
-      tech_stack: ["Bash", "Docker", "act", "GitHub CLI"]
-      use_cases:
-        - "Releasing when GitHub Actions quota is exhausted"
-        - "Local release testing before push"
-        - "Cross-platform builds from single machine"
-      language: "Bash"
-      stars: 15
-      cli_name: "dsr"
-      command_example: "dsr release"
-      lesson_slug: "dsr"
     dependencies:
       - cli.modern   # for gh, docker
     installed_check:
@@ -2864,28 +2383,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, backup]
-    web:
-      display_name: "Agent Settings Backup"
-      short_name: "ASB"
-      tagline: "Git-versioned backups for AI agent configs"
-      icon: "save"
-      color: "#0EA5E9"
-      href: "https://github.com/Dicklesworthstone/agent_settings_backup_script"
-      features:
-        - "Per-agent git repositories"
-        - "Full version history"
-        - "Easy restoration"
-        - "13+ agent type support"
-      tech_stack: ["Bash", "Git", "rsync"]
-      use_cases:
-        - "Backing up Claude Code settings before experiments"
-        - "Restoring agent configs after reinstall"
-        - "Tracking config changes over time"
-      language: "Bash"
-      stars: 10
-      cli_name: "asb"
-      command_example: "asb backup"
-      lesson_slug: "asb"
     dependencies:
       - base.system
     installed_check:
@@ -2946,29 +2443,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [recommended, safety, hooks]
-    web:
-      display_name: "Post-Compact Reminder"
-      short_name: "PCR"
-      tagline: "Stop Claude from forgetting project rules after compaction"
-      icon: "shield-alert"
-      color: "#DC2626"
-      href: "https://github.com/Dicklesworthstone/post_compact_reminder"
-      features:
-        - "Auto-detects compaction events"
-        - "Injects AGENTS.md re-read reminder"
-        - "Zero overhead when not compacting"
-        - "Configurable reminder text"
-      tech_stack: ["Bash", "jq", "Claude Code hooks"]
-      use_cases:
-        - "Preventing rule amnesia after compaction"
-        - "Ensuring agents follow project conventions"
-        - "Maintaining consistency across long sessions"
-      language: "Bash"
-      stars: 40
-      cli_name: "claude-post-compact-reminder"
-      cli_aliases: ["pcr"]
-      command_example: "printf '{\"session_id\":\"demo\",\"source\":\"compact\"}\\n' | claude-post-compact-reminder"
-      lesson_slug: "pcr"
     dependencies:
       - agents.claude
     pre_install_check:
@@ -3088,26 +2562,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [utility]
-    web:
-      display_name: "Get Image from Internet Link"
-      short_name: "GIIL"
-      tagline: "Download cloud images for visual debugging"
-      icon: "image"
-      color: "#64748B"
-      href: "https://github.com/Dicklesworthstone/giil"
-      features:
-        - "iCloud share link support"
-        - "CLI-based image download"
-        - "No browser required"
-        - "Works over SSH"
-      tech_stack: ["Bash", "curl", "iCloud API"]
-      use_cases:
-        - "Sharing screenshots for remote debugging"
-        - "Getting images to headless servers"
-        - "AI agent image analysis workflows"
-      language: "Bash"
-      stars: 24
-      cli_name: "giil"
     dependencies:
       - base.system   # giil installer auto-installs Node.js + Playwright if needed
     installed_check:
@@ -3128,26 +2582,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [utility]
-    web:
-      display_name: "Chat Shared Conversation to File"
-      short_name: "CSCTF"
-      tagline: "Convert AI chat share links to Markdown and HTML"
-      icon: "file-text"
-      color: "#8B5CF6"
-      href: "https://github.com/Dicklesworthstone/chat_shared_conversation_to_file"
-      features:
-        - "Multi-provider support (ChatGPT, Claude, Gemini, Grok)"
-        - "Dual Markdown + HTML output"
-        - "Code block preservation"
-        - "Batch URL processing"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Archiving important AI conversations"
-        - "Preserving code solutions from chat"
-        - "Building a local knowledge base from AI interactions"
-      language: "Rust"
-      stars: 156
-      cli_name: "csctf"
     dependencies:
       - base.system   # csctf provides prebuilt binaries; installer handles deps
     installed_check:
@@ -3168,26 +2602,6 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, search]
-    web:
-      display_name: "X Archive Search"
-      short_name: "XF"
-      tagline: "Ultra-fast search over X/Twitter data archives"
-      icon: "archive"
-      color: "#3B82F6"
-      href: "https://github.com/Dicklesworthstone/xf"
-      features:
-        - "Sub-second search over large archives"
-        - "Semantic + keyword hybrid search"
-        - "No external API dependencies"
-        - "Privacy-preserving local processing"
-      tech_stack: ["Rust", "Tantivy", "Hash embeddings", "RRF"]
-      use_cases:
-        - "Finding bookmarked threads"
-        - "Researching past discussions"
-        - "Building on ideas from tweet history"
-      language: "Rust"
-      stars: 156
-      cli_name: "xf"
     dependencies:
       - lang.rust
     installed_check:
@@ -3209,26 +2623,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [utility, llm]
-    web:
-      display_name: "Token-Optimized Notation"
-      short_name: "TRU"
-      tagline: "Compress source code for maximum LLM context efficiency"
-      icon: "minimize-2"
-      color: "#06B6D4"
-      href: "https://github.com/Dicklesworthstone/toon_rust"
-      features:
-        - "40-70% token count reduction"
-        - "Multi-language support"
-        - "Token count statistics"
-        - "Reversible compression"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Fitting more code context into LLM requests"
-        - "Reducing API costs for large codebases"
-        - "Preparing code for context-limited models"
-      language: "Rust"
-      stars: 156
-      cli_name: "tru"
     dependencies:
       - lang.rust
     installed_check:
@@ -3250,26 +2644,6 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, network, debug]
-    web:
-      display_name: "Network Observer"
-      short_name: "RANO"
-      tagline: "Monitor AI CLI network traffic for debugging and analysis"
-      icon: "network"
-      color: "#F59E0B"
-      href: "https://github.com/Dicklesworthstone/rano"
-      features:
-        - "Transparent HTTP proxy interception"
-        - "Provider-aware log parsing"
-        - "Token and cost tracking"
-        - "Real-time traffic monitoring"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Debugging unexpected agent behavior"
-        - "Tracking API token consumption"
-        - "Analyzing prompt efficiency"
-      language: "Rust"
-      stars: 156
-      cli_name: "rano"
     dependencies:
       - lang.rust
     installed_check:
@@ -3291,26 +2665,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [utility, web, llm]
-    web:
-      display_name: "Markdown Web Browser"
-      short_name: "MDWB"
-      tagline: "Convert web pages to clean Markdown for AI consumption"
-      icon: "globe"
-      color: "#10B981"
-      href: "https://github.com/Dicklesworthstone/markdown_web_browser"
-      features:
-        - "Clean content extraction"
-        - "Code block preservation"
-        - "Link handling"
-        - "Pipe-friendly output"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Feeding documentation to AI agents"
-        - "Archiving web content locally"
-        - "Building LLM-ready research corpora"
-      language: "Rust"
-      stars: 156
-      cli_name: "mdwb"
     dependencies:
       - lang.rust
     installed_check:
@@ -3332,26 +2686,6 @@ modules:
     optional: true
     enabled_by_default: true
     tags: [utility, llm, tui]
-    web:
-      display_name: "Source to Prompt TUI"
-      short_name: "S2P"
-      tagline: "Interactive code-to-prompt generator with token counting"
-      icon: "file-code"
-      color: "#22C55E"
-      href: "https://github.com/Dicklesworthstone/source_to_prompt_tui"
-      features:
-        - "Interactive file selection"
-        - "Real-time token counting"
-        - "Clipboard integration"
-        - "Gitignore-aware filtering"
-      tech_stack: ["TypeScript", "Bun", "React", "Ink", "tiktoken"]
-      use_cases:
-        - "Preparing code context for Claude/GPT"
-        - "Creating reproducible prompt templates"
-        - "Managing context window budget"
-      language: "TypeScript"
-      stars: 156
-      cli_name: "s2p"
     dependencies:
       - lang.bun
     installed_check:
@@ -3375,26 +2709,6 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, network, debug]
-    web:
-      display_name: "Rust Proxy"
-      short_name: "RP"
-      tagline: "Transparent proxy routing for network traffic debugging"
-      icon: "shield"
-      color: "#6366F1"
-      href: "https://github.com/Dicklesworthstone/rust_proxy"
-      features:
-        - "Transparent HTTP/HTTPS proxying"
-        - "Request/response logging"
-        - "Latency measurement"
-        - "Header inspection"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Debugging API communication issues"
-        - "Measuring request latency"
-        - "Inspecting headers and payloads"
-      language: "Rust"
-      stars: 156
-      cli_name: "rust_proxy"
     dependencies:
       - lang.rust
     installed_check:
@@ -3420,26 +2734,6 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, ascii]
-    web:
-      display_name: "ASCII Art Diagram Corrector"
-      short_name: "AADC"
-      tagline: "Fix malformed ASCII diagrams from AI output"
-      icon: "align-left"
-      color: "#EC4899"
-      href: "https://github.com/Dicklesworthstone/aadc"
-      features:
-        - "Auto-repair box alignment"
-        - "Connector line fixing"
-        - "Before/after diff preview"
-        - "Clipboard integration"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Fixing AI-generated architecture diagrams"
-        - "Cleaning up ASCII flowcharts"
-        - "Producing clean documentation"
-      language: "Rust"
-      stars: 156
-      cli_name: "aadc"
     dependencies:
       - lang.rust
     installed_check:
@@ -3465,26 +2759,6 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, tracking]
-    web:
-      display_name: "Coding Agent Usage Tracker"
-      short_name: "CAUT"
-      tagline: "Track LLM provider usage and costs across agents"
-      icon: "bar-chart-3"
-      color: "#14B8A6"
-      href: "https://github.com/Dicklesworthstone/coding_agent_usage_tracker"
-      features:
-        - "Multi-provider usage aggregation"
-        - "Per-session token breakdown"
-        - "Cost estimation and trends"
-        - "Export to CSV/JSON"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Monitoring daily API spend"
-        - "Comparing provider costs"
-        - "Optimizing agent token usage"
-      language: "Rust"
-      stars: 156
-      cli_name: "caut"
     dependencies:
       - lang.rust
     installed_check:
@@ -3513,26 +2787,6 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, network, proxy]
-    web:
-      display_name: "OpenProxy"
-      short_name: "OP"
-      tagline: "Lightweight HTTP/HTTPS proxy server"
-      icon: "server"
-      color: "#3B82F6"
-      href: "https://github.com/quangdang46/openproxy"
-      features:
-        - "Lightweight HTTP/HTTPS proxy"
-        - "Easy one-line installation"
-        - "Minimal resource footprint"
-        - "Works over SSH"
-      tech_stack: ["Bash", "Shell"]
-      use_cases:
-        - "Routing traffic through a proxy on VPS"
-        - "Debugging network requests"
-        - "Bypassing network restrictions"
-      language: "Bash"
-      stars: 5
-      cli_name: "openproxy"
     dependencies:
       - base.system
     installed_check:
@@ -3552,26 +2806,6 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, search, filesystem]
-    web:
-      display_name: "Fast File Search"
-      short_name: "FFS"
-      tagline: "Rapid file discovery on your VPS"
-      icon: "search"
-      color: "#10B981"
-      href: "https://github.com/quangdang46/fast_file_search"
-      features:
-        - "Fast file search across filesystem"
-        - "Easy one-line installation"
-        - "Minimal resource footprint"
-        - "Works over SSH"
-      tech_stack: ["Bash", "Shell"]
-      use_cases:
-        - "Finding files quickly on large VPS"
-        - "Locating configuration files"
-        - "Searching project directories"
-      language: "Bash"
-      stars: 5
-      cli_name: "fast_file_search"
     dependencies:
       - base.system
     installed_check:
@@ -3595,33 +2829,16 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, llm, optimizer]
-    web:
-      display_name: "Rust Token Cost Optimizer"
-      short_name: "RTCO"
-      tagline: "LLM output filter and context management for AI coding agents"
-      icon: "coins"
-      color: "#F59E0B"
-      href: "https://github.com/quangdang46/rust_token_cost_optimizer"
-      features:
-        - "LLM output filtering for token savings"
-        - "Context management for AI coding agents"
-        - "Easy one-line installation"
-        - "Rust-based for performance"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Optimizing token usage in AI coding sessions"
-        - "Filtering verbose LLM output"
-      language: "Rust"
-      stars: 5
-      cli_name: "rtco"
     dependencies:
       - base.system
+    verified_installer:
+      tool: rtco
+      runner: bash
+      args: []
     installed_check:
       run_as: target_user
       command: "command -v rtco"
-    install:
-      - |
-        curl -fsSL "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?$(date +%s)" | bash
+    install: []
     verify:
       - command -v rtco
 
@@ -3633,33 +2850,16 @@ modules:
     optional: true
     enabled_by_default: false
     tags: [utility, editing, mcp]
-    web:
-      display_name: "Hashline"
-      short_name: "HL"
-      tagline: "Stable line-addressed file editing with content-hashed anchors"
-      icon: "hash"
-      color: "#8B5CF6"
-      href: "https://github.com/quangdang46/hashline"
-      features:
-        - "Content-hashed anchors instead of fragile string replacement"
-        - "Stable line addressing for file edits"
-        - "Works with Claude Code, Codex, and more"
-        - "Easy one-line installation"
-      tech_stack: ["Rust"]
-      use_cases:
-        - "Editing files in AI coding sessions"
-        - "Stable anchors for line-based edits"
-      language: "Rust"
-      stars: 5
-      cli_name: "hashline"
     dependencies:
       - base.system
+    verified_installer:
+      tool: hashline
+      runner: bash
+      args: []
     installed_check:
       run_as: target_user
       command: "command -v hashline"
-    install:
-      - |
-        curl -fsSL "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?$(date +%s)" | bash
+    install: []
     verify:
       - command -v hashline
 

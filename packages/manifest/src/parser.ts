@@ -242,27 +242,6 @@ export function validateManifestData(data: Manifest): ValidationResult {
     });
   }
 
-  // Warnings for web-visible modules missing recommended web metadata fields
-  const recommendedWebFields = [
-    'display_name',
-    'short_name',
-    'tagline',
-    'icon',
-    'color',
-  ] as const;
-  for (const module of data.modules) {
-    if (module.web && module.web.visible !== false) {
-      for (const field of recommendedWebFields) {
-        if (!module.web[field]) {
-          warnings.push({
-            path: `modules.${module.id}.web.${field}`,
-            message: `Recommended web field "${field}" is missing for web-visible module "${module.id}"`,
-          });
-        }
-      }
-    }
-  }
-
   // Warnings for modules with install steps that look like descriptions
   for (const module of data.modules) {
     if (module.install.length === 0) {

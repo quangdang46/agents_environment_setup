@@ -47,8 +47,6 @@ modules:
       url: ${INSTALLER_URL}
       runner: bash
       args: []
-    web:
-      lesson_slug: example
   - id: stack.hidden
     description: Hidden stack tool
     run_as: target_user
@@ -131,7 +129,7 @@ describe('manifest drift contract', () => {
     expect(result.ok).toBe(true);
     expect(result.mismatches).toEqual([]);
     expect(result.summary.verifiedInstallers).toBe(1);
-    expect(result.summary.lessonLinkedModules).toBe(1);
+    expect(result.summary.lessonLinkedModules).toBe(0);
   });
 
   test('detects stale generated manifest index output', () => {
@@ -178,48 +176,4 @@ describe('manifest drift contract', () => {
     expect(codes(root)).toContain('README_SNIPPET_MISSING');
   });
 
-  test('detects missing onboarding lesson files for lesson-linked modules', () => {
-    const root = cleanFixture();
-    writeFixtureFile(
-      root,
-      'acfs.manifest.yaml',
-      `version: 1
-name: Test ACFS
-id: test_acfs
-defaults:
-  user: ubuntu
-  workspace_root: /data/projects
-  mode: vibe
-modules:
-  - id: stack.example
-    description: Example stack tool
-    run_as: target_user
-    optional: false
-    enabled_by_default: true
-    generated: true
-    install: []
-    verify:
-      - example --version
-    verified_installer:
-      tool: example
-      url: ${INSTALLER_URL}
-      runner: bash
-      args: []
-    web:
-      lesson_slug: missing
-  - id: base.local
-    description: Local base tool
-    run_as: target_user
-    optional: false
-    enabled_by_default: true
-    generated: true
-    install:
-      - echo local
-    verify:
-      - local --version
-`
-    );
-
-    expect(codes(root)).toContain('ONBOARDING_LESSON_MISSING');
-  });
 });

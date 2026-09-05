@@ -92,25 +92,24 @@ provenance_find_checksums_file() {
 }
 
 provenance_default_tools() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local generated_file="${script_dir}/../generated/provenance_tools.sh"
+    if [[ -f "$generated_file" ]]; then
+        # Source the generated file to populate ACFS_PROVENANCE_TOOL_SPECS array
+        # shellcheck source=../generated/provenance_tools.sh
+        source "$generated_file" 2>/dev/null || true
+        if [[ ${#ACFS_PROVENANCE_TOOL_SPECS[@]} -gt 0 ]]; then
+            printf '%s\n' "${ACFS_PROVENANCE_TOOL_SPECS[@]}"
+            return 0
+        fi
+    fi
+    # Fallback: minimal set for bootstrap
     cat <<'EOF'
-br|br|--version|verified_installer|https://github.com/quangdang46/beads_rust|br|
-bv|bv|--version|verified_installer|https://github.com/Dicklesworthstone/beads_viewer|bv|
-ntm|ntm|--version|verified_installer|https://github.com/Dicklesworthstone/ntm|ntm|
-rch|rch|--version|verified_installer|https://github.com/Dicklesworthstone/remote_compilation_helper|rch|
-agent_mail|am|--version|verified_installer|https://github.com/Dicklesworthstone/mcp_agent_mail_rust|mcp_agent_mail|
-ubs|ubs|--version|verified_installer|https://github.com/Dicklesworthstone/ultimate_bug_scanner|ubs|
-cass|cass|--version|verified_installer|https://github.com/Dicklesworthstone/coding_agent_session_search|cass|
-cm|cm|--version|verified_installer|https://github.com/Dicklesworthstone/cass_memory_system|cm|
-caam|caam|--version|verified_installer|https://github.com/Dicklesworthstone/coding_agent_account_manager|caam|
-dcg|dcg|--version|verified_installer|https://github.com/Dicklesworthstone/destructive_command_guard|dcg|
-slb|slb|--version|verified_installer|https://github.com/Dicklesworthstone/simultaneous_launch_button|slb|
-ru|ru|--version|verified_installer|https://github.com/Dicklesworthstone/repo_updater|ru|
 bun|bun|--version|verified_installer|https://bun.sh/install|bun|
 rust|cargo|--version|verified_installer|https://sh.rustup.rs|rust|
 go|go|version|apt|Ubuntu golang-go package||
 claude|claude|--version|verified_installer|https://claude.ai/install.sh|claude|
-codex|codex|--version|bun_global|@openai/codex||
-gemini|gemini|--version|bun_global|@google/gemini-cli||
 EOF
 }
 

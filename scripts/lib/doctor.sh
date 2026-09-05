@@ -2312,9 +2312,9 @@ check_stack() {
     section "Dicklesworthstone stack"
 
     check_command "stack.ntm" "NTM" "ntm" \
-        "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/ntm/main/install.sh | bash"
+        "Re-run: $(fix_for_module "stack.ntm")"
     check_command "stack.slb" "SLB" "slb" \
-        "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/simultaneous_launch_button/main/scripts/install.sh | bash"
+        "Re-run: $(fix_for_module "stack.slb")"
 
     # UBS - custom check
     if ubs_bin="$(doctor_binary_path ubs 2>/dev/null || true)" && [[ -n "$ubs_bin" ]]; then
@@ -2323,7 +2323,7 @@ check_stack() {
         check "stack.ubs" "UBS ($version)" "pass" "installed"
     else
         check "stack.ubs" "UBS" "fail" "not found" \
-            "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/ultimate_bug_scanner/main/install.sh | bash"
+            "Re-run: $(fix_for_module "stack.ultimate_bug_scanner")"
     fi
 
     # Beads Viewer - custom check to detect gcloud 'bv' shadowing
@@ -2347,7 +2347,7 @@ check_stack() {
         fi
     else
         check "stack.bv" "Beads Viewer" "fail" "not found" \
-            "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/beads_viewer/main/install.sh | bash"
+            "Re-run: $(fix_for_module "stack.beads_viewer")"
     fi
 
     # CASS - custom check
@@ -2357,13 +2357,13 @@ check_stack() {
         check "stack.cass" "CASS ($version)" "pass" "installed"
     else
         check "stack.cass" "CASS" "fail" "not found" \
-            "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/main/install.sh | bash -s -- --easy-mode"
+            "Re-run: $(fix_for_module "stack.cass")"
     fi
 
     check_command "stack.cm" "CASS Memory" "cm" \
-        "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/cass_memory_system/main/install.sh | bash -s -- --easy-mode"
+        "Re-run: $(fix_for_module "stack.cm")"
     check_command "stack.caam" "CAAM" "caam" \
-        "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_account_manager/main/install.sh | bash"
+        "Re-run: $(fix_for_module "stack.caam")"
 
     # Check MCP Agent Mail
     local am_install_fix am_version am_label
@@ -2498,7 +2498,7 @@ check_stack() {
         check "stack.ru" "RU ($version)" "pass" "installed"
     else
         check "stack.ru" "RU (Repo Updater)" "warn" "not installed" \
-            "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/repo_updater/main/install.sh | bash"
+            "Re-run: $(fix_for_module "stack.ru")"
     fi
 
     # Check beads_rust (br) - local-first issue tracker.
@@ -2512,7 +2512,7 @@ check_stack() {
         check "stack.beads_rust" "beads_rust ($version)" "pass" "installed"
     else
         check "stack.beads_rust" "beads_rust (br)" "warn" "not installed" \
-            "Re-run: curl -fsSL https://raw.githubusercontent.com/quangdang46/beads_rust/main/install.sh | bash"
+            "Re-run: $(fix_for_module "stack.beads_rust")"
     fi
 
     # Check meta_skill (ms)
@@ -2527,7 +2527,7 @@ check_stack() {
         local _ms_arch _ms_os _ms_fix
         _ms_arch="$(uname -m 2>/dev/null || echo unknown)"
         _ms_os="$(uname -s 2>/dev/null || echo unknown)"
-        _ms_fix="Re-run: curl -fsSL https://raw.githubusercontent.com/quangdang46/ms/main/scripts/install.sh | bash"
+        _ms_fix="Re-run: $(fix_for_module "stack.meta_skill")"
 
         # Pre-built binaries exist for: x86_64-linux, aarch64-darwin, x86_64-darwin
         # ARM64 Linux (aarch64-Linux) does NOT have a pre-built binary yet:
@@ -2571,10 +2571,10 @@ check_stack() {
         # Also check if RCH config exists (indicates partial/previous install)
         if [[ -f "$runtime_home/.config/rch/config.toml" ]] || [[ -d "$runtime_home/remote_compilation_helper" ]]; then
             check "stack.rch" "rch (Remote Compilation Helper)" "warn" "config exists but binary not in PATH" \
-                "Add rch to PATH or re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/remote_compilation_helper/main/install.sh | bash"
+                "Add rch to PATH or re-run: $(fix_for_module "stack.rch")"
         else
             check "stack.rch" "rch (Remote Compilation Helper)" "warn" "not installed" \
-                "Re-run: curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/remote_compilation_helper/main/install.sh | bash"
+                "Re-run: $(fix_for_module "stack.rch")"
         fi
     fi
 

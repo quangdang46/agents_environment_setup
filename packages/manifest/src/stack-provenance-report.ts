@@ -212,17 +212,27 @@ export function parseChecksumsYaml(content: string): ChecksumsFile {
 function githubRepoFromHref(href: string | undefined): { repo: string; repoName: string } | undefined {
   if (!href) return undefined;
 
-  const match = href.match(/^https:\/\/github\.com\/([^/]+)\/([^/#?]+)(?:[/?#].*)?$/);
-  if (!match) return undefined;
+  // Try direct GitHub repo URL first
+  const directMatch = href.match(/^https:\/\/github\.com\/([^/]+)\/([^/#?]+)(?:[/?#].*)?$/);
+  if (directMatch) {
+    const owner = directMatch[1];
+    const repoName = directMatch[2];
+    if (owner === GITHUB_OWNER) {
+      return { repo: `${owner}/${repoName}`, repoName };
+    }
+  }
 
-  const owner = match[1];
-  const repoName = match[2];
-  if (owner !== GITHUB_OWNER) return undefined;
+  // Try raw.githubusercontent.com install script URL pattern
+  const rawMatch = href.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//);
+  if (rawMatch) {
+    const owner = rawMatch[1];
+    const repoName = rawMatch[2];
+    if (owner === GITHUB_OWNER) {
+      return { repo: `${owner}/${repoName}`, repoName };
+    }
+  }
 
-  return {
-    repo: `${owner}/${repoName}`,
-    repoName,
-  };
+  return undefined;
 }
 
 function inferToolKey(module: Module, repoName: string, checksums: ChecksumsFile): string | undefined {
@@ -236,17 +246,6 @@ function inferToolKey(module: Module, repoName: string, checksums: ChecksumsFile
     }
   }
 
-  const cliName = module.web?.cli_name;
-  if (cliName && checksums.installers[cliName]) {
-    return cliName;
-  }
-
-  for (const alias of module.web?.cli_aliases ?? []) {
-    if (checksums.installers[alias]) {
-      return alias;
-    }
-  }
-
   return undefined;
 }
 
@@ -256,7 +255,7 @@ function collectStackTools(manifest: Manifest, checksums: ChecksumsFile): StackT
   for (const module of manifest.modules) {
     if (module.category !== 'stack') continue;
 
-    const repoInfo = githubRepoFromHref(module.web?.href);
+    const repoInfo = githubRepoFromHref(module.verified_installer?.url);
     if (!repoInfo) continue;
 
     const repo = repoInfo.repo;
@@ -267,8 +266,8 @@ function collectStackTools(manifest: Manifest, checksums: ChecksumsFile): StackT
 
     tools.push({
       module,
-      displayName: module.web?.display_name ?? module.description,
-      cliName: module.web?.cli_name,
+      displayName: module.description,
+      cliName: module.id.split('.').pop(),
       toolKey,
       repo,
       repoName,

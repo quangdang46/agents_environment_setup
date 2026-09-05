@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { ModuleWebMetadataSchema } from './schema.js';
 import type { InstallerChecksumEntry } from './validate.js';
 import type { Manifest, Module, ModuleCategory, RunAs } from './types.js';
 
@@ -98,7 +97,6 @@ const PluginModuleSchema = z
     install: PluginInstallSchema,
     verify: z.array(z.string().min(1)).min(1),
     docs_url: z.string().url(),
-    web: ModuleWebMetadataSchema.optional(),
   })
   .passthrough();
 
@@ -951,7 +949,6 @@ function toManifestModule(plugin: PluginPackage, module: PluginModule): Module {
     verify: [...module.verify],
     dependencies: module.dependencies ? [...module.dependencies] : undefined,
     docs_url: module.docs_url,
-    web: module.web,
     plugin: {
       packageId: plugin.packageId,
       version: plugin.version,

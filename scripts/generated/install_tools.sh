@@ -1763,15 +1763,60 @@ install_utils_rtco() {
     log_step "Installing utils.rtco"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
-        log_info "dry-run: install: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?\$(date +%s)\" | bash (target_user)"
+        log_info "dry-run: verified installer: utils.rtco"
     else
-        if ! run_as_target_shell <<'INSTALL_UTILS_RTCO'
-curl -fsSL "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?$(date +%s)" | bash
-INSTALL_UTILS_RTCO
-        then
-            log_warn "utils.rtco: install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?\$(date +%s)\" | bash"
+        if ! {
+            # Try security-verified install (no unverified fallback; fail closed)
+            local install_success=false
+
+            if acfs_security_init; then
+                local known_installers_decl=""
+                # Check if KNOWN_INSTALLERS is available as an associative array (declare -A)
+                known_installers_decl="$(declare -p KNOWN_INSTALLERS 2>/dev/null || true)"
+                if [[ "$known_installers_decl" == declare\ -A* ]]; then
+                    local tool="rtco"
+                    local url=""
+                    local expected_sha256=""
+
+                    # Safe access with explicit empty default
+                    url="${KNOWN_INSTALLERS[$tool]:-}"
+                    if ! expected_sha256="$(get_checksum "$tool")"; then
+                        log_error "utils.rtco: get_checksum failed for tool '$tool'"
+                        expected_sha256=""
+                    fi
+
+                    if [[ -n "$url" ]] && [[ -n "$expected_sha256" ]]; then
+                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'bash' '-s'; then
+                            install_success=true
+                        else
+                            log_error "utils.rtco: verify_checksum or installer execution failed"
+                        fi
+                    else
+                        if [[ -z "$url" ]]; then
+                            log_error "utils.rtco: KNOWN_INSTALLERS[$tool] not found"
+                        fi
+                        if [[ -z "$expected_sha256" ]]; then
+                            log_error "utils.rtco: checksum for '$tool' not found"
+                        fi
+                    fi
+                else
+                    log_error "utils.rtco: KNOWN_INSTALLERS array not available"
+                fi
+            else
+                log_error "utils.rtco: acfs_security_init failed - check security.sh and checksums.yaml"
+            fi
+
+            # Verified install is required - no fallback
+            if [[ "$install_success" = "true" ]]; then
+                true
+            else
+                log_error "Verified install failed for utils.rtco"
+                false
+            fi
+        }; then
+            log_warn "utils.rtco: verified installer failed"
             if type -t record_skipped_tool >/dev/null 2>&1; then
-              record_skipped_tool "utils.rtco" "install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh?\$(date +%s)\" | bash"
+              record_skipped_tool "utils.rtco" "verified installer failed"
             elif type -t state_tool_skip >/dev/null 2>&1; then
               state_tool_skip "utils.rtco"
             fi
@@ -1812,15 +1857,60 @@ install_utils_hashline() {
     log_step "Installing utils.hashline"
 
     if [[ "${DRY_RUN:-false}" = "true" ]]; then
-        log_info "dry-run: install: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?\$(date +%s)\" | bash (target_user)"
+        log_info "dry-run: verified installer: utils.hashline"
     else
-        if ! run_as_target_shell <<'INSTALL_UTILS_HASHLINE'
-curl -fsSL "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?$(date +%s)" | bash
-INSTALL_UTILS_HASHLINE
-        then
-            log_warn "utils.hashline: install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?\$(date +%s)\" | bash"
+        if ! {
+            # Try security-verified install (no unverified fallback; fail closed)
+            local install_success=false
+
+            if acfs_security_init; then
+                local known_installers_decl=""
+                # Check if KNOWN_INSTALLERS is available as an associative array (declare -A)
+                known_installers_decl="$(declare -p KNOWN_INSTALLERS 2>/dev/null || true)"
+                if [[ "$known_installers_decl" == declare\ -A* ]]; then
+                    local tool="hashline"
+                    local url=""
+                    local expected_sha256=""
+
+                    # Safe access with explicit empty default
+                    url="${KNOWN_INSTALLERS[$tool]:-}"
+                    if ! expected_sha256="$(get_checksum "$tool")"; then
+                        log_error "utils.hashline: get_checksum failed for tool '$tool'"
+                        expected_sha256=""
+                    fi
+
+                    if [[ -n "$url" ]] && [[ -n "$expected_sha256" ]]; then
+                        if verify_checksum "$url" "$expected_sha256" "$tool" | run_as_target_runner 'bash' '-s'; then
+                            install_success=true
+                        else
+                            log_error "utils.hashline: verify_checksum or installer execution failed"
+                        fi
+                    else
+                        if [[ -z "$url" ]]; then
+                            log_error "utils.hashline: KNOWN_INSTALLERS[$tool] not found"
+                        fi
+                        if [[ -z "$expected_sha256" ]]; then
+                            log_error "utils.hashline: checksum for '$tool' not found"
+                        fi
+                    fi
+                else
+                    log_error "utils.hashline: KNOWN_INSTALLERS array not available"
+                fi
+            else
+                log_error "utils.hashline: acfs_security_init failed - check security.sh and checksums.yaml"
+            fi
+
+            # Verified install is required - no fallback
+            if [[ "$install_success" = "true" ]]; then
+                true
+            else
+                log_error "Verified install failed for utils.hashline"
+                false
+            fi
+        }; then
+            log_warn "utils.hashline: verified installer failed"
             if type -t record_skipped_tool >/dev/null 2>&1; then
-              record_skipped_tool "utils.hashline" "install command failed: curl -fsSL \"https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh?\$(date +%s)\" | bash"
+              record_skipped_tool "utils.hashline" "verified installer failed"
             elif type -t state_tool_skip >/dev/null 2>&1; then
               state_tool_skip "utils.hashline"
             fi

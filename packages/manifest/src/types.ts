@@ -69,54 +69,6 @@ export interface PreInstallCheck {
 }
 
 /**
- * Web-facing metadata for a module.
- * Used to generate website content (tool pages, TL;DR cards, command references).
- * All fields are optional; omitting the entire `web` block means the module
- * has no web presence. If `web` is present but `visible` is false, the module
- * is excluded from generated web content.
- */
-export interface ModuleWebMetadata {
-  /** Human-readable display name (e.g., "MCP Agent Mail") */
-  display_name?: string;
-  /** Short name for compact UI contexts (e.g., "Agent Mail") */
-  short_name?: string;
-  /** One-line tagline for hero/card display */
-  tagline?: string;
-  /** Short description for cards and summaries */
-  short_desc?: string;
-  /** Lucide icon name (e.g., "mail", "terminal") */
-  icon?: string;
-  /** Hex color for branding (e.g., "#3B82F6") */
-  color?: string;
-  /** Web category label for grouping (e.g., "AI Agent", "Dev Tool") */
-  category_label?: string;
-  /** URL path for the tool's detail page (e.g., "/tools/agent-mail") */
-  href?: string;
-  /** Key features list */
-  features?: string[];
-  /** Technology stack (e.g., ["Rust", "SQLite"]) */
-  tech_stack?: string[];
-  /** Use case descriptions */
-  use_cases?: string[];
-  /** Primary programming language */
-  language?: string;
-  /** GitHub stars count */
-  stars?: number;
-  /** CLI command name (e.g., "br") */
-  cli_name?: string;
-  /** CLI command aliases */
-  cli_aliases?: string[];
-  /** CLI usage example (e.g., "br ready --json") */
-  command_example?: string;
-  /** Associated lesson slug for linking to onboarding content */
-  lesson_slug?: string;
-  /** TL;DR snippet for the summary page */
-  tldr_snippet?: string;
-  /** Whether to show on the website (defaults to true when web block is present) */
-  visible?: boolean;
-}
-
-/**
  * Provenance for modules supplied by a validated ACFS plugin package.
  */
 export interface ModulePluginProvenance {
@@ -175,8 +127,6 @@ export interface Module {
   dependencies?: string[];
   /** Optional aliases this module creates */
   aliases?: string[];
-  /** Optional web-facing metadata for website content generation */
-  web?: ModuleWebMetadata;
   /** Present only for modules supplied by validated plugin packages */
   plugin?: ModulePluginProvenance;
 }
