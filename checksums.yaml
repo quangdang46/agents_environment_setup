@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-09-07T22:09:54+00:00
+# checksums.yaml - Auto-generated 2026-09-08T04:56:56+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -80,7 +80,7 @@ installers:
 
   hashline:
     url: "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh"
-    sha256: "f5a73a3c6fc515f860715da308a599d850cd76ddc911454ec12f163b4b5cf09d"
+    sha256: "3dac14a180868088b40454347906de693ed7d83ef72cad1f32d11ca2dbd0556a"
 
   jfp:
     url: "https://jeffreysprompts.com/install-cli.sh"
