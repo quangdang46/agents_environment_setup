@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-09-09T17:59:40+00:00
+# checksums.yaml - Auto-generated 2026-09-09T22:46:28+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -16,7 +16,7 @@ installers:
 
   atuin:
     url: "https://github.com/atuinsh/atuin/releases/latest/download/atuin-installer.sh"
-    sha256: "eebbd96b3d9d06100c16ba289dcbf89e94b829671da5b9965a21f6b82edf7f1e"
+    sha256: "47b2cfaa0111a462aec0ab1c4f1499e2046bc5c24fb801759c8bfac14d453d03"
 
   br:
     url: "https://raw.githubusercontent.com/quangdang46/beads_rust/main/install.sh"
