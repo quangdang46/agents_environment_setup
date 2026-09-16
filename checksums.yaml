@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-09-16T20:25:15+00:00
+# checksums.yaml - Auto-generated 2026-09-16T23:05:22+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -128,7 +128,7 @@ installers:
 
   rch:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/remote_compilation_helper/main/install.sh"
-    sha256: "38b681c12fd7acd11352771cb313d1c0c73fb42c1080999bc4e68478935e0f96"
+    sha256: "65a21c6bc7a0523a34fd2a0429ab5a65ace9b30dada674204f68e90148eb8b15"
 
   rtco:
     url: "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh"
