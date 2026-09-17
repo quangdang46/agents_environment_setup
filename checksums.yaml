@@ -1,4 +1,4 @@
-# checksums.yaml - Auto-generated 2026-09-16T23:05:22+00:00
+# checksums.yaml - Auto-generated 2026-09-17T06:20:19+00:00
 # Run: ./scripts/lib/security.sh --update-checksums
 
 installers:
@@ -80,7 +80,7 @@ installers:
 
   hashline:
     url: "https://raw.githubusercontent.com/quangdang46/hashline/main/install.sh"
-    sha256: "860e024773bac78e426c4147d84aa125d83db92df8b91a2ed56f831ed850fb05"
+    sha256: "fe5b071ecd447cf654d63615635834b8620908251e9bcb510ee574c7104403f2"
 
   jfp:
     url: "https://jeffreysprompts.com/install-cli.sh"
@@ -128,7 +128,7 @@ installers:
 
   rch:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/remote_compilation_helper/main/install.sh"
-    sha256: "65a21c6bc7a0523a34fd2a0429ab5a65ace9b30dada674204f68e90148eb8b15"
+    sha256: "87299c7d5f93d609b85e48912a3c01eb7d1128d33c9e009511b4585d5062329d"
 
   rtco:
     url: "https://raw.githubusercontent.com/quangdang46/rust_token_cost_optimizer/main/install.sh"
@@ -164,7 +164,7 @@ installers:
 
   ubs:
     url: "https://raw.githubusercontent.com/Dicklesworthstone/ultimate_bug_scanner/main/install.sh"
-    sha256: "238bfabddc4f0f836e03d74e88479ee8b5e551620aea48b9602059591e7b9898"
+    sha256: "475363f7153964203ee8ca7f60d8d9cf0975e28308887972acd532d34acd0a8e"
 
   uv:
     url: "https://astral.sh/uv/install.sh"
