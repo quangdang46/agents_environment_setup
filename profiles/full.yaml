@@ -1,0 +1,18 @@
+# Every verified tool in the catalog, expressed by category rather than by a
+# hand-maintained name list that would rot the day a tool is added.
+#
+# require_tested still applies, so a tool that is not verified cannot sneak
+# in by being listed in a category.
+name: full
+description: Every verified tool in the catalog
+tags:
+  - shell
+  - search
+  - terminal
+  - git
+  - runtime
+  - ai
+  - agent
+  - infra
+  - utility
+require_tested: true

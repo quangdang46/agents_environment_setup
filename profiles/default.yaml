@@ -1,0 +1,18 @@
+# An alias for `ai`, so `aes setup` with no --profile does the obvious thing.
+# Both files exist so the name a user is likely to type works.
+name: default
+description: Alias for the ai profile — a verified AI coding environment
+include:
+  - git
+  - ripgrep
+  - jq
+  - tmux
+  - fzf
+  - zoxide
+  - claude
+  - gh
+tags:
+  - terminal
+  - ai
+  - agent
+require_tested: true

@@ -1,0 +1,9 @@
+# The floor. Three tools, no excuses: version control, fast search, and a
+# JSON parser. Everything here is verified on real machines.
+name: minimal
+description: The minimum a working machine needs — git, search, JSON
+include:
+  - git
+  - ripgrep
+  - jq
+require_tested: true

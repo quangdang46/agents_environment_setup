@@ -1,0 +1,18 @@
+# developer plus the coding agents. This is the profile AES is positioned
+# around: a machine that can take AI coding instructions out of the box.
+name: ai
+description: developer plus AI coding agents
+include:
+  - git
+  - ripgrep
+  - jq
+  - tmux
+  - fzf
+  - zoxide
+  - claude
+  - gh
+tags:
+  - terminal
+  - ai
+  - agent
+require_tested: true

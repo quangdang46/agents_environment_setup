@@ -1,0 +1,15 @@
+# minimal plus the day-to-day tools of a working developer: a terminal
+# multiplexer for long-running work, and the fuzzy finder that pairs with
+# ripgrep.
+name: developer
+description: minimal plus terminal and shell tooling
+include:
+  - git
+  - ripgrep
+  - jq
+  - tmux
+  - fzf
+  - zoxide
+tags:
+  - terminal
+require_tested: true
