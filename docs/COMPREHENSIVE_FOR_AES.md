@@ -424,10 +424,55 @@ aes setup      # --yes --non-interactive --dry-run --json --profile --only --exc
 aes            # TUI
 ```
 
+### Flag semantics
+
+`--yes` and `--non-interactive` are **not** synonyms, and neither implies the other:
+
+| | `--yes` | `--non-interactive` |
+|---|---|---|
+| Suppresses the privilege confirmation | **yes** | yes (via `sudo -n` instead) |
+| Suppresses TTY detection / prompts | no | **yes** |
+| Asserts a TTY exists | **yes** (errors if stdin is not a TTY) | no |
+| Blocks waiting for input | never | never |
+| Implies the other | no | no |
+
+- `--yes` means "I am at a terminal, don't ask me." It **requires** a TTY. Piping
+  `aes setup --yes` without one is a usage error (exit 2), not a silent downgrade — that
+  combination is exactly how a CI job ends up waiting on a prompt that never gets answered.
+- `--non-interactive` means "there is nobody to ask." Every confirmation is resolved
+  automatically: `sudo -n` first; if that fails, the action is skipped, the command is printed,
+  and the run finishes with exit code 5.
+- Passing both is legal and means the second's semantics, since `--non-interactive` is the
+  stronger statement. But it is pointless — `--non-interactive` alone is correct.
+- `--dry-run` is orthogonal: it resolves and prints, then exits 0 without touching anything,
+  regardless of the other flags.
+
+**`--force` behavior.** `--force` is *not* "delete everything and reinstall". It permits
+corrective action on a tool whose recorded state disagrees with reality:
+
+| Situation | Without `--force` | With `--force` |
+|---|---|---|
+| `StatusMissing` (state absent, binary absent) | install | install |
+| `StatusStale` (version below `min`) | install | install |
+| **Drifted** (state says installed, verify says missing) | report, exit 6 | reinstall |
+| **Checksum mismatch** on a prior install | report, exit 6 | reinstall after the fix |
+
+`--force` never widens the resolved set. It changes what happens to an already-resolved action
+whose reality conflicts with its state. A tool excluded by `--exclude` stays excluded.
+
+### Tool-level commands
+
 **Maintenance:** `install` · `uninstall` · `update` · `list` · `verify` · `doctor` · `env` ·
 `test` · `search` · `profile`
 
-MVP ships only: `setup`, `list`, `verify`, `doctor`, `env`.
+`uninstall` semantics are split, and the naming is deliberate — a command called `remove` that
+only drops a state entry is a lie about what it did:
+
+- `aes uninstall <tool>` — invokes the strategy's removal (`brew uninstall`, delete the binary
+  from `~/.aes/bin`, `go install`-installed tools are reported not-removed with a reason)
+- `aes forget <tool>` — drops the state entry only; the binary stays
+
+MVP ships neither; `uninstall` arrives with Stage 10.
 
 ---
 
@@ -473,6 +518,32 @@ func (h *Host) Supports(t *manifest.Tool) bool
 func (h *Host) Has(bin string) bool
 ```
 
+### Arch vocabulary
+
+Three different vocabularies collide here. They must never be confused:
+
+| Layer | Vocabulary | Source |
+|---|---|---|
+| `install:` map key | `darwin` · `linux` | `runtime.GOOS` |
+| `Host.Arch` | `arm64` · `amd64` | `runtime.GOARCH` (Go naming) |
+| `uname -m` | `arm64` · `x86_64` | system `uname` |
+
+**AES uses Go naming (`amd64`) everywhere.** The `uname -m` form appears only when shelling
+out. `Host.Arch` is `runtime.GOARCH` verbatim, so no translation layer exists inside AES:
+
+```go
+// x86_64 → amd64, aarch64 → arm64
+func unameArchToGo(m string) string
+```
+
+Consequences that MUST hold:
+
+- `tool.yaml` `asset:` and `sha256:` keys are **Go arch** (`arm64`/`amd64`), never `x86_64`
+- Release assets are named with Go arch: `aes-1.0.0-linux-amd64.tar.gz`
+- `install.sh` translates `uname -m` → Go arch **once**, before downloading
+- A `tool.yaml` written with `x86_64` as an asset key fails validation with an error naming
+  the offending key and the valid set — silent fallback is forbidden
+
 ```go
 // internal/manifest/manifest.go
 type Tool struct {
@@ -485,7 +556,7 @@ type Tool struct {
     Provides     []string          `yaml:"provides"`
     Dependencies []string          `yaml:"dependencies"`
     Verify       *Verify           `yaml:"verify"`
-    Install      map[string]Target `yaml:"install"` // keyed by platform
+    Install      map[string]Target `yaml:"install"` // keyed by GOOS
 }
 
 type Target struct {
@@ -493,8 +564,8 @@ type Target struct {
     Manager    string            `yaml:"manager"`    // brew|apt — only for strategy=package
     Package    string            `yaml:"package"`
     Repository string            `yaml:"repository"` // only for github-release
-    Asset      map[string]string `yaml:"asset"`      // arch → asset filename
-    SHA256     map[string]string `yaml:"sha256"`     // arch → checksum, REQUIRED for github-release
+    Asset      map[string]string `yaml:"asset"`      // Go arch → asset filename
+    SHA256     map[string]string `yaml:"sha256"`     // Go arch → checksum, REQUIRED for github-release
     GoPackage  string            `yaml:"go_package"`
     NPMPackage string            `yaml:"npm_package"`
     CargoName  string            `yaml:"cargo_name"`
@@ -510,8 +581,35 @@ type VersionCheck struct {
 }
 ```
 
+**`verify: null` is valid** — it means "presence is checked, version is not". A tool with
+`verify: null` and a non-empty `provides` verifies as: the command resolves on PATH → OK;
+otherwise Missing. `verify: null` with an empty `provides` is a validation error (nothing would
+be checked). `verify.version` without `verify.command` is a validation error.
+
 Validation uses `yaml.Decoder.KnownFields(true)` so a typo fails loudly instead of being
 silently dropped.
+
+### Per-strategy validation rules
+
+Each strategy has a required-field set. Violations fail validation with the field named, and
+fields belonging to *other* strategies are rejected as unknown:
+
+| Strategy | Required | Rejected if present |
+|---|---|---|
+| `github-release` | `repository`, `asset`, `sha256` | `manager`, `package`, `go_package`, `npm_package`, `cargo_name` |
+| `package` + `brew` | `manager: brew`, `package` | `repository`, `asset`, `sha256`, `*_package` |
+| `package` + `apt` | `manager: apt`, `package` | same as brew |
+| `package` | `manager`, `package` | `manager` other than brew/apt |
+| `go` | `go_package` | `manager`, `package`, `repository`, `asset`, `sha256` |
+| `npm` | `npm_package` | same as `go` |
+| `cargo` | `cargo_name` | same as `go` |
+
+Two cross-cutting rules:
+
+- `asset` keys and `sha256` keys must cover exactly the same arch set, and every key must be a
+  valid Go arch. A missing `sha256[amd64]` on a tool that has `asset[amd64]` is an error.
+- Unknown `strategy` value → validation error listing the valid set. Never default to
+  `github-release`; a typo must not silently change where code is downloaded from.
 
 ```go
 // internal/resolver/resolver.go
@@ -525,7 +623,7 @@ type Action struct {
     Tool              string
     Strategy          string
     Operation         Operation
-    Host              platform.Host
+    Host              *platform.Host
     RequiresPrivilege bool
     Reason            string // "default" | "dependency:git" | "only:claude"
 }
@@ -538,6 +636,19 @@ type Request struct {
 
 func Resolve(c *catalog.Catalog, req Request, h *platform.Host) ([]Action, error)
 ```
+
+**`Action` is a resolved snapshot, not an execution context.** It is a pure value describing
+what *should* happen on one specific host. Two consequences, both deliberate:
+
+- `Host` is a **pointer**, shared across all actions in one resolution. Embedding a value would
+  copy the struct per action and make the serialized form noisy for no gain.
+- The installer **does not** re-resolve the host. It consumes the `Host` already on the action.
+  If execution-time state differs from resolution-time state, that is drift — and drift is
+  `doctor`'s job, not the installer's. This keeps `Resolve` pure and therefore testable without
+  touching the filesystem.
+
+`Action` carries no `[]string` slices, so it serializes to JSON deterministically. `Reason` is
+a plain string, not an enum, because it is diagnostic text for `doctor` — never parsed.
 
 **Action rules:**
 
@@ -576,6 +687,38 @@ func Verify(t *manifest.Tool) Result
 
 `Verify` returns no error for a normal outcome — a missing tool is `StatusMissing`. An error
 means "could not determine", which is a different thing.
+
+### Version extraction
+
+Every tool prints its version differently. One parser handles all of them, and it is
+deliberately lenient about format while being strict about *not inventing* a version:
+
+| Real output | Extracted |
+|---|---|
+| `ripgrep 14.1.1` | `14.1.1` |
+| `fzf 0.54.0 (brew)` | `0.54.0` |
+| `git version 2.44.0` | `2.44.0` |
+| `go version go1.24.0 darwin/arm64` | `1.24.0` |
+| `jq-1.7.1` | `1.7.1` |
+| `claude 1.0.283 (Claude Code)` | `1.0.283` |
+| `tmux 3.4` | `3.4` |
+| `zoxide 0.9.4` | `0.9.4` |
+
+Algorithm:
+
+1. Take the first line of output, trimmed
+2. Match the first `\d+(\.\d+)*` run in the line, with an optional leading `v` stripped
+3. Compare as dotted integers, not semver: missing components are zero
+   (`14.1` == `14.1.0`), so `min: "14.0"` matches `14.1.1`
+
+**No digits → no version.** Return `Version: ""` and `Status: StatusOK` when only presence was
+being checked. Never guess, never fall back to a fabricated number.
+
+**Unparseable `min`** is a validation error, not a runtime surprise: `min` must be `\d+(\.\d+)*`
+with an optional `v` prefix. A malformed `min` fails catalog load.
+
+Comparison direction: `StatusStale` when extracted `< min`, `StatusOK` when `>= min`. A tool
+**newer** than the minimum is fine — AES never downgrades.
 
 ```go
 // internal/state/state.go
@@ -731,22 +874,48 @@ The Tools screen passes a `Request` to `Resolve` — byte-identical to
 
 ## Integration test fixtures
 
-Stage 7 verification uses tools already present on the dev machine, so install is skipped and
-verify is the assertion:
+Two distinct layers. Layer 1 runs on every `go test`; Layer 2 only in the sandbox, because it
+mutates the machine.
 
-| Tool | Binary | Verified by |
+### Layer 1 — Verify fixtures (no mutation, runs everywhere)
+
+Tools already present on the dev machine. Install is skipped; **verify is the assertion**:
+
+| Tool | Binary | Asserted |
 |---|---|---|
-| ripgrep | `rg` | version parse |
-| git | `git` | version parse |
-| fzf | `fzf` | version parse |
-| jq | `jq` | version parse |
-| tmux | `tmux` | version parse |
-| zoxide | `zoxide` | version parse |
-| gh | `gh` | version parse |
-| claude | `claude` | version parse |
+| ripgrep | `rg` | `StatusOK` + version `14.x` extracted |
+| git | `git` | `StatusOK` + version `2.x` extracted |
+| fzf | `fzf` | `StatusOK` + version parse |
+| jq | `jq` | `StatusOK` + version parse |
+| tmux | `tmux` | `StatusOK` + version parse |
+| zoxide | `zoxide` | `StatusOK` + version parse |
+| gh | `gh` | `StatusOK` + version parse |
+| claude | `claude` | `StatusOK` + version parse |
 
-A fixture test asserts, for each, that `Verify` returns `StatusOK` on this machine. A tool
-marked `tested: true` that fails this fixture must be flipped to `tested: false`.
+A tool marked `tested: true` that fails this fixture must be flipped to `tested: false`.
+The test runs against a `GOOS`-derived expectation, never the host's actual identity, so it
+does not become a false test on a different developer machine.
+
+### Layer 2 — Install fixtures (mutates, sandbox only)
+
+Layer 1 proves *detection*. It does **not** prove the install path — a manifest can verify a
+tool perfectly and still install the wrong thing, or nothing. Only a real install proves that.
+
+Run in the Stage 8 sandbox, per tool:
+
+1. Start from a machine where the tool is **absent**
+2. `aes setup --only <tool> --yes` → must exit 0
+3. The binary must exist and `Verify` must now return `StatusOK`
+4. `state.json` must contain an entry
+5. Re-run `aes setup --only <tool> --yes` → idempotent, no reinstall
+6. Delete the binary, run `aes doctor` → drift detected
+7. Re-run `aes setup --only <tool> --force` → reinstalls
+
+Steps 5–7 are the ones that catch real bugs: a non-idempotent installer, a state writer that
+records something the installer never did, and a `doctor` that cannot see drift.
+
+A tool may only be marked `tested: true` once **both** layers pass. Layer 1 alone is not
+sufficient, and the catalog's `tested` flag means both.
 
 ---
 
