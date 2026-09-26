@@ -673,6 +673,7 @@ const (
     StatusOK      Status = "ok"
     StatusMissing Status = "missing"
     StatusStale   Status = "stale"
+    StatusUnknown Status = "unknown"   // added — see "Undeterminable versions" below
 )
 
 type Result struct {
@@ -711,8 +712,35 @@ Algorithm:
 3. Compare as dotted integers, not semver: missing components are zero
    (`14.1` == `14.1.0`), so `min: "14.0"` matches `14.1.1`
 
-**No digits → no version.** Return `Version: ""` and `Status: StatusOK` when only presence was
-being checked. Never guess, never fall back to a fabricated number.
+**No digits → no version.** Return `Version: ""`. Never guess, never fall back to a
+fabricated number. The status depends on whether a minimum was actually claimed:
+
+| Declared `min`? | Version readable? | Status |
+|---|---|---|
+| no | — | `StatusOK` — presence was the only claim, and it held |
+| yes | no | **`StatusUnknown`** — the minimum was never checked |
+| yes | yes, `>= min` | `StatusOK` |
+| yes | yes, `< min` | `StatusStale` |
+
+### Undeterminable versions
+
+The `min` column is load-bearing. `StatusOK` asserts a tool is "present, and at or above any
+declared minimum" — so a declared minimum that was never read cannot be reported as `OK`,
+because that status would claim a check that never happened. Nor can it be `Stale`: that
+asserts the tool is too old, which is exactly the thing nobody knows, and it would make
+`aes setup` reinstall a working tool on every run, forever.
+
+Neither alternative is a nuance, so the anomaly gets its own status. This is the one place
+`Verify` needs a fourth value, and it is worth stating why it is in the type rather than
+left for `doctor` to infer from an empty `Version`: that inference only works while nothing
+ever populates the field, so it is a signal with a silent expiry date.
+
+Policy splits at the caller, which is the point — the decision lives in one place instead of
+being smeared across the verify path:
+
+- `aes setup` treats `StatusUnknown` as a **warning, not a failure**, so the North Star
+  ("one command runs to completion") survives a tool with a flaky version command.
+- `aes doctor` reports it as an **anomaly**: *declared min 2.0.0, version could not be read.*
 
 **Unparseable `min`** is a validation error, not a runtime surprise: `min` must be `\d+(\.\d+)*`
 with an optional `v` prefix. A malformed `min` fails catalog load.
@@ -916,6 +944,65 @@ records something the installer never did, and a `doctor` that cannot see drift.
 
 A tool may only be marked `tested: true` once **both** layers pass. Layer 1 alone is not
 sufficient, and the catalog's `tested` flag means both.
+
+---
+
+# Implementation decisions
+
+Decisions the architecture above did not settle, taken while building. Each is recorded here so
+the next agent inherits the reasoning rather than re-deriving it or relitigating it.
+
+## Ecosystem coordinates must be pinned
+
+`go_package`, `npm_package`, `cargo_name` and `uv_package` must pin an explicit version —
+`example.com/tool@v1.2.3`, never a bare `example.com/tool`.
+
+An unpinned ecosystem coordinate is not a smaller manifest; it is a manifest whose *meaning
+changes under the user with no record*. `go install example.com/tool@latest` resolves to a
+different commit tomorrow, and `state.json` records a version string that no longer describes
+what is installed. The whole point of `github-release` is an explicit checksum; an unpinned
+ecosystem coordinate is the same class of problem wearing a friendlier syntax, so it is
+rejected at validation with the offending coordinate named.
+
+## `uv` is a sixth install strategy
+
+`github-release · package · go · npm · cargo · uv`. Python tooling increasingly ships as
+standalone binaries but a large tail still distributes through PyPI, and `uv tool install`
+gives that tail a no-sudo, checksummed path where `pip` would not. It behaves like the other
+ecosystem strategies: it needs a coordinate, it needs no privilege, and it writes to its own
+prefix (`~/.local/bin`).
+
+## `installer.Action` is a distinct type, not an alias for `resolver.Action`
+
+The installer defines its own `Action`. Aliasing `type Action = resolver.Action` would couple
+the execution layer to the resolution layer for no benefit and make the "resolved snapshot vs
+execution input" boundary invisible in the type system — the exact confusion the `Action`
+doc comment exists to prevent. Both types are small and each says something true about its own
+layer; the conversion happens once, where the CLI calls `Resolve` and then executes.
+
+## `PackageInstaller` holds two runners, and only one of them can sudo
+
+`unprivileged()` and `runPrivileged()` are separate function fields, and the privileged one is
+only ever assigned after `Authorize` has agreed. The split makes the escalation boundary a
+struct field rather than a runtime `if`, so a reader can see that the privileged path is
+optional and injectable — and a test can substitute either without spawning a process.
+
+### One privileged-run path
+
+`internal/exec.Run` refuses any command containing `sudo` and does not execute it (I10). Because
+of that, the authorized privileged path cannot route through it, and the mechanism — timeout,
+1 MiB output cap, shell invocation, `Result` assembly — would otherwise be written twice.
+
+**Decision: the mechanism lives in `internal/exec`, behind one explicitly named entry point.**
+`Run` keeps its refusal and remains the default for everything else. A separate
+`RunAuthorized` carries an explicit authorization value, so the capability is greppable, sits
+in the same file as the refusal it bypasses, and there is exactly one place in the codebase that
+constructs a privileged command.
+
+The escalation *decision* stays in the installer: printing the command, confirming, or trying
+`sudo -n` non-interactively. Consolidating the mechanism does not move the decision — the
+package that says "I never escalate silently" and the function that escalates deliberately live
+together, which is what makes the invariant auditable by reading one file.
 
 ---
 
