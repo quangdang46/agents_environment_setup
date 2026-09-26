@@ -160,7 +160,6 @@ func Run(ctx context.Context, tool *manifest.Tool, cfg Config) (Result, error) {
 	}
 
 	binName := primaryBinary(tool)
-	binPath := filepath.Join(home, "bin", binName)
 
 	// 2. the binary is there and verifies
 	if cfg.DryRun {
@@ -174,35 +173,57 @@ func Run(ctx context.Context, tool *manifest.Tool, cfg Config) (Result, error) {
 		return res, nil
 	}
 
-	_, statErr := os.Stat(binPath)
-	present := statErr == nil
-	res.record("binary present", present, pathDetail(binPath, statErr))
-
-	// Verify against the sandbox's own view, not the developer's PATH.
+	// Verify against the sandbox's own view, and take the reported path from
+	// it. A package strategy installs wherever the package manager puts its
+	// binaries — /opt/homebrew/bin, /usr/bin — so assuming $AES_HOME/bin
+	// reports "not installed" for a tool that installed correctly.
 	verifyRes := verifyIn(ctx, cfg, env, home, tool.Name)
+	_, statErr := os.Stat(firstExisting(verifyRes.Path, filepath.Join(home, "bin", binName)))
+	res.record("binary present", statErr == nil, pathDetail(verifyRes.Path, statErr))
+	binPath := verifyRes.Path
+	if binPath == "" {
+		binPath = filepath.Join(home, "bin", binName)
+	}
 	res.record("verify ok", verifyRes.Status == verifier.StatusOK,
-		fmt.Sprintf("status=%s version=%q", verifyRes.Status, verifyRes.Version))
+		fmt.Sprintf("status=%s version=%q path=%s", verifyRes.Status, verifyRes.Version, binPath))
 
 	// 3. state.json on disk, re-read from the file rather than trusted from
 	// the process that wrote it
 	res.record("state entry", stateHas(home, tool.Name), "state.json")
 
 	// 4. idempotence: nothing about the sandbox may change
-	beforeHome := fingerprint(home)
+	snapA := home + "-before"
+	if err := copyTree(home, snapA); err != nil {
+		return res, fmt.Errorf("sandbox: snapshot before re-run: %w", err)
+	}
+	beforeHome, err := treeFingerprint(home)
+	if err != nil {
+		return res, fmt.Errorf("sandbox: fingerprint before re-run: %w", err)
+	}
 	beforeBin := fingerprint(binPath)
 	out, code, err = run(ctx, cfg, env, home, "setup", "--only", tool.Name)
-	afterHome := fingerprint(home)
+	afterHome, err := treeFingerprint(home)
+	if err != nil {
+		return res, fmt.Errorf("sandbox: fingerprint after re-run: %w", err)
+	}
 	afterBin := fingerprint(binPath)
 	idempotent := err == nil && code == 0 && beforeHome == afterHome && beforeBin == afterBin
 	res.record("idempotent", idempotent,
-		idempotentDetail(beforeHome, afterHome, beforeBin, afterBin, code, err))
+		idempotentDetail(beforeHome, afterHome, beforeBin, afterBin, snapA, home, code, err))
+
+	os.RemoveAll(snapA)
 
 	// 5. drift: remove the binary, doctor must notice
 	if rmErr := os.Remove(binPath); rmErr != nil {
 		res.record("drift detected", false, fmt.Sprintf("could not remove %s: %v", binPath, rmErr))
 	} else {
 		out, code, err := run(ctx, cfg, env, home, "doctor")
-		drift := err == nil && strings.Contains(strings.ToLower(out), "drift")
+		// Exit code deliberately ignored, same reasoning as verifyIn: doctor
+		// exits non-zero precisely when it HAS found something, so requiring
+		// err == nil here would make the check incapable of ever passing. What
+		// is asserted is the report, and the tool named in it.
+		drift := strings.Contains(strings.ToLower(out), "drift") &&
+			strings.Contains(out, tool.Name)
 		res.record("drift detected", drift, detail(out, code, err))
 	}
 
@@ -353,9 +374,26 @@ func verifyIn(ctx context.Context, cfg Config, env []string, home, tool string) 
 	cmd := exec.CommandContext(ctx, cfg.Binary, "verify", "--json", "--non-interactive")
 	cmd.Env = env
 	cmd.Dir = home
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return verifier.Result{Tool: tool, Status: verifier.StatusMissing}
+	// stdout and stderr must be kept apart. CombinedOutput interleaves them,
+	// and a single warning line on stderr turns the JSON document into
+	// something that will not parse — which reads as "the tool is missing"
+	// rather than as "we merged the streams".
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	// The exit code is deliberately ignored. `aes verify` exits non-zero when
+	// ANY tool is missing, and in a sandbox most of the catalog is missing by
+	// design — so treating a non-zero exit as "could not determine" reported
+	// every tool as missing even though the JSON on stdout had the answer.
+	//
+	// The contract is "what does verify say about THIS tool", not "did the
+	// whole run succeed". A tool that was just installed is present whatever
+	// the other fifty say.
+	_ = cmd.Run()
+	out := stdout.Bytes()
+	if len(out) == 0 {
+		return verifier.Result{Tool: tool, Status: verifier.StatusMissing,
+			Path: "no output from aes verify"}
 	}
 
 	var payload struct {
@@ -367,7 +405,8 @@ func verifyIn(ctx context.Context, cfg Config, env []string, home, tool string) 
 		} `json:"tools"`
 	}
 	if err := json.Unmarshal(out, &payload); err != nil {
-		return verifier.Result{Tool: tool, Status: verifier.StatusMissing}
+		return verifier.Result{Tool: tool, Status: verifier.StatusMissing,
+			Path: "unparseable: " + firstLine(string(out))}
 	}
 	for _, entry := range payload.Tools {
 		if entry.Name != tool {
@@ -481,12 +520,12 @@ func detail(out string, code int, err error) string {
 // things the verdict does — an earlier version compared only the home and
 // printed "nothing changed" while failing on the binary, which sends the reader
 // looking for a difference that is not in the place it names.
-func idempotentDetail(beforeHome, afterHome, beforeBin, afterBin string, code int, err error) string {
+func idempotentDetail(beforeHome, afterHome, beforeBin, afterBin, snapA, home string, code int, err error) string {
 	switch {
 	case err != nil || code != 0:
 		return "re-run did not succeed: " + detail("", code, err)
 	case beforeHome != afterHome:
-		return fmt.Sprintf("sandbox home changed on re-run (before=%s after=%s)", beforeHome, afterHome)
+		return fmt.Sprintf("sandbox home changed on re-run: %s", changedFiles(snapA, home))
 	case beforeBin != afterBin:
 		return fmt.Sprintf("binary was rewritten on re-run (before=%s after=%s)", beforeBin, afterBin)
 	default:
@@ -499,4 +538,96 @@ func pathDetail(p string, err error) string {
 		return fmt.Sprintf("%s: %v", p, err)
 	}
 	return p + " exists"
+}
+
+// changedFiles names the paths whose content differs between two snapshots of
+// the same tree, so a failing idempotence step points at a file rather than
+// reporting only that something moved.
+func changedFiles(beforeDir, afterDir string) string {
+	before := snapshotFiles(beforeDir)
+	after := snapshotFiles(afterDir)
+	var diffs []string
+	for name, sum := range after {
+		if prev, ok := before[name]; !ok {
+			diffs = append(diffs, "added "+name)
+		} else if prev != sum {
+			diffs = append(diffs, "changed "+name)
+		}
+	}
+	for name := range before {
+		if _, ok := after[name]; !ok {
+			diffs = append(diffs, "removed "+name)
+		}
+	}
+	sort.Strings(diffs)
+	if len(diffs) == 0 {
+		return "content digests differ but no per-file difference was found"
+	}
+	return strings.Join(diffs, ", ")
+}
+
+func snapshotFiles(root string) map[string]string {
+	out := map[string]string{}
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		sum := sha256.Sum256(data)
+		out[rel] = hex.EncodeToString(sum[:])
+		return nil
+	})
+	return out
+}
+
+// firstExisting returns the first non-empty path that exists on disk, falling
+// back to the last candidate so the error message names somewhere meaningful.
+func firstExisting(candidates ...string) string {
+	last := ""
+	for _, c := range candidates {
+		if c == "" {
+			continue
+		}
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+		last = c
+	}
+	return last
+}
+
+// copyTree snapshots a directory for a before/after comparison.
+func copyTree(src, dst string) error {
+	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, rerr := filepath.Rel(src, p)
+		if rerr != nil {
+			return rerr
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o700)
+		}
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return rerr
+		}
+		return os.WriteFile(target, data, 0o600)
+	})
+}
+
+// firstLine is the first non-empty line of s, for diagnostics.
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
 }

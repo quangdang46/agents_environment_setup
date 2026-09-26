@@ -292,7 +292,7 @@ func TestRegistryDestinationFor(t *testing.T) {
 	os.Unsetenv("GOBIN")
 	os.Unsetenv("GOPATH")
 
-	r := NewRegistry()
+	r := NewRegistry(t.TempDir())
 	ctx := context.Background()
 
 	t.Run("go reports its bin directory", func(t *testing.T) {

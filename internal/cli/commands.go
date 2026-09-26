@@ -168,6 +168,13 @@ func (e *verifyFailure) Error() string {
 }
 
 func runVerify(ctx context.Context, app *App, f *Flags, extra any, args []string) error {
+	// aes installs into $AES_HOME/bin, which is not on PATH until env.sh is
+	// sourced. Without this, verify reports a tool aes just installed as
+	// missing — and `aes doctor` already flags the PATH separately, so the
+	// two would contradict each other.
+	restore := withBinOnPath(filepath.Join(app.Home, "bin"))
+	defer restore()
+
 	rc, err := app.resolve(f)
 	if err != nil {
 		return err
@@ -472,11 +479,24 @@ func runEnv(ctx context.Context, app *App, f *Flags, extra any, args []string) e
 
 // homeOf returns the user's home directory, which is distinct from AES_HOME:
 // tool destinations live under the real home, not under ~/.aes.
+// homeOf is the user's home directory, derived from AES_HOME rather than read
+// straight from the environment.
+//
+// os.UserHomeDir() ignores AES_HOME entirely, so with the variable pointed
+// somewhere else the generated env.sh named the real home — a sandbox run
+// produced a file that, if sourced, would put the live installation's bin on
+// PATH. app.Home is $AES_HOME, conventionally ~/.aes, so its parent is the
+// home directory the user actually means.
 func homeOf(app *App) string {
+	if app != nil && app.Home != "" {
+		if home := filepath.Dir(app.Home); home != "" && home != "." {
+			return home
+		}
+	}
 	if h, err := os.UserHomeDir(); err == nil {
 		return h
 	}
-	return app.Home
+	return ""
 }
 
 // strategyFor reports the strategy a tool would install with on this host,

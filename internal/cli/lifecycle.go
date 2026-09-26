@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -218,7 +219,7 @@ func lifecycleConfirmed(app *App, f *Flags, extra any, what string) bool {
 // registry resolves the installer registry, tolerating an unconfigured app.
 func (a *App) registry() *installer.Registry {
 	if a.Registry == nil {
-		a.Registry = installer.NewRegistry()
+		a.Registry = installer.NewRegistry(filepath.Join(a.Home, "bin"))
 	}
 	return a.Registry
 }

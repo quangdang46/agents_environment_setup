@@ -110,7 +110,7 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 		ProfileDir:  profileDir,
 		IsTTY:       func() bool { return false },
 	}
-	h.app.Registry = installer.NewRegistry()
+	h.app.Registry = installer.NewRegistry(filepath.Join(h.app.Home, "bin"))
 
 	// The recording installer replaces the go strategy. Recording the
 	// strategy is how "install runs the resolved strategy" is asserted: a

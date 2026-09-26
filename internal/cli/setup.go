@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -86,6 +87,20 @@ func (e *setupError) ExitCode() int { return e.code }
 // verification, and the pre-install verification is what makes a re-run
 // resume rather than restart.
 func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string) error {
+	// aes installs into $AES_HOME/bin, which is not on the user's PATH until
+	// they source env.sh. Without this, every install lands correctly and is
+	// then reported as "did not verify" — the verifier resolves through
+	// exec.LookPath, which cannot see a directory nobody has added yet. The
+	// install worked, the run claimed it failed, and state was never written.
+	//
+	// Scoped to setup, and deliberately not applied to every command: env.sh
+	// is the mechanism by which aes puts these directories on PATH, and
+	// silently amending the user's PATH from a program whose whole job is
+	// modifying a machine would be the wrong kind of helpful. This is narrower
+	// — the run knows where it just put things, so it looks there.
+	restore := withBinOnPath(filepath.Join(app.Home, "bin"))
+	defer restore()
+
 	// 1-3: detect, load the profile, resolve.
 	rc, err := app.resolve(f)
 	if err != nil {
@@ -263,12 +278,28 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 	return res
 }
 
+// recordInstalled writes the entry for a tool that is present and verified.
+//
+// installed_at is PRESERVED when the entry already describes the same
+// strategy. Stamping time.Now() unconditionally made the field mean "when aes
+// last looked at this", not "when it was installed", and it rewrote
+// state.json on every run even when nothing had changed — so a plain `aes
+// setup` on an up-to-date machine dirtied a file it had no reason to touch.
+// The Layer 2 idempotence check caught it by diffing the sandbox.
+//
+// When the strategy changes the entry is a different install, so the stamp
+// moves. That is the one case where the old value is genuinely wrong.
 func recordInstalled(store *state.Store, tool *manifest.Tool, target manifest.Target, version string) {
+	installedAt := time.Now().UTC().Format(time.RFC3339)
+	if prev, ok := store.Get(tool.Name); ok &&
+		prev.Strategy == target.Strategy && prev.InstalledAt != "" {
+		installedAt = prev.InstalledAt
+	}
 	store.Set(tool.Name, state.Installed{
 		Strategy:    target.Strategy,
 		Privileged:  installer.RequiresPrivilege(target),
 		Version:     version,
-		InstalledAt: time.Now().UTC().Format(time.RFC3339),
+		InstalledAt: installedAt,
 	})
 }
 
@@ -356,5 +387,21 @@ func printSummary(app *App, sum summaryOutput) {
 
 	if sum.Failed > 0 {
 		fmt.Fprintf(app.Out, "\n%d tool(s) did not verify. Run 'aes doctor' for detail.\n", sum.Failed)
+	}
+}
+
+// withBinOnPath prepends dir to PATH for the duration of a run and returns a
+// function restoring the previous value.
+func withBinOnPath(dir string) func() {
+	old, had := os.LookupEnv("PATH")
+	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+old); err != nil {
+		return func() {}
+	}
+	return func() {
+		if had {
+			os.Setenv("PATH", old)
+			return
+		}
+		os.Unsetenv("PATH")
 	}
 }

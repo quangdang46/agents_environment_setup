@@ -354,7 +354,7 @@ func TestAssetURLPinsVersion(t *testing.T) {
 func TestRegistryResolvesByStrategy(t *testing.T) {
 	t.Parallel()
 
-	r := NewRegistry()
+	r := NewRegistry(t.TempDir())
 
 	t.Run("every declared strategy resolves to a distinct installer", func(t *testing.T) {
 		t.Parallel()
@@ -408,7 +408,7 @@ func TestRegistryInstallRejectsUnknownStrategy(t *testing.T) {
 	t.Parallel()
 
 	a := Action{Tool: "x", Target: manifest.Target{Strategy: "gihub-release"}, Host: linuxHost()}
-	if err := NewRegistry().Install(context.Background(), a); !errors.Is(err, ErrUnknownStrategy) {
+	if err := NewRegistry(t.TempDir()).Install(context.Background(), a); !errors.Is(err, ErrUnknownStrategy) {
 		t.Errorf("error = %v, want ErrUnknownStrategy", err)
 	}
 }

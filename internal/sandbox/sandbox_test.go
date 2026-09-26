@@ -58,7 +58,10 @@ case "$1" in
     exit 0
     ;;
   doctor)
-    echo "no drift"
+    if [ -e "$AES_HOME/bin/stubtool" ]; then echo "no drift"; else
+      echo "error   stubtool    state records it as installed but the binary does not resolve; run: aes setup --force"
+      echo "aes: 1 problem(s) found; drifted tools are repaired with 'aes setup --force'"
+    fi
     exit 0
     ;;
 esac

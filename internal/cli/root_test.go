@@ -73,7 +73,7 @@ func newHarness(t *testing.T, tools ...[3]string) *harness {
 		Home:        h.home,
 		CatalogRoot: catRoot,
 		ProfileDir:  filepath.Join(home, "profiles"),
-		Registry:    installer.NewRegistry(),
+		Registry:    installer.NewRegistry(filepath.Join(home, "bin")),
 		IsTTY:       func() bool { return false },
 	}
 	return h

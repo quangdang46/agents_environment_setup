@@ -164,7 +164,7 @@ func (lieRemover) Uninstall(context.Context, installer.Action) (installer.Outcom
 // succeeded and does nothing — the failure mode this test exists for.
 func lieRegistry(t *testing.T, rem installer.Remover) *installer.Registry {
 	t.Helper()
-	r := installer.NewRegistry()
+	r := installer.NewRegistry(t.TempDir())
 	r.Register(manifest.StrategyGo, removerInstaller{inner: installer.NewGoInstaller(), rem: rem})
 	return r
 }

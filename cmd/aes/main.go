@@ -47,7 +47,7 @@ func main() {
 		Home:        aesHome,
 		CatalogRoot: catalogRoot,
 		ProfileDir:  profileDir,
-		Registry:    installer.NewRegistry(),
+		Registry:    installer.NewRegistry(filepath.Join(aesHome, "bin")),
 	}
 	cli.Version = version
 	app.RunTUI = func() error { return runTUI(context.Background(), app, catalogRoot, profileDir) }

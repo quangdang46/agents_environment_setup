@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
@@ -215,14 +214,4 @@ func TestLayer2BrokenManifestInstallsNothing(t *testing.T) {
 		t.Error("a rejected manifest still wrote a state entry")
 	}
 	t.Logf("exit=%v output=%s", err, firstLine(string(out)))
-}
-
-// firstLine is the first non-empty line of output, for log lines.
-func firstLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		if line = strings.TrimSpace(line); line != "" {
-			return line
-		}
-	}
-	return ""
 }

@@ -97,9 +97,22 @@ type Registry struct {
 // mode replaces it via Register — the point of registering a default is that
 // resolution by strategy works from the first call, not that the CLI is
 // forbidden from configuring it.
-func NewRegistry() *Registry {
+// NewRegistry builds the default registry, with every installer that places
+// binaries itself told where they go.
+//
+// binDir is required rather than optional because an installer with no
+// destination does not fail loudly at construction — it fails later, at
+// os.MkdirAll(""), with the directory missing from the message. Every
+// github-release install died that way: Dest was never assigned anywhere in
+// production, so the primary install strategy did not work at all.
+func NewRegistry(binDir string) *Registry {
 	r := &Registry{installers: make(map[string]Installer)}
 	r.Register(manifest.StrategyGithubRelease, NewGithubRelease())
+	if inst, err := r.Get(manifest.StrategyGithubRelease); err == nil {
+		if g, ok := inst.(*GithubRelease); ok {
+			g.Dest = binDir
+		}
+	}
 	r.Register(manifest.StrategyPackage, &PackageInstaller{})
 	r.Register(manifest.StrategyGo, NewGoInstaller())
 	r.Register(manifest.StrategyNPM, NewNPMInstaller())

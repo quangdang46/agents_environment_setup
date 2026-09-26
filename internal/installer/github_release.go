@@ -54,6 +54,15 @@ type GithubRelease struct {
 // NewGithubRelease returns a github-release installer with defaults applied.
 func NewGithubRelease() *GithubRelease { return &GithubRelease{} }
 
+// Destination reports where this strategy puts binaries, so envgen can add
+// them to PATH.
+//
+// It was missing while every other strategy that installs into a directory of
+// its own implemented it. Without it a github-release tool installed
+// successfully and then was not runnable — the exact "installed but not
+// usable, wearing a success message" failure Destination exists to prevent.
+func (g *GithubRelease) Destination(context.Context) string { return g.Dest }
+
 // downloadTimeout bounds a single asset download. The installer context
 // carries the overall budget; this is the backstop for a server that accepts
 // the connection and then stalls.
