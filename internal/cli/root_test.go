@@ -606,3 +606,57 @@ func TestCommandsDoNotHang(t *testing.T) {
 		})
 	}
 }
+
+// TestBareAesFallsBackToHelp is the regression guard for a bug the TUI
+// introduced.
+//
+// Detecting a terminal up front looks correct and is not: /dev/null is a
+// character device, so a program reading from it passes a ModeCharDevice
+// check and looks interactive. Bare `aes` then tried to open a TUI on a
+// stream that cannot hold one.
+//
+// Attempting the TUI and falling back on failure is robust to every such
+// case, including ones nobody has thought of yet.
+func TestBareAesFallsBackToHelp(t *testing.T) {
+	// Not parallel: t.Setenv forbids it.
+	h := newHarness(t)
+
+	// A TUI that cannot start — the common case being no terminal at all.
+	h.app.RunTUI = func() error { return errors.New("no terminal here") }
+	h.app.Run(nil)
+	if !strings.Contains(h.stdout.String(), "COMMANDS") {
+		t.Errorf("no help printed when the TUI could not start:\n%s", h.stdout.String())
+	}
+	// The reason is surfaced, not swallowed: "it did nothing" is worse than
+	// "it could not run, here is why".
+	if !strings.Contains(h.stderr.String(), "no terminal here") {
+		t.Errorf("the reason the TUI failed was not reported:\n%s", h.stderr.String())
+	}
+
+	// A TUI that runs must not be followed by help.
+	h.stdout.Reset()
+	h.stderr.Reset()
+	h.app.RunTUI = func() error { return nil }
+	if code := h.app.Run(nil); code != ExitOK {
+		t.Errorf("exit = %d, want 0", code)
+	}
+	if strings.Contains(h.stdout.String(), "COMMANDS") {
+		t.Errorf("help was printed even though the TUI ran:\n%s", h.stdout.String())
+	}
+}
+
+// TestBareAesWithNoTUIWiredFallsBackToHelp covers the other half: a build
+// without the TUI compiled in still prints help rather than doing nothing.
+func TestBareAesWithNoTUIWiredFallsBackToHelp(t *testing.T) {
+	t.Parallel()
+
+	h := newHarness(t)
+	h.app.RunTUI = nil
+
+	if code := h.app.Run(nil); code != ExitOK {
+		t.Errorf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(h.stdout.String(), "COMMANDS") {
+		t.Errorf("no help printed with no TUI wired in:\n%s", h.stdout.String())
+	}
+}

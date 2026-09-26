@@ -9,14 +9,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
 	aessetup "github.com/quangdang46/agents_environment_setup"
+	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/cli"
 	"github.com/quangdang46/agents_environment_setup/internal/installer"
+	"github.com/quangdang46/agents_environment_setup/internal/plan"
+	"github.com/quangdang46/agents_environment_setup/internal/platform"
+	"github.com/quangdang46/agents_environment_setup/internal/tui"
 )
 
 // version is overridden at build time with -ldflags "-X main.version=...".
@@ -45,6 +50,7 @@ func main() {
 		Registry:    installer.NewRegistry(),
 	}
 	cli.Version = version
+	app.RunTUI = func() error { return runTUI(context.Background(), app, catalogRoot, profileDir) }
 
 	os.Exit(app.Run(os.Args[1:]))
 }
@@ -70,6 +76,36 @@ func resolveHome() (string, error) {
 		return "", fmt.Errorf("cannot determine home directory (set AES_HOME to override): %w", err)
 	}
 	return filepath.Join(home, ".aes"), nil
+}
+
+// runTUI opens the human frontend.
+//
+// The TUI collects a selection and hands it back through App.SetupSelection,
+// which runs the same pipeline `aes setup --only <selection>` runs. The TUI
+// itself cannot install anything — it does not import the installer — so this
+// is the only way anything gets installed from the interactive path.
+func runTUI(ctx context.Context, app *cli.App, catalogRoot, profileDir string) error {
+	cat, err := catalog.Load(catalogRoot)
+	if err != nil {
+		return fmt.Errorf("load catalog: %w", err)
+	}
+	host, err := platform.Current()
+	if err != nil {
+		return fmt.Errorf("detect host: %w", err)
+	}
+
+	m := tui.New(cat, host)
+	m.OnInstall = func(sel plan.Selection) {
+		// A fresh screen first: the setup summary is longer than a TUI
+		// frame, and interleaving it with the list is unreadable.
+		fmt.Print("\x1b[H\x1b[2J")
+		if err := app.SetupSelection(ctx, sel, &cli.Flags{NonInteractive: false}); err != nil {
+			m.Err = err.Error()
+		} else {
+			m.Result = "installed " + sel.String()
+		}
+	}
+	return tui.Run(ctx, m, os.Stdin, os.Stdout, os.Stderr)
 }
 
 // resolveData decides where the catalog and profiles come from.

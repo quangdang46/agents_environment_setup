@@ -249,9 +249,10 @@ type App struct {
 	// IsTTY reports whether In is a terminal. Nil means auto-detect.
 	IsTTY func() bool
 
-	// RunTUI opens the human frontend. Nil means the TUI is not wired in,
-	// and bare `aes` falls back to printing help.
-	RunTUI func()
+	// RunTUI opens the human frontend. Nil means the TUI is not wired in.
+	// A returned error is not fatal: bare `aes` falls back to printing help,
+	// because the most common reason it fails is that there is no terminal.
+	RunTUI func() error
 
 	// Home is AES_HOME, conventionally ~/.aes.
 	Home string
@@ -288,11 +289,21 @@ var commands = []*Command{
 // Run dispatches args and returns the process exit code.
 func (a *App) Run(args []string) int {
 	if len(args) == 0 {
-		// Bare `aes` is the TUI. Without a terminal — a pipe, a CI job —
-		// it prints help rather than emitting control codes into a pipe.
-		if a.stdinIsTTY() && a.RunTUI != nil {
-			a.RunTUI()
-			return ExitOK
+		// Bare `aes` is the TUI, and falls back to help when there is no
+		// terminal.
+		//
+		// It does not try to decide that up front by testing for a TTY.
+		// Character-device detection is not good enough on its own:
+		// /dev/null is a character device, so a program reading from it
+		// looks interactive. Attempting the TUI and falling back on
+		// failure is robust to every such case, including ones nobody has
+		// thought of yet.
+		if a.RunTUI != nil {
+			if err := a.RunTUI(); err == nil {
+				return ExitOK
+			} else {
+				fmt.Fprintf(a.Err, "aes: %v\n", err)
+			}
 		}
 		a.writeHelp(a.Out)
 		return ExitOK

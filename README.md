@@ -31,8 +31,9 @@ aes setup
 `aes` is built to be driven by another program. The stdout/stderr split and
 the exit codes are a contract, not an implementation detail.
 
-**Never run bare `aes` in an agent context** expecting a TUI — there isn't one
-yet. Use the subcommands directly.
+**Never run bare `aes` in an agent context** — it opens an interactive TUI.
+Always pass a subcommand. (With no terminal it falls back to printing help, so
+it degrades rather than hanging, but you still get nothing machine-readable.)
 
 ```bash
 # 1. What would this do? Nothing is modified.
@@ -131,7 +132,7 @@ AES treats installation as a **declared, verifiable** process:
 | Verify is ground truth; state is a cache | Never decide from `state.json` alone. |
 | Corruption is an error, never emptiness | A truncated file must not read as "nothing installed". |
 | Refuse loudly rather than fail quietly | An unknown strategy errors listing the valid set. |
-| Two frontends, one engine | The TUI will call the same resolver; identical `Action`s, by construction. |
+| Two frontends, one engine | The TUI and the CLI call the same `plan.Resolve`; identical `Action`s, by construction, not by agreement. |
 
 ---
 
@@ -265,9 +266,10 @@ This is an active, pre-1.0 project. Stated plainly:
   Layer 2 is not built. So `aes setup` with **no flags resolves to nothing and
   exits non-zero** — which is I15 working as designed. Use `--only` or a
   profile until Layer 2 lands.
-- **No TUI.** `aes` with no arguments prints help. The design constraint is
-  locked (no free-form commands, no separate resolver, no business logic in
-  the UI) but it isn't built.
+- **The TUI is new and lightly exercised.** It exists and its selection
+  logic is well tested, but it has never been run on a machine other than
+  the one that wrote it, and raw mode goes through `stty`. Expect rough edges
+  on terminals it has not seen.
 - **Ecosystem installs cannot be uninstalled.** `aes uninstall` removes
   github-release and package-manager tools for real, but `go`/`npm`/`cargo`/
   `uv` have no supported per-package removal, so AES reports *not removed*
@@ -276,6 +278,9 @@ This is an active, pre-1.0 project. Stated plainly:
   marked `tested: true`.
 - **I7 has no automated guard.** Nothing writes to `~/.agents/`, but nothing
   would catch a regression either.
+- **No CI on pull requests.** `release.yml` is tag-triggered only, and
+  `gofmt` does not run in CI. A green `main` is not currently evidence that
+  anything was checked.
 
 ## Troubleshooting
 
@@ -308,9 +313,10 @@ detection evidence alone would make the tool's central claim — a *verified*
 environment — a lie, which is the one thing the flag exists to prevent.
 
 **Can a malicious `tool.yaml` run an arbitrary command?**
-No. The strategy set is closed to five values, unknown fields are rejected at
-parse time, and there is no free-form shell field. A manifest can only name a
-strategy and its arguments.
+No. The strategy set is closed to six values — `github-release`, `package`,
+`go`, `npm`, `cargo`, `uv` — unknown fields are rejected at parse time, and
+there is no free-form shell field. A manifest can only name a strategy and
+its arguments.
 
 **Does it touch `~/.zshrc`?**
 Not unless you explicitly pass `--link-shell`, which backs the file up first
