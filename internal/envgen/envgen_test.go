@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -88,17 +89,41 @@ func TestGenerateIsDeterministic(t *testing.T) {
 
 // TestNoTimestamp guards the rule that makes a regenerated file show only
 // real changes.
+//
+// The check looks for a date or time *shape*, not a bare digit run. An
+// earlier version tested for the substring "202", which meant to catch a
+// year — and then failed at random, because a macOS temp directory name can
+// contain those three digits. That is the substring-assertion trap: a test
+// that fires on correct code trains you to ignore it.
 func TestNoTimestamp(t *testing.T) {
-	defaultStub(t)
-	out, err := Generate([]Tool{{Name: "x", Strategy: manifest.StrategyGo}}, defaultStub(t))
+	home := defaultStub(t)
+	out, err := Generate([]Tool{{Name: "x", Strategy: manifest.StrategyGo}}, home)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	// A date, a time, or a year would make every run differ.
-	for _, forbidden := range []string{"202", "GMT", "UTC", "Generated on"} {
-		if strings.Contains(string(out), forbidden) {
-			t.Errorf("output contains %q, which suggests a timestamp:\n%s", forbidden, out)
+	text := string(out)
+
+	// Shapes a timestamp would take, none of which may appear.
+	for _, pattern := range []string{
+		`\d{4}-\d{2}-\d{2}`,  // 2026-09-27
+		`\d{2}:\d{2}:\d{2}`,  // 12:34:56
+		`\d{4}-\d{2}-\d{2}T`, // RFC3339
+		`Generated on`,
+		`UTC|GMT`,
+	} {
+		if re := regexp.MustCompile(pattern); re.MatchString(text) {
+			t.Errorf("output matches %q, which suggests a timestamp:\n%s", pattern, text)
 		}
+	}
+
+	// The point of the property: two runs over the same input are identical,
+	// and that is checkable directly rather than by pattern-guessing.
+	again, err := Generate([]Tool{{Name: "x", Strategy: manifest.StrategyGo}}, home)
+	if err != nil {
+		t.Fatalf("Generate again: %v", err)
+	}
+	if text != string(again) {
+		t.Error("two runs over the same input differ, so something time-dependent got in")
 	}
 }
 

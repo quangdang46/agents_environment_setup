@@ -249,6 +249,10 @@ type App struct {
 	// IsTTY reports whether In is a terminal. Nil means auto-detect.
 	IsTTY func() bool
 
+	// RunTUI opens the human frontend. Nil means the TUI is not wired in,
+	// and bare `aes` falls back to printing help.
+	RunTUI func()
+
 	// Home is AES_HOME, conventionally ~/.aes.
 	Home string
 	// CatalogRoot is where tool.yaml files live.
@@ -284,6 +288,12 @@ var commands = []*Command{
 // Run dispatches args and returns the process exit code.
 func (a *App) Run(args []string) int {
 	if len(args) == 0 {
+		// Bare `aes` is the TUI. Without a terminal — a pipe, a CI job —
+		// it prints help rather than emitting control codes into a pipe.
+		if a.stdinIsTTY() && a.RunTUI != nil {
+			a.RunTUI()
+			return ExitOK
+		}
 		a.writeHelp(a.Out)
 		return ExitOK
 	}
@@ -395,6 +405,10 @@ func (a *App) validateFlags(f *Flags) error {
 	}
 	return nil
 }
+
+// stdinIsTTY reports whether stdin is a terminal, for deciding whether bare
+// `aes` can open the interactive UI at all.
+func (a *App) stdinIsTTY() bool { return a.tty() }
 
 func (a *App) tty() bool {
 	if a.IsTTY != nil {

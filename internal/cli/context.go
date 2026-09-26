@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
+	"github.com/quangdang46/agents_environment_setup/internal/plan"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
 	"github.com/quangdang46/agents_environment_setup/internal/profile"
 	"github.com/quangdang46/agents_environment_setup/internal/resolver"
@@ -89,13 +90,22 @@ func (rc *runContext) request() (resolver.Request, error) {
 // DefaultProfile is the profile used when --profile is not given.
 const DefaultProfile = "default"
 
-// actions resolves the request against the catalog and host.
+// actions resolves the selection against the catalog and host.
+//
+// It goes through plan.Resolve — the same entry point the TUI uses — so
+// "the TUI and the CLI produce the same Actions" is a property of the code
+// rather than a comparison a test has to keep making. The resolver is not
+// called directly from here for exactly that reason.
 func (rc *runContext) actions() ([]resolver.Action, error) {
 	req, err := rc.request()
 	if err != nil {
 		return nil, err
 	}
-	return resolver.Resolve(rc.Catalog, req, rc.Host)
+	return plan.Resolve(rc.Catalog, rc.Host, plan.Selection{
+		Only:    req.Only,
+		Exclude: req.Exclude,
+		Profile: req.Profile,
+	})
 }
 
 // writeJSON emits v as indented JSON followed by a newline.
