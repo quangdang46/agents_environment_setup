@@ -1,0 +1,31 @@
+# AES catalog. github-release for darwin, linux at atuinsh/atuin release v18.23.0; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: atuin
+description: shell history with sync and search
+category: shell
+tested: false
+tags:
+  - shell
+verify:
+  command: atuin
+  version:
+    command: atuin --version
+    min: "18.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: atuinsh/atuin
+    asset:
+      amd64: atuin-server-x86_64-apple-darwin.tar.gz
+      arm64: atuin-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: 06e7f211880cec688b4642719b2d901a870666f592b8d0b9580f4b3969b5cf8e
+      arm64: c988be1cde19cd7295ce64bc8b955d42fb1855e5227cb640c87fc09c8408c3fc
+  linux:
+    strategy: github-release
+    repository: atuinsh/atuin
+    asset:
+      amd64: atuin-server-x86_64-unknown-linux-gnu.tar.gz
+      arm64: atuin-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: ad42a2696e73af09c9e9c5726a268097611299162ddb5c6f1c52c885f0da674c
+      arm64: 21869faff1fedb9f8fb27837136567b089bcd588d21252533d5b314605517ae2

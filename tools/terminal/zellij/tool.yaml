@@ -1,0 +1,31 @@
+# AES catalog. github-release for darwin, linux at zellij-org/zellij release v0.45.1; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: zellij
+description: workspace multiplexer for terminals
+category: terminal
+tested: false
+tags:
+  - terminal
+verify:
+  command: zellij
+  version:
+    command: zellij --version
+    min: "0.40"
+install:
+  darwin:
+    strategy: github-release
+    repository: zellij-org/zellij
+    asset:
+      amd64: zellij-no-web-x86_64-apple-darwin.tar.gz
+      arm64: zellij-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: 37a1b29f222722f9e7cca2bf506b6d9a816858b5ff80facdb03fd577a8cf08e3
+      arm64: c029ba4fe1927b79ad9f0cdd59155c4dff80777863c85857d4d09b88b56f9891
+  linux:
+    strategy: github-release
+    repository: zellij-org/zellij
+    asset:
+      amd64: zellij-no-web-x86_64-unknown-linux-musl.tar.gz
+      arm64: zellij-aarch64-unknown-linux-musl.tar.gz
+    sha256:
+      amd64: d7bda1e18c30a688833ae7627f1d6a253bbba5349a4bc48e4f0ec008aaf75ed1
+      arm64: 05f0802afadd53f8db9514e7cae53c9ae8432fed1b35b8294aa816ee3044a16b

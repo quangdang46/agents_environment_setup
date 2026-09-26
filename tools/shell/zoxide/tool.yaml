@@ -1,0 +1,31 @@
+# AES catalog. github-release for darwin, linux at ajeetdsouza/zoxide release v0.10.0; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: zoxide
+description: smart cd that learns your habits
+category: shell
+tested: false
+tags:
+  - shell
+verify:
+  command: zoxide
+  version:
+    command: zoxide --version
+    min: "0.9.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: ajeetdsouza/zoxide
+    asset:
+      amd64: zoxide-0.10.0-x86_64-apple-darwin.tar.gz
+      arm64: zoxide-0.10.0-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: 18ab7ae2633ad6e2ab79a4e665cbba1e95b7c872d44523326efb793202451dad
+      arm64: b55ae6f2f5f23d0a6ccb3bd4eeb2af9c7e0a6556e5255c82100e40305129bbb0
+  linux:
+    strategy: github-release
+    repository: ajeetdsouza/zoxide
+    asset:
+      amd64: zoxide-0.10.0-x86_64-unknown-linux-musl.tar.gz
+      arm64: zoxide-0.10.0-aarch64-unknown-linux-musl.tar.gz
+    sha256:
+      amd64: 2d93385b99f3e82cf2701609a1bffcad863fbeb75aa3fe7eb6be4d29be68b1ae
+      arm64: f1f16c5d6298d63dee467eedea1cdcd8490e43e493bea43acd416dc9033ef641

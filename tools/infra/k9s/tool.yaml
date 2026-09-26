@@ -1,0 +1,34 @@
+# AES catalog. github-release for darwin, linux at derailed/k9s release v0.51.0; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: k9s
+description: terminal UI for Kubernetes
+category: infra
+tested: false
+tags:
+  - infra
+  - kubernetes
+dependencies:
+  - kubectl
+verify:
+  command: k9s
+  version:
+    command: k9s version
+    min: "0.32"
+install:
+  darwin:
+    strategy: github-release
+    repository: derailed/k9s
+    asset:
+      amd64: k9s_Darwin_amd64.tar.gz
+      arm64: k9s_Darwin_arm64.tar.gz
+    sha256:
+      amd64: 7e8802c57c45a0cd389e8fc38472243fe4cf48d8ad5957e189ce370e19e5eda0
+      arm64: 9b8c0e8f461e5d33aeee43a67f5ef4aff646a008a786887b8266cbb153c610cc
+  linux:
+    strategy: github-release
+    repository: derailed/k9s
+    asset:
+      amd64: k9s_Linux_amd64.tar.gz
+      arm64: k9s_Linux_arm64.tar.gz
+    sha256:
+      amd64: c3752ad51a5a4015a113819c4eeb6e55a4d0e4b8e652494797532f6fc8161dd7
+      arm64: 3ee05c82e5f9198928a4e86133608ba6a2c10a2244d6a7789e820f78319d640c

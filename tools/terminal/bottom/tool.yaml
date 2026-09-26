@@ -1,0 +1,31 @@
+# AES catalog. github-release for darwin, linux at ClementTsang/bottom release 0.14.9; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: bottom
+description: graphical process monitor
+category: terminal
+tested: false
+tags:
+  - terminal
+verify:
+  command: bottom
+  version:
+    command: bottom --version
+    min: "0.9"
+install:
+  darwin:
+    strategy: github-release
+    repository: ClementTsang/bottom
+    asset:
+      amd64: bottom_x86_64-apple-darwin.tar.gz
+      arm64: bottom_aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: d0b1d446963ee3c4dfbfe2efd9614cfdc77f39e8268bf8cc2e0b5b6cea982774
+      arm64: 28358e19a3d62b3778fc0d1778b0028a682059145c9ac38ac5076bf124d77714
+  linux:
+    strategy: github-release
+    repository: ClementTsang/bottom
+    asset:
+      amd64: bottom_x86_64-unknown-linux-gnu-2-17.tar.gz
+      arm64: bottom_aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 15774bae02e251e652f438a07a309ffbcb1b4e5fb60a21031608155009b3bba7
+      arm64: a6a0a0dda426b31b2c72e15a26c7e97c2224aafdd66f60632e34ee464a64ec8f

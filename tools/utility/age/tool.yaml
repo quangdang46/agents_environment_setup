@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at FiloSottile/age release v1.3.2; asset names and sha256 read from the upstream release by scripts/release_probe.py.
 name: age
 description: modern encryption tool
 category: utility
@@ -12,10 +12,20 @@ verify:
     min: "1.1"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: age
+    strategy: github-release
+    repository: FiloSottile/age
+    asset:
+      amd64: age-v1.3.2-darwin-amd64.tar.gz
+      arm64: age-v1.3.2-darwin-arm64.tar.gz
+    sha256:
+      amd64: 1d1e4bc66e1427edad7739ae7616157de0e79db8b6d2a1497d7d9925fb06a539
+      arm64: e2020b073c44f692685a24d6abc378817eb81ffaaf49fd0531ef8565f767f2f5
   linux:
-    strategy: package
-    manager: apt
-    package: age
+    strategy: github-release
+    repository: FiloSottile/age
+    asset:
+      amd64: age-v1.3.2-linux-amd64.tar.gz
+      arm64: age-v1.3.2-linux-arm64.tar.gz
+    sha256:
+      amd64: cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
+      arm64: 6b8dc4333c53a5a57c9e5834e3a48f92605d7154014cd07269ff3327db5d37f4

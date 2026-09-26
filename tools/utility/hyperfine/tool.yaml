@@ -1,0 +1,31 @@
+# AES catalog. github-release for darwin, linux at sharkdp/hyperfine release v1.20.0; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: hyperfine
+description: command-line benchmarking tool
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: hyperfine
+  version:
+    command: hyperfine --version
+    min: "1.18"
+install:
+  darwin:
+    strategy: github-release
+    repository: sharkdp/hyperfine
+    asset:
+      amd64: hyperfine-v1.20.0-x86_64-apple-darwin.tar.gz
+      arm64: hyperfine-v1.20.0-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: f58d0b90993fadfa122a351428c469ce24afef3865f027f0e6e86f0830d088f1
+      arm64: 8ee7067016620447c9d2d6234ec9a4680f958b7ad983549b56334668f63075b5
+  linux:
+    strategy: github-release
+    repository: sharkdp/hyperfine
+    asset:
+      amd64: hyperfine-v1.20.0-x86_64-unknown-linux-gnu.tar.gz
+      arm64: hyperfine-v1.20.0-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 63ad53934062118f5b0be11785e0bb1603d4b91667d1921f2fd8df9a8712040a
+      arm64: 90875cb1db7a1d797c311174d061728361e58fc70e3b62262a00635ac3b1997c

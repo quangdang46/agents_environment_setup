@@ -103,6 +103,25 @@ manager as root is `package`+`apt`; the privilege is derived, never declared.
 loudly. Reading corruption as "nothing installed" causes a reinstall storm — one truncated JSON
 file makes AES reinstall everything on the machine.
 
+**A failure that fires against correct code sends you to fix the wrong file.** Two that have
+actually cost time here:
+
+- A substring assertion: `"go/bin"` is a substring of `"cargo/bin"`, so a staleness check fires on
+  a correct file.
+- A newline inside a Go **raw** string is a literal backslash-n, not a line break — so an embedded
+  `sh -c` script is a syntax error while the generated file round-trips perfectly.
+
+Both produce convincing errors. When a test fails, check whether the code is wrong before you
+conclude it is; re-reading the failing output by hand is cheap and catches this class immediately.
+
+**Parsing is not resolving.** A profile naming a tool or a tag that does not exist parses
+perfectly and then fails at run time, taking the whole binary down — `aes setup --dry-run` exits 1
+on a profile it happily loaded. A test that only checks "the file parses" cannot catch this. Ship
+one that walks every `include` and every selector in `profiles/*.yaml` and asserts each resolves
+against the real catalog. It must check *references* rather than `Resolve()`, so it stays valid
+while the catalog has no `tested:` tools yet — a profile naming something nonexistent never is
+legitimate, a catalog with nothing tested is.
+
 **There is no `plan`.** The value between the resolver and the installer is an `Action`. The
 `aes plan` feature was cut; do not let it regrow under another name (`InstallPlan`, `PlanCommand`,
 `PlanRenderer`, `PlanJSON`). `--dry-run` stays — it is a safety mechanism, not a product surface.

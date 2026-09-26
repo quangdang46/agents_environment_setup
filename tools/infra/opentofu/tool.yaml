@@ -1,0 +1,31 @@
+# AES catalog. github-release for darwin, linux at opentofu/opentofu release v1.12.6; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: opentofu
+description: open-source infrastructure as code
+category: infra
+tested: false
+tags:
+  - infra
+verify:
+  command: opentofu
+  version:
+    command: tofu version
+    min: "1.6"
+install:
+  darwin:
+    strategy: github-release
+    repository: opentofu/opentofu
+    asset:
+      amd64: tofu_1.12.6_darwin_amd64.tar.gz
+      arm64: tofu_1.12.6_darwin_arm64.tar.gz
+    sha256:
+      amd64: 44bb1855f372f17f365fb94517906e78da5001da10f4c98de57a39bf982f3a92
+      arm64: f958ec5e511063be9feb180ca015a4cb7977566a9cf6a8550bba8c2a9b5aba74
+  linux:
+    strategy: github-release
+    repository: opentofu/opentofu
+    asset:
+      amd64: tofu_1.12.6_linux_amd64.tar.gz
+      arm64: tofu_1.12.6_linux_arm64.tar.gz
+    sha256:
+      amd64: 50a6106fa4de523d09c87af85f3db1dd47535fc005727fdca6852146476b88ec
+      arm64: 9bd0228a81bcd0c88f7045c74378f45a815779f19897191dff7d9efba9976b9e
