@@ -170,6 +170,24 @@ deterministic tie-break removed. Each of those passed review and only failed und
 A mutation that *doesn't* fail the suite is also a finding — it means the test cannot distinguish
 correct behaviour from the mutation, and the test is too weak.
 
+### Assert on what the contract is about, not on what is convenient
+
+A green suite concealed two real defects here, and both had the same cause: a test asserting on
+an in-memory value when the contract was about what reached disk. A setup path called
+`state.Set(...)` and never `Save()`, so every process started from a blank cache — and the
+idempotence tests could not see it, because within one invocation the in-memory store was correct.
+
+Before writing a test, ask what the contract is about, and assert on *that*:
+
+| Contract is about | Assert on | Not |
+|---|---|---|
+| what reached disk | the file, re-read in a fresh process | the struct you just populated |
+| what a user sees | the rendered output | the value behind it |
+| what a command did | the side effect | the return value |
+
+A test that can only pass in the process that wrote the value is not testing persistence, it is
+testing assignment.
+
 ---
 
 ## Swarm coordination
