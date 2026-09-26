@@ -32,6 +32,15 @@ func TestExtractVersion(t *testing.T) {
 		{"jq apple suffix", "jq-1.7.1-apple\n", "1.7.1"},
 		{"gh with a date in parens", "gh version 2.93.0 (2026-05-27)\n", "2.93.0"},
 		{"fzf homebrew build suffix", "0.73.1 (Homebrew)\n", "0.73.1"},
+
+		// Captured verbatim from binaries on a developer machine while writing
+		// the agent/ catalog. ntm has no --version at all - it prints this from
+		// `ntm version` - so a manifest written by pattern-matching its peers
+		// would have used a command that errors.
+		{"ntm, from the version subcommand", "ntm version 1.18.2\n", "1.18.2"},
+		{"agent-mail", "am 0.3.36\n", "0.3.36"},
+		{"beads viewer, v-prefixed", "bv v0.16.4\n", "0.16.4"},
+		{"cass", "cass 0.6.11\n", "0.6.11"},
 		{"zoxide", "zoxide 0.9.4\n", "0.9.4"},
 		{"leading v is not part of the match", "v1.2.3\n", "1.2.3"},
 		{"no trailing newline", "rg 13.0.0", "13.0.0"},
