@@ -56,13 +56,30 @@ func TestExtractVersion(t *testing.T) {
 
 		// No digits means no version. Never a guess, never a fabricated 0.
 		{"no digits at all", "unknown\n", ""},
+
+		// Line 1 wins whenever it has digits, so the existing lenient rule is
+		// never traded away for the fallback.
+		{"line 1 wins over line 2", "tool 1.2.3\nv9.9.9 other\n", "1.2.3"},
+		{"a bare single number on line 1 is still a version", "tmux 3\n", "3"},
+
+		// Banner-style tools: the description is line 1 and the version is
+		// line 2. This is eza's real output shape.
+		{"eza banner, version on line 2", "eza eza - A modern, maintained replacement for ls\nv0.23.5 [+git]\nhttps://github.com/eza-community/eza\n", "0.23.5"},
+
+		// The counter-case the fallback has to survive. A copyright year is a
+		// bare number with no dot, so requiring two components rejects it. This
+		// is the reason the fallback is strict where line 1 is not.
+		{"copyright year on line 2 is not a version", "some tool\nCopyright (c) 2001-2024 Python Software Foundation\n", ""},
+		{"a URL on line 2 is not a version", "tool\nhttps://example.com/x\n", ""},
 		{"empty output", "", ""},
 		{"whitespace only", "   \n", ""},
 		{"words before any number", "coming soon\n", ""},
 
-		// Only the first line is read; later ones carry years and build ids.
-		{"second line ignored", "tool 1.2.3\nbuilt 2019 with go1.4\n", "1.2.3"},
-		{"version on the second line only", "loading...\nready 2.0.0\n", ""},
+		// Line 1 is the source. Later lines are only consulted when it has no
+		// digits at all, which is the eza/banner case rather than the general
+		// one, so a version or a year on line 2 never displaces a real line 1.
+		{"second line ignored when line 1 has a version", "tool 1.2.3\nbuilt 2019 with go1.4\n", "1.2.3"},
+		{"copyright year ignored when line 1 has a version", "ripgrep 14.1.1\nCopyright 2011-2024\n", "14.1.1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := ExtractVersion(tc.output); got != tc.want {

@@ -100,14 +100,43 @@ var versionRe = regexp.MustCompile(`\d+(?:\.\d+)*(?:[a-z]+)?`)
 // standing between the line and its digits.
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
+// dottedRe requires at least two components. It is only used past line 1,
+// where a bare number is far more likely to be a year than a version.
+var dottedRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)*(?:[a-z]+)?`)
+
 // ExtractVersion pulls a version out of a tool's version output.
 //
-// Only the first line is considered, because later lines are usually copyright
-// years or build metadata. A leading "v" or "go" is not part of the match, so
+// Line 1 is the source, because later lines are usually copyright years or
+// build metadata. A leading "v" or "go" is not part of the match, so
 // "go version go1.24.0 darwin/arm64" yields "1.24.0" without special-casing.
+//
+// When line 1 contains no digits at all, later lines are consulted under a
+// stricter rule. That rescues banner-style tools — `eza --version` prints its
+// description first and "v0.23.5 [+git]" second — and it can only ever add a
+// version where there was none. It cannot turn a correct extraction into a
+// wrong one, because a line 1 with any version in it still wins outright.
+//
+// The fallback requires at least two numeric components, so a bare copyright
+// year on line 2 is rejected while a real version is not.
 func ExtractVersion(output string) string {
-	line, _, _ := strings.Cut(output, "\n")
-	return versionRe.FindString(ansiRe.ReplaceAllString(strings.TrimSpace(line), ""))
+	lines := strings.Split(ansiRe.ReplaceAllString(output, ""), "\n")
+	// Line 1 is the source, and the lenient rule applies to it: a bare "3" is a
+	// legitimate version and we do not want to lose it.
+	if v := versionRe.FindString(strings.TrimSpace(lines[0])); v != "" {
+		return v
+	}
+	// Only when line 1 has no digits at all do we look further. This is what
+	// rescues banner-style tools — `eza --version` prints its description
+	// first and the version second — and it is deliberately strict, because
+	// the reason line 1 is preferred is that later lines carry copyright
+	// years. Requiring at least one dot rejects a bare "2001" while accepting
+	// "0.23.5".
+	for _, line := range lines[1:] {
+		if m := dottedRe.FindString(strings.TrimSpace(line)); m != "" {
+			return m
+		}
+	}
+	return ""
 }
 
 // CompareVersions orders two dotted-integer versions, returning -1, 0 or 1.
