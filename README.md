@@ -138,12 +138,26 @@ AES treats installation as a **declared, verifiable** process:
 ## Commands
 
 ```bash
-aes setup      # the North Star: install and verify a complete environment
-aes list       # catalog tools with status from verification, not from state
-aes verify     # check without modifying; exits 6 if anything is not OK
-aes doctor     # report environment health and drift (reports; never fixes)
-aes env        # print the environment file, or --write it
+aes setup       # the North Star: install and verify a complete environment
+aes list        # catalog tools with status from verification, not from state
+aes verify      # check without modifying; exits 6 if anything is not OK
+aes doctor      # report environment health and drift (reports; never fixes)
+aes env         # print the environment file, or --write it
+aes uninstall   # remove a tool through its own strategy
+aes forget      # stop tracking a tool; the binary stays put
 ```
+
+`uninstall` and `forget` are different commands on purpose:
+
+| | `aes uninstall jq` | `aes forget jq` |
+|---|---|---|
+| Removes the binary | yes, via the tool's strategy | **no** |
+| Drops the state entry | yes, but **only after** verifying the binary is gone | yes |
+| Right for | a tool AES installed | a tool you already had |
+
+If a strategy claims it removed something and the binary is still there, the
+state entry is **kept** and the run exits 6 — dropping it would create the
+drift `doctor` exists to find.
 
 ### `--dry-run` and `doctor` are the safe pair
 
@@ -254,8 +268,10 @@ This is an active, pre-1.0 project. Stated plainly:
 - **No TUI.** `aes` with no arguments prints help. The design constraint is
   locked (no free-form commands, no separate resolver, no business logic in
   the UI) but it isn't built.
-- **`aes uninstall` / `aes forget` are not built.** The split between them
-  (remove the thing vs. forget the record) is specified; neither exists.
+- **Ecosystem installs cannot be uninstalled.** `aes uninstall` removes
+  github-release and package-manager tools for real, but `go`/`npm`/`cargo`/
+  `uv` have no supported per-package removal, so AES reports *not removed*
+  with the manual route rather than pretending. `aes forget` always works.
 - **Layer 2 sandbox is not built**, which is why nothing can honestly be
   marked `tested: true`.
 - **I7 has no automated guard.** Nothing writes to `~/.agents/`, but nothing
