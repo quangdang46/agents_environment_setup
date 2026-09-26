@@ -394,3 +394,22 @@ func tempFilesIn(t *testing.T, dir string) []string {
 	}
 	return matches
 }
+
+func TestPathReportsWhereTheStoreReadsAndWrites(t *testing.T) {
+	p := statePath(t)
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if s.Path() != p {
+		t.Errorf("Path() = %q, want %q", s.Path(), p)
+	}
+	// The path must be the one Save actually wrote, or a caller redirecting
+	// state would inspect the wrong file.
+	if err := s.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := os.Stat(s.Path()); err != nil {
+		t.Errorf("Save did not write to the reported path: %v", err)
+	}
+}

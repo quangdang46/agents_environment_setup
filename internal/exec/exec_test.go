@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -388,5 +389,28 @@ func TestRunAndRunAuthorizedDisagreeOnlyOnConfirmation(t *testing.T) {
 			t.Errorf("%q: unconfirmed RunAuthorized error = %v, want ErrUnauthorized", cmd, unauthErr)
 		}
 		_ = authErr
+	}
+}
+
+// The message is what a user reads when aes refuses to escalate, so its
+// content is a contract like any other: it must name the command, or the user
+// cannot tell what was refused.
+func TestPrivilegeErrorMessageNamesTheCommand(t *testing.T) {
+	cmd := "sudo apt-get install -y jq"
+	_, err := Run(context.Background(), cmd, Options{})
+	var privErr *PrivilegeError
+	if !errors.As(err, &privErr) {
+		t.Fatalf("error = %v, want *PrivilegeError", err)
+	}
+	msg := privErr.Error()
+	if !strings.Contains(msg, "jq") {
+		t.Errorf("message %q does not name the command it refused", msg)
+	}
+	if !errors.Is(privErr, ErrNeedsPrivilege) {
+		t.Error("PrivilegeError does not unwrap to ErrNeedsPrivilege")
+	}
+	// The same error through the fmt path an agent parses.
+	if !strings.Contains(fmt.Sprintf("%v", err), "sudo") {
+		t.Errorf("formatted error %q lost the command", err)
 	}
 }
