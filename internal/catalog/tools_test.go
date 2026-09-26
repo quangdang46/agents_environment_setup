@@ -150,15 +150,10 @@ func TestCatalogIntegrity(t *testing.T) {
 // the Layer 1 fixtures actually exercise, or the flag is a promise about
 // nothing.
 func TestTestedToolsAreOnTheLayer1List(t *testing.T) {
-	// The Layer 1 fixture binaries, which is the set proven to verify.
-	layer1 := map[string]bool{
-		"ripgrep": true, "git": true, "fzf": true, "jq": true,
-		"tmux": true, "zoxide": true, "gh": true, "claude": true,
-	}
 	c := loadTools(t)
 	var names []string
 	for _, tool := range c.Tested() {
-		if !layer1[tool.Name] {
+		if !layer1Tools[tool.Name] {
 			names = append(names, tool.Name)
 		}
 	}
@@ -166,5 +161,42 @@ func TestTestedToolsAreOnTheLayer1List(t *testing.T) {
 	if len(names) > 0 {
 		t.Errorf("tools marked tested:true but not covered by the Layer 1 fixtures: %s",
 			strings.Join(names, ", "))
+	}
+}
+
+// layer1Tools is the eight-tool set the spec's Layer 1 fixture table names:
+// the tools already present on a developer machine, which verify rather than
+// install. It lives here, in the catalog, rather than only in the verifier's
+// fixture table, because the two lists can drift apart and nothing compares
+// them.
+var layer1Tools = map[string]bool{
+	"ripgrep": true, "git": true, "fzf": true, "jq": true,
+	"tmux": true, "zoxide": true, "gh": true, "claude": true,
+}
+
+// The other direction, and the one that actually caught a bug: every tool the
+// Layer 1 fixtures exercise must be installable from this catalog.
+//
+// The verifier builds its fixtures from the spec's table, and it passed
+// happily while zoxide had no manifest at all. A fixture suite and the thing
+// it fixtures are separate artifacts; only a comparison between them catches
+// the drift, and the gap surfaced in production when a shipped profile
+// referenced zoxide and `aes setup` refused to load.
+//
+// Any list a test enumerates needs a second test asserting the system under
+// test still contains it.
+func TestCatalogCoversTheLayer1FixtureSet(t *testing.T) {
+	c := loadTools(t)
+	var missing []string
+	for name := range layer1Tools {
+		if _, ok := c.ByName(name); !ok {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Errorf("the Layer 1 fixtures exercise %s, but the catalog has no manifest for them; "+
+			"a fixture for a tool aes cannot install is a test of nothing",
+			strings.Join(missing, ", "))
 	}
 }
