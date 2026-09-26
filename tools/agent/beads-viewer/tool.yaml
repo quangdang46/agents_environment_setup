@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: beads-viewer
+description: TUI for the beads task graph
+category: agent
+tested: false
+tags:
+  - agent
+  - issues
+dependencies:
+  - go
+verify:
+  command: bv
+  version:
+    command: bv --version
+    min: "0.16.0"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/beads_viewer@v0.25.0
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/beads_viewer@v0.25.0

@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: ntm
+description: named tmux manager for agent sessions
+category: agent
+tested: false
+tags:
+  - agent
+  - terminal
+dependencies:
+  - go
+verify:
+  command: ntm
+  version:
+    command: ntm version
+    min: "1.18"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/ntm@v1.35.1
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/ntm@v1.35.1

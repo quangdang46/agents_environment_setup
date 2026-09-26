@@ -1,4 +1,4 @@
-# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (verified via crates.io /owners). A crate's repository field is self-declared, so the owners endpoint is the only real check; the obvious names in this set collide with other people's crates.
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (verified via crates.io /owners). A crate's repository field is self-declared, so the owners endpoint is the only real check. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
 name: beads
 description: graph-aware issue tracker for AI agents
 category: agent
