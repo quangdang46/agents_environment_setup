@@ -1,0 +1,90 @@
+name: release
+
+# Releases are what the tier-0 bootstrap downloads from, so the artifact
+# names here are an interface with install.sh: aes-<version>-<goos>-<goarch>.tar.gz
+# plus a single checksums.txt covering every asset. Renaming one breaks
+# `curl | sh` for every user.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, goos: darwin, goarch: arm64 }
+          - { os: macos-latest, goos: darwin, goarch: amd64 }
+          - { os: ubuntu-latest, goos: linux, goarch: amd64 }
+          - { os: ubuntu-latest, goos: linux, goarch: arm64 }
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and test
+        env:
+          CGO_ENABLED: "0"
+          # Built for the matrix target, not the runner, so the test step
+          # below compiles the same way the artifact does.
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build ./...
+          go vet ./...
+          go test -race ./...
+
+      - name: Build artifact
+        env:
+          VERSION: ${{ github.ref_name }}
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=${VERSION#v}" \
+            -o "dist/aes" ./cmd/aes
+          tar -czf "dist/aes-${VERSION#v}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" -C dist aes
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aes-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/aes-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum aes-*.tar.gz > checksums.txt
+          cat checksums.txt
+        shell: bash
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          fail_on_unmatched_files: true
