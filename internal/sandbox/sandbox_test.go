@@ -49,6 +49,14 @@ case "$1" in
     echo "installed stubtool"
     exit 0
     ;;
+  verify)
+    # verifyIn now shells out to aes verify --json rather than calling the
+    # verifier in-process, so the stub has to answer it.
+    if [ -x "$AES_HOME/bin/stubtool" ]; then status=ok; path="$AES_HOME/bin/stubtool"
+    else status=missing; path=""; fi
+    printf '{"tools":[{"name":"stubtool","status":"%s","version":"1.0","path":"%s"}]}' "$status" "$path"
+    exit 0
+    ;;
   doctor)
     echo "no drift"
     exit 0
@@ -193,6 +201,7 @@ func TestRunDetectsAMissingBinaryAfterInstall(t *testing.T) {
 	stub := `
 case "$1" in
   setup) echo "done"; exit 0 ;;
+  verify) printf '{"tools":[{"name":"stubtool","status":"missing"}]}'; exit 0 ;;
 esac
 exit 0
 `

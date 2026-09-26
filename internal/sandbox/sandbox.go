@@ -179,7 +179,7 @@ func Run(ctx context.Context, tool *manifest.Tool, cfg Config) (Result, error) {
 	res.record("binary present", present, pathDetail(binPath, statErr))
 
 	// Verify against the sandbox's own view, not the developer's PATH.
-	verifyRes := verifyIn(tool, env, home)
+	verifyRes := verifyIn(ctx, cfg, env, home, tool.Name)
 	res.record("verify ok", verifyRes.Status == verifier.StatusOK,
 		fmt.Sprintf("status=%s version=%q", verifyRes.Status, verifyRes.Version))
 
@@ -334,19 +334,53 @@ func run(ctx context.Context, cfg Config, env []string, home string, args ...str
 	return out.String(), code, err
 }
 
-// verifyIn runs the verifier with the sandbox's PATH.
+// verifyIn checks the tool the way a user would: by running `aes verify`
+// with the sandbox's PATH, in a subprocess.
 //
-// The verifier resolves binaries through exec.LookPath, which reads the
-// process environment. A subprocess is the only honest way to check the binary
-// is on the sandbox's PATH and not the developer's.
-func verifyIn(tool *manifest.Tool, env []string, home string) verifier.Result {
-	bin := filepath.Join(home, "bin")
-	oldPath := os.Getenv("PATH")
-	if err := os.Setenv("PATH", bin); err != nil {
-		return verifier.Result{Tool: tool.Name, Status: verifier.StatusMissing}
+// It shells out rather than calling internal/verifier directly. Calling the
+// library would require setting PATH on this process, because the verifier
+// resolves binaries through exec.LookPath — and process environment is global
+// state. That works today only because no test here is parallel; the first
+// t.Parallel() would make it flaky in a way that looks like a broken installer.
+//
+// Subprocess also makes the assertion match the contract. The bead asks that
+// "Verify returns StatusOK", and in a real run that means what `aes verify`
+// reports, not what the library returns in isolation.
+func verifyIn(ctx context.Context, cfg Config, env []string, home, tool string) verifier.Result {
+	ctx, cancel := context.WithTimeout(ctx, StepTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, cfg.Binary, "verify", "--json", "--non-interactive")
+	cmd.Env = env
+	cmd.Dir = home
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return verifier.Result{Tool: tool, Status: verifier.StatusMissing}
 	}
-	defer os.Setenv("PATH", oldPath)
-	return verifier.Verify(tool)
+
+	var payload struct {
+		Tools []struct {
+			Name    string `json:"name"`
+			Status  string `json:"status"`
+			Version string `json:"version"`
+			Path    string `json:"path"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return verifier.Result{Tool: tool, Status: verifier.StatusMissing}
+	}
+	for _, entry := range payload.Tools {
+		if entry.Name != tool {
+			continue
+		}
+		return verifier.Result{
+			Tool:    tool,
+			Status:  verifier.Status(entry.Status),
+			Version: entry.Version,
+			Path:    entry.Path,
+		}
+	}
+	return verifier.Result{Tool: tool, Status: verifier.StatusMissing}
 }
 
 // stateHas reports whether state.json names the tool. It parses the file
