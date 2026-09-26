@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: git-lfs
+description: git extension for versioning large files
+category: git
+tested: false
+tags:
+  - git
+verify:
+  command: git-lfs
+  version:
+    command: git lfs version
+    min: "3.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: git-lfs
+  linux:
+    strategy: package
+    manager: apt
+    package: git-lfs

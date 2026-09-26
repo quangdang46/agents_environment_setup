@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: eza
+description: modern replacement for ls
+category: terminal
+tested: false
+tags:
+  - terminal
+verify:
+  command: eza
+  version:
+    command: eza --version
+    min: "0.18"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: eza
+  linux:
+    strategy: package
+    manager: apt
+    package: eza

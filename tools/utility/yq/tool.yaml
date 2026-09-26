@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: yq
+description: command-line YAML processor
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: yq
+  version:
+    command: yq --version
+    min: "4.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: yq
+  linux:
+    strategy: package
+    manager: apt
+    package: yq

@@ -1,0 +1,32 @@
+# AES catalog. Asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: dust
+description: du replacement for people who can read
+category: terminal
+tested: false
+tags:
+  - terminal
+  - disk
+verify:
+  command: dust
+  version:
+    command: dust --version
+    min: "1.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: bootandy/dust
+    asset:
+      amd64: dust-v1.2.6-x86_64-apple-darwin.tar.gz
+      arm64: dust-v1.2.6-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: 7603c92462bd56305847732eb25d70ab06386d7bcfbce7532b7cf3937fd9684f
+      arm64: 5c37ee0d353165c73aedd6b21b9133182221efe08f9a5e76c082d9d6d5a0935d
+  linux:
+    strategy: github-release
+    repository: bootandy/dust
+    asset:
+      amd64: dust-v1.2.6-x86_64-unknown-linux-gnu.tar.gz
+      arm64: dust-v1.2.6-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 14f788707aad217667f6812cf1a9639bf5c861a2ee815d486cffc36051f5e759
+      arm64: ec6a63bc275a33000443d444fd5424e56745aa995bc88e1080cd951e5e9e5cbf

@@ -1,0 +1,24 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: node
+description: Node.js JavaScript runtime
+category: runtime
+tested: false
+tags:
+  - runtime
+provides:
+  - node
+  - npm
+verify:
+  command: node
+  version:
+    command: node --version
+    min: "20.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: node
+  linux:
+    strategy: package
+    manager: apt
+    package: nodejs

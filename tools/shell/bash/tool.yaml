@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: bash
+description: GNU Bourne Again shell
+category: shell
+tested: false
+tags:
+  - shell
+verify:
+  command: bash
+  version:
+    command: bash --version
+    min: "5.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: bash
+  linux:
+    strategy: package
+    manager: apt
+    package: bash

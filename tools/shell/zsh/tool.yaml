@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: zsh
+description: Z shell
+category: shell
+tested: false
+tags:
+  - shell
+verify:
+  command: zsh
+  version:
+    command: zsh --version
+    min: "5.8"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: zsh
+  linux:
+    strategy: package
+    manager: apt
+    package: zsh

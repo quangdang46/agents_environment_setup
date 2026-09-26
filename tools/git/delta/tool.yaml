@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: delta
+description: syntax-highlighting pager for git
+category: git
+tested: false
+tags:
+  - git
+verify:
+  command: delta
+  version:
+    command: delta --version
+    min: "0.15"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: git-delta
+  linux:
+    strategy: package
+    manager: apt
+    package: git-delta

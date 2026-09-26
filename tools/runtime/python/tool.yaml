@@ -1,0 +1,23 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: python
+description: Python 3 interpreter
+category: runtime
+tested: false
+tags:
+  - runtime
+provides:
+  - python3
+verify:
+  command: python3
+  version:
+    command: python3 --version
+    min: "3.10"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: python@3.12
+  linux:
+    strategy: package
+    manager: apt
+    package: python3

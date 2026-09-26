@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: gemini
+description: Google Gemini CLI
+category: ai
+tested: false
+tags:
+  - ai
+dependencies:
+  - node
+verify:
+  command: gemini
+  version:
+    command: gemini --version
+    min: "0.1.0"
+install:
+  darwin:
+    strategy: npm
+    npm_package: "@google/gemini-cli@0.61.0"
+  linux:
+    strategy: npm
+    npm_package: "@google/gemini-cli@0.61.0"

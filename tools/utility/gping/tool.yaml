@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: gping
+description: ping with a graph
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: gping
+  version:
+    command: gping --version
+    min: "1.5"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: gping
+  linux:
+    strategy: package
+    manager: apt
+    package: gping

@@ -1,0 +1,23 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: ripgrep
+description: recursive line-oriented search, respects .gitignore
+category: search
+tested: false
+tags:
+  - search
+provides:
+  - rg
+verify:
+  command: rg
+  version:
+    command: rg --version
+    min: "13.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: ripgrep
+  linux:
+    strategy: package
+    manager: apt
+    package: ripgrep

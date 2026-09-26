@@ -1,0 +1,34 @@
+# AES catalog. Asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: gh
+description: GitHub's official command-line tool
+category: git
+tested: false
+tags:
+  - git
+  - github
+dependencies:
+  - git
+verify:
+  command: gh
+  version:
+    command: gh --version
+    min: "2.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: cli/cli
+    asset:
+      amd64: gh_2.101.0_macOS_amd64.zip
+      arm64: gh_2.101.0_macOS_arm64.zip
+    sha256:
+      amd64: a6fd66c88e2f07d6e4e058173db341d07dd74d58cf8f19ae668293d2bb614ca3
+      arm64: e4303e39d8f07141c4bad4b99b01079f05029c59b27076e8fbc825c985ecdd8b
+  linux:
+    strategy: github-release
+    repository: cli/cli
+    asset:
+      amd64: gh_2.101.0_linux_amd64.tar.gz
+      arm64: gh_2.101.0_linux_arm64.tar.gz
+    sha256:
+      amd64: 9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8
+      arm64: b57e8063f18862647c9d22727c32e9da1b963f8bf9db648fe123a6975695640f

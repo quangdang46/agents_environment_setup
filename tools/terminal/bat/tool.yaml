@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: bat
+description: cat clone with syntax highlighting
+category: terminal
+tested: false
+tags:
+  - terminal
+verify:
+  command: bat
+  version:
+    command: bat --version
+    min: "0.24"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: bat
+  linux:
+    strategy: package
+    manager: apt
+    package: bat

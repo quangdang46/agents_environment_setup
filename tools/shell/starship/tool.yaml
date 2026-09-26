@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: starship
+description: cross-shell prompt
+category: shell
+tested: false
+tags:
+  - shell
+verify:
+  command: starship
+  version:
+    command: starship --version
+    min: "1.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: starship
+  linux:
+    strategy: package
+    manager: apt
+    package: starship

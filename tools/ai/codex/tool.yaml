@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: codex
+description: OpenAI Codex CLI
+category: ai
+tested: false
+tags:
+  - ai
+dependencies:
+  - node
+verify:
+  command: codex
+  version:
+    command: codex --version
+    min: "0.1.0"
+install:
+  darwin:
+    strategy: npm
+    npm_package: "@openai/codex@0.157.1"
+  linux:
+    strategy: npm
+    npm_package: "@openai/codex@0.157.1"

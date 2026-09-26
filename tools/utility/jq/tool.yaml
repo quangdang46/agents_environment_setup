@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: jq
+description: command-line JSON processor
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: jq
+  version:
+    command: jq --version
+    min: "1.6"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: jq
+  linux:
+    strategy: package
+    manager: apt
+    package: jq

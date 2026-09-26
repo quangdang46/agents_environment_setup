@@ -1,0 +1,23 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: docker
+description: container runtime and CLI
+category: infra
+tested: false
+tags:
+  - infra
+provides:
+  - docker
+verify:
+  command: docker
+  version:
+    command: docker --version
+    min: "24.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: docker
+  linux:
+    strategy: package
+    manager: apt
+    package: docker.io

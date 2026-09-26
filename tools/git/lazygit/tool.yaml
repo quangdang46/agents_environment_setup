@@ -1,0 +1,23 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: lazygit
+description: terminal UI for git commands
+category: git
+tested: false
+tags:
+  - git
+dependencies:
+  - git
+verify:
+  command: lazygit
+  version:
+    command: lazygit --version
+    min: "0.40"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: lazygit
+  linux:
+    strategy: package
+    manager: apt
+    package: lazygit

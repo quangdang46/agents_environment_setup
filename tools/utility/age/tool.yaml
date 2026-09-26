@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: age
+description: modern encryption tool
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: age
+  version:
+    command: age --version
+    min: "1.1"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: age
+  linux:
+    strategy: package
+    manager: apt
+    package: age

@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: direnv
+description: per-directory environment loader
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: direnv
+  version:
+    command: direnv version
+    min: "2.30"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: direnv
+  linux:
+    strategy: package
+    manager: apt
+    package: direnv

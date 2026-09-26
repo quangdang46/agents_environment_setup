@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: tree
+description: print directory structure
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: tree
+  version:
+    command: tree --version
+    min: "2.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: tree
+  linux:
+    strategy: package
+    manager: apt
+    package: tree

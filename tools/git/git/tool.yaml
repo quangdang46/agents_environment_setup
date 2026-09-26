@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: git
+description: distributed version control system
+category: git
+tested: false
+tags:
+  - git
+verify:
+  command: git
+  version:
+    command: git --version
+    min: "2.30"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: git
+  linux:
+    strategy: package
+    manager: apt
+    package: git

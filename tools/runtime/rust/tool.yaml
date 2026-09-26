@@ -1,0 +1,25 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: rust
+description: Rust toolchain via rustup
+category: runtime
+tested: false
+tags:
+  - runtime
+provides:
+  - rustup
+  - cargo
+  - rustc
+verify:
+  command: rustup
+  version:
+    command: rustup --version
+    min: "1.20"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: rustup
+  linux:
+    strategy: package
+    manager: apt
+    package: rustup

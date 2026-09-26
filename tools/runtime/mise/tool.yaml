@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: mise
+description: polyglot tool version manager
+category: runtime
+tested: false
+tags:
+  - runtime
+verify:
+  command: mise
+  version:
+    command: mise --version
+    min: "2024.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: mise
+  linux:
+    strategy: package
+    manager: apt
+    package: mise

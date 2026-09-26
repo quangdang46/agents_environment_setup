@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: btop
+description: resource monitor that pretends to be fancy
+category: terminal
+tested: false
+tags:
+  - terminal
+verify:
+  command: btop
+  version:
+    command: btop --version
+    min: "1.2"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: btop
+  linux:
+    strategy: package
+    manager: apt
+    package: btop

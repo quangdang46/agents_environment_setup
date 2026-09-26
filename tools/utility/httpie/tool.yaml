@@ -1,0 +1,23 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: httpie
+description: user-friendly HTTP client
+category: utility
+tested: false
+tags:
+  - utility
+provides:
+  - http
+verify:
+  command: http
+  version:
+    command: http --version
+    min: "3.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: httpie
+  linux:
+    strategy: package
+    manager: apt
+    package: httpie

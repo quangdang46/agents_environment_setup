@@ -1,0 +1,32 @@
+# AES catalog. Asset names and sha256 read from the upstream release by scripts/release_probe.py.
+name: fd
+description: fast and user-friendly alternative to find
+category: search
+tested: false
+tags:
+  - search
+  - files
+verify:
+  command: fd
+  version:
+    command: fd --version
+    min: "9.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: sharkdp/fd
+    asset:
+      amd64: fd-v10.5.0-x86_64-apple-darwin.tar.gz
+      arm64: fd-v10.5.0-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: 7e31028c62c6955877735d0406807aa484c2a5e6f86235a59e26c29c301da590
+      arm64: b67e1836c468e42e411984b56e52fa7abec08c2bd22c867398e7cc134aac5e12
+  linux:
+    strategy: github-release
+    repository: sharkdp/fd
+    asset:
+      amd64: fd-v10.5.0-x86_64-unknown-linux-gnu.tar.gz
+      arm64: fd-v10.5.0-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: a1259cd129636efbc3fef123525c1b49e88fe5088c012630983c310e52fdfa95
+      arm64: c0ee43802e3313a317c5af2f4eabd6ba13eeedd595af9775f05e18a13ac4f52c

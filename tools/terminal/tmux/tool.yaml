@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: tmux
+description: terminal multiplexer
+category: terminal
+tested: false
+tags:
+  - terminal
+verify:
+  command: tmux
+  version:
+    command: tmux -V
+    min: "3.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: tmux
+  linux:
+    strategy: package
+    manager: apt
+    package: tmux

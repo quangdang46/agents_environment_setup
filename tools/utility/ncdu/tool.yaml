@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: ncdu
+description: NCurses disk usage analyser
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: ncdu
+  version:
+    command: ncdu --version
+    min: "1.18"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: ncdu
+  linux:
+    strategy: package
+    manager: apt
+    package: ncdu

@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: terraform
+description: infrastructure as code
+category: infra
+tested: false
+tags:
+  - infra
+verify:
+  command: terraform
+  version:
+    command: terraform version
+    min: "1.5"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: opentofu
+  linux:
+    strategy: package
+    manager: apt
+    package: terraform

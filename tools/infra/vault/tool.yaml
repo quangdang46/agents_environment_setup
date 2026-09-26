@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: vault
+description: HashiCorp secrets management
+category: infra
+tested: false
+tags:
+  - infra
+verify:
+  command: vault
+  version:
+    command: vault version
+    min: "1.14"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: vault
+  linux:
+    strategy: package
+    manager: apt
+    package: vault

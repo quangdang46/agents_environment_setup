@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: kubectl
+description: Kubernetes command-line client
+category: infra
+tested: false
+tags:
+  - infra
+verify:
+  command: kubectl
+  version:
+    command: kubectl version --client
+    min: "1.28"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: kubernetes-cli
+  linux:
+    strategy: package
+    manager: apt
+    package: kubectl

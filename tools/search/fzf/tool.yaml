@@ -1,0 +1,21 @@
+# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+name: fzf
+description: general-purpose command-line fuzzy finder
+category: search
+tested: false
+tags:
+  - search
+verify:
+  command: fzf
+  version:
+    command: fzf --version
+    min: "0.50"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: fzf
+  linux:
+    strategy: package
+    manager: apt
+    package: fzf
