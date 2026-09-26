@@ -197,16 +197,15 @@ func RequiresPrivilege(target manifest.Target) bool {
 // Action stays free of slices and keeps serialising deterministically.
 // binaryName is the filename to look for inside the archive.
 //
-// The manifest wins, then an installer-level override, then the tool name. The
-// manifest is first because that is the only one of the three that describes
-// the upstream artefact; the tool name is a local label and is the last
-// resort precisely because it is the one most likely to be wrong.
-func (a Action) binaryName(override string) string {
+// The manifest wins, then the tool name. There is deliberately no third
+// source: this once had an installer-level override as well, and two
+// declarations of the same fact is how the "which one won" question becomes
+// unanswerable. The manifest is the only place that describes the upstream
+// artefact; the tool name is a local label, so it is the last resort precisely
+// because it is the one most likely to be wrong.
+func (a Action) binaryName() string {
 	if a.Target.Binary != "" {
 		return a.Target.Binary
-	}
-	if override != "" {
-		return override
 	}
 	return a.Tool
 }

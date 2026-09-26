@@ -42,10 +42,6 @@ type GithubRelease struct {
 	// $AES_HOME/bin.
 	Dest string
 
-	// Binary overrides the filename expected inside the archive. Empty means
-	// the tool name.
-	Binary string
-
 	// Client is the HTTP client used for the download. Nil means a client
 	// with a sane timeout.
 	Client *http.Client
@@ -120,12 +116,12 @@ func (g *GithubRelease) Install(ctx context.Context, a Action) error {
 	if err := os.MkdirAll(stage, 0o755); err != nil {
 		return fmt.Errorf("create staging directory: %w", err)
 	}
-	binary, err := extractArchive(archivePath, stage, a.binaryName(g.Binary))
+	binary, err := extractArchive(archivePath, stage, a.binaryName())
 	if err != nil {
 		return err
 	}
 
-	final := filepath.Join(g.Dest, a.binaryName(g.Binary))
+	final := filepath.Join(g.Dest, a.binaryName())
 	if err := os.Rename(binary, final); err != nil {
 		return fmt.Errorf("install %s: %w", final, err)
 	}

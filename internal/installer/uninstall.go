@@ -66,10 +66,10 @@ func (r *Registry) Uninstall(ctx context.Context, a Action) (Outcome, error) {
 // It refuses if the binary is not where it expects, rather than reporting a
 // removal that did not happen.
 func (g *GithubRelease) Uninstall(ctx context.Context, a Action) (Outcome, error) {
-	path := filepath.Join(g.Dest, a.binaryName(g.Binary))
+	path := filepath.Join(g.Dest, a.binaryName())
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return NotRemoved(fmt.Sprintf("%s is not present at %s", a.binaryName(g.Binary), path)), nil
+			return NotRemoved(fmt.Sprintf("%s is not present at %s", a.binaryName(), path)), nil
 		}
 		return Outcome{}, fmt.Errorf("stat %s: %w", path, err)
 	}

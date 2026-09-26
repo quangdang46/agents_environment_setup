@@ -425,7 +425,7 @@ func TestBinaryOverride(t *testing.T) {
 	a.Tool = "ripgrep"
 
 	g := newInstaller(fixture.URL, dest)
-	g.Binary = "rg"
+	a.Target.Binary = "rg" // declared in the manifest, not on the installer
 	if err := g.Install(context.Background(), a); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
