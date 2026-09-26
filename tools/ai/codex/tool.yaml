@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog.
 name: codex
 description: OpenAI Codex CLI
 category: ai

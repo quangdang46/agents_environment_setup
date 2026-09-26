@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog. github-release for darwin, linux at starship/starship release v1.26.0; asset names and sha256 read from the upstream release by scripts/release_probe.py.
 name: starship
 description: cross-shell prompt
 category: shell
@@ -12,10 +12,20 @@ verify:
     min: "1.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: starship
+    strategy: github-release
+    repository: starship/starship
+    asset:
+      amd64: starship-x86_64-apple-darwin.tar.gz
+      arm64: starship-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: 5548f406a4b6f5695903bdea83f77ce47ec12c8c0e62dabd33122d8f133e4207
+      arm64: c40b27b11f580411e068f2fa6c1be7830a387c0bc47a94d1d37f32b054c5361d
   linux:
-    strategy: package
-    manager: apt
-    package: starship
+    strategy: github-release
+    repository: starship/starship
+    asset:
+      amd64: starship-x86_64-unknown-linux-gnu.tar.gz
+      arm64: starship-aarch64-unknown-linux-musl.tar.gz
+    sha256:
+      amd64: 321f0dd7af8340a5f2e6a8fec6538a04f617486f9ec70d878f91c09cd8deef22
+      arm64: dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b

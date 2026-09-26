@@ -1,4 +1,4 @@
-# AES catalog. Asset names and sha256 read from the upstream release by scripts/release_probe.py.
+# AES catalog. github-release for darwin, linux at  release ; asset names and sha256 read from the upstream release by scripts/release_probe.py.
 name: fd
 description: fast and user-friendly alternative to find
 category: search

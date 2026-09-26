@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog.
 name: claude
 description: Claude Code, Anthropic's agentic coding tool
 category: ai

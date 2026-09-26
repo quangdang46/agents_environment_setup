@@ -394,4 +394,3 @@ func tempFilesIn(t *testing.T, dir string) []string {
 	}
 	return matches
 }
-

@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog. github-release for darwin, linux at sharkdp/bat release v0.26.1; asset names and sha256 read from the upstream release by scripts/release_probe.py.
 name: bat
 description: cat clone with syntax highlighting
 category: terminal
@@ -12,10 +12,20 @@ verify:
     min: "0.24"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: bat
+    strategy: github-release
+    repository: sharkdp/bat
+    asset:
+      amd64: bat-v0.26.1-x86_64-apple-darwin.tar.gz
+      arm64: bat-v0.26.1-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: 830d63b0bba1fa040542ec569e3cf77f60d3356b9de75116a344b061e0894245
+      arm64: e30beff26779c9bf60bb541e1d79046250cb74378f2757f8eb250afddb19e114
   linux:
-    strategy: package
-    manager: apt
-    package: bat
+    strategy: github-release
+    repository: sharkdp/bat
+    asset:
+      amd64: bat-v0.26.1-x86_64-unknown-linux-gnu.tar.gz
+      arm64: bat-v0.26.1-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 726f04c8f576a7fd18b7634f1bbf2f915c43494c1c0f013baa3287edb0d5a2a3
+      arm64: 422eb73e11c854fddd99f5ca8461c2f1d6e6dce0a2a8c3d5daade5ffcb6564aa

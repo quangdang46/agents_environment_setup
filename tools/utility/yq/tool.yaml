@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog. github-release for darwin, linux at mikefarah/yq release v4.53.6; asset names and sha256 read from the upstream release by scripts/release_probe.py.
 name: yq
 description: command-line YAML processor
 category: utility
@@ -12,10 +12,20 @@ verify:
     min: "4.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: yq
+    strategy: github-release
+    repository: mikefarah/yq
+    asset:
+      amd64: yq_darwin_amd64.tar.gz
+      arm64: yq_darwin_arm64.tar.gz
+    sha256:
+      amd64: cf8304676c6572960a3720a189fd42e7038bf989dc181f0c05019a2883caf540
+      arm64: 4e2b18f4242c720965af7919dc0573819474cecf03a71b6cd7656025f2e5162c
   linux:
-    strategy: package
-    manager: apt
-    package: yq
+    strategy: github-release
+    repository: mikefarah/yq
+    asset:
+      amd64: yq_linux_amd64.tar.gz
+      arm64: yq_linux_arm64.tar.gz
+    sha256:
+      amd64: 38b907b21b1b04327fb9481c595331d925a67c6ee1aabd0ef419d0b7d12dfb3d
+      arm64: d5e7531273d45c5d4b7abb4a1597c47a0fecb5d6b081dfa755064b38ffcc34f4

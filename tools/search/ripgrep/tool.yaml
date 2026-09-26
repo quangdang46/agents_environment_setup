@@ -1,10 +1,11 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog. github-release for darwin, linux at BurntSushi/ripgrep release 15.2.0; asset names and sha256 read from the upstream release by scripts/release_probe.py.
 name: ripgrep
 description: recursive line-oriented search, respects .gitignore
 category: search
 tested: false
 tags:
   - search
+  - text
 provides:
   - rg
 verify:
@@ -14,10 +15,20 @@ verify:
     min: "13.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: ripgrep
+    strategy: github-release
+    repository: BurntSushi/ripgrep
+    asset:
+      amd64: ripgrep-15.2.0-x86_64-apple-darwin.tar.gz
+      arm64: ripgrep-15.2.0-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1
+      arm64: 3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4
   linux:
-    strategy: package
-    manager: apt
-    package: ripgrep
+    strategy: github-release
+    repository: BurntSushi/ripgrep
+    asset:
+      amd64: ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz
+      arm64: ripgrep-15.2.0-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c
+      arm64: a740b91c82eaf9914cfedd353572f2791cbe0162c84101ee0951058f4dcbc90d

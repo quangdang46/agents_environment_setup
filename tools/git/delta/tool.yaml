@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog. github-release for linux at dandavison/delta release 0.19.2; asset names and sha256 read from the upstream release by scripts/release_probe.py. Package names verified against the homebrew formula index and the Debian package index.
 name: delta
 description: syntax-highlighting pager for git
 category: git
@@ -16,6 +16,11 @@ install:
     manager: brew
     package: git-delta
   linux:
-    strategy: package
-    manager: apt
-    package: git-delta
+    strategy: github-release
+    repository: dandavison/delta
+    asset:
+      amd64: delta-0.19.2-x86_64-unknown-linux-gnu.tar.gz
+      arm64: delta-0.19.2-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 8e695c5f586a8c53d6c3b01be0b4a422ed218bfed2a56191caebe373a1c18ab2
+      arm64: 0bfce159a5cddd5feb3d6db4a616d883ff51253ce08ac7ec11cb1d208cfaab9e

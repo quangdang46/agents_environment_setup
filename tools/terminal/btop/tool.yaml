@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog. github-release for linux at aristocratos/btop release v1.4.7; asset names and sha256 read from the upstream release by scripts/release_probe.py. Package names verified against the homebrew formula index and the Debian package index.
 name: btop
 description: resource monitor that pretends to be fancy
 category: terminal
@@ -16,6 +16,11 @@ install:
     manager: brew
     package: btop
   linux:
-    strategy: package
-    manager: apt
-    package: btop
+    strategy: github-release
+    repository: aristocratos/btop
+    asset:
+      amd64: btop-x86_64-unknown-linux-musl.tar.gz
+      arm64: btop-aarch64-unknown-linux-musl.tar.gz
+    sha256:
+      amd64: 5099054dd6a101bd12eb6ff3702a9a6a3f57aaa27923a0da478ae5b517faf335
+      arm64: 6270de0ef4c84cf0eea61cb148b3ad9ae91a11e9c3309867ffc6b3751024c252

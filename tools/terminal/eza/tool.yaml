@@ -1,4 +1,4 @@
-# AES catalog. Package names verified against homebrew formulae and the Debian package index.
+# AES catalog. github-release for linux at eza-community/eza release v0.23.5; asset names and sha256 read from the upstream release by scripts/release_probe.py. Package names verified against the homebrew formula index and the Debian package index.
 name: eza
 description: modern replacement for ls
 category: terminal
@@ -16,6 +16,11 @@ install:
     manager: brew
     package: eza
   linux:
-    strategy: package
-    manager: apt
-    package: eza
+    strategy: github-release
+    repository: eza-community/eza
+    asset:
+      amd64: eza_x86_64-unknown-linux-gnu.tar.gz
+      arm64: eza_aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 35c70c5c43c29108075e58b893234c67ef585f0b53a7eaf8e9e7d4eec9f339b4
+      arm64: 40b87ae8628aa2ff0f0d2dc24ab52f689631366385c3da630bae745671fd71ec
