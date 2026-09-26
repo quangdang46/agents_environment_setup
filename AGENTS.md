@@ -170,6 +170,22 @@ deterministic tie-break removed. Each of those passed review and only failed und
 A mutation that *doesn't* fail the suite is also a finding — it means the test cannot distinguish
 correct behaviour from the mutation, and the test is too weak.
 
+### A non-zero exit is not a proxy for "the output is unusable"
+
+A command that exits non-zero *because it did its job* is easy to mistake for a command that
+failed. Four bugs in the Layer 2 harness came from one mistake, repeated:
+
+- `aes verify` exits non-zero when **any** tool is missing. Treating that as "could not
+  determine" reported every tool as missing, because in a sandbox most of them are.
+- `aes doctor` exits 6 precisely when it **has** found something. Requiring `err == nil` before
+  reading its report made the drift assertion incapable of ever passing.
+- `CombinedOutput` interleaves stderr into stdout. One warning line on stderr turns a valid JSON
+  document into something that will not parse — and the parse failure reads as "the tool is
+  missing" rather than as "we merged the streams".
+
+Read the output. Reserve the exit code for the question "did the process run", and when you do
+use it, say which question you are asking.
+
 ### Assert on what the contract is about, not on what is convenient
 
 A green suite concealed two real defects here, and both had the same cause: a test asserting on
