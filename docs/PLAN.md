@@ -222,49 +222,249 @@ nhiều phương án, agent chọn theo thứ tự ưu tiên và báo rõ đang 
 
 ## 8. Câu hỏi cần bạn quyết
 
-Đây là những chỗ tôi **chưa tự quyết**, vì mỗi hướng đi theo một con đường khác nhau.
+**Cách trả lời:** viết sau `→`. Trả lời trực tiếp trong file này, hoặc nhắn lại tôi theo
+số mục. ⛔ = chặn tôi bắt đầu code · 🟡 = ảnh hưởng kiến trúc · ⟢ = chi tiết, tôi tự chọn được
 
-### 8.1 ⛔ Plugin có cần tự chứa logic không?
+Tổng 24 câu. Không cần trả hết cùng lúc — **6 câu ⛔ là đủ để tôi bắt tay vào Giai đoạn 1.**
 
-| Hướng | Bạn viết gì | Được gì | Mất gì |
+---
+
+### 8.1 ⛔ Plugin mô tả tool bằng gì?
+
+| | Bạn viết | Được | Mất |
 |---|---|---|---|
-| **A. Thuần YAML** | 1 file | Cực nhanh, ai cũng làm | Tool có logic riêng phải viết vòng ngoài |
-| **B. Có hook** | 1 file + `hooks:` shell | Đủ cho hầu hết | Vẫn phải viết shell |
-| **C. Plugin là binary** | chương trình riêng | Mạnh nhất, viết Go/Py/TS đều được | Phức tạp, nặng |
+| **A** | 1 file YAML | Nhanh nhất, ai cũng làm | Tool có logic riêng phải viết vòng ngoài |
+| **B** | YAML + `hooks:` shell | Đủ cho hầu hết | Vẫn phải viết shell |
+| **C** | Plugin là binary riêng | Mạnh nhất — Go/Python/TS đều được | Nặng, phức tạp |
 
-**Tôi đề xuất B.** Đủ cho ripgrep/fzf/zoxide, và mở đường lên C mà không phá cái đã có.
-
-Bạn chọn: **A / B / C / khác**?
+Tôi đề xuất **B**. Đủ cho ripgrep/fzf/zoxide, mở đường lên C mà không phá cái đã có.
+→
 
 ### 8.2 ⛔ Quan hệ với `~/.zshrc`
 
-- **A.** Tôi sinh `env.sh`, bạn thêm 1 dòng source. *(tôi nghiêng vênh đây)*
-- **B.** Tôi tự thêm dòng vào `~/.zshrc`, có backup trước.
-- **C.** Không sinh gì, chỉ in lệnh để copy.
+| | Cách | Hệ quả |
+|---|---|---|
+| **A** | Tôi sinh `env.sh`, bạn tự thêm 1 dòng `source` | Bạn kiểm soát 100% *(tôi nghiêng về đây)* |
+| **B** | Tôi tự thêm dòng vào `~/.zshrc`, backup trước | Tiện hơn, nhưng tool có quyền ghi file bạn |
+| **C** | Không sinh gì, chỉ in lệnh để copy | An toàn nhất |
 
-### 8.3 ⛔ Cài theo gì — chỉ brew/apt, hay tải binary trực tiếp?
+Lý do tôi nghiêng A: ACFS đã chứng minh tool tự quyết sẽ mắc kẹt khi file đích đổi.
+→
 
-Máy bạn đã có 106 brew formula. Nhưng tool như `atuin`, `zoxide` có bản **không qua
-Homebrew** cũng tốt. Cho phép manifest khai `url:` + `sha256:` để tải thẳng vào
-`~/.agents/bin/` không? Hay chỉ dùng package manager?
+### 8.3 ⛔ Cài bằng gì?
 
-### 8.4 🟡 Tên binary
+Máy bạn đã có 106 brew formula — phần lớn tool dùng được Homebrew. Nhưng `atuin`,
+`zoxide` có bản tải thẳng cũng tốt.
 
-Tôi đặt `aes` (viết tắt). Bạn muốn tên khác? `agents-env`? `aenv`? Chọn tên khác thì
-đổi sau cũng dễ, nhưng nên chốt sớm vì nó xuất hiện ở mọi tài liệu.
+- **A.** Chỉ brew/apt.
+- **B.** Thêm `url:` + `sha256:` để tải thẳng vào `~/.agents/bin/`. *(tôi nghiêng về B)*
 
-### 8.5 🟡 Phạm vi bản đầu
+→
+
+### 8.4 ⛔ Đây là tool cá nhân hay để chia sẻ?
+
+- **A.** Chỉ bạn dùng, máy này. → thiết kế gọn, tôi tự quyết nhiều hơn
+- **B.** Public GitHub, người khác dùng được. → cần validate schema, versioning, tài liệu
+- **C.** Private, có đồng nghiệp dùng
+
+→
+
+### 8.5 ⛔ Bao nhiêu máy cần đồng bộ?
+
+- **A.** Chỉ máy này
+- **B.** Có máy Ubuntu nữa
+- **C.** Nhiều máy, cần export/import bộ plugin
+
+Nếu chọn C, tôi thêm `aes export` / `aes import` vào Giai đoạn 2.
+→
+
+### 8.6 ⛔ Có test Ubuntu thật không?
+
+Tôi chỉ chạy được trên máy này (macOS). Để chắc Ubuntu không hỏng:
+
+- **A.** Bạn test trên Ubuntu thật sau khi tôi giao
+- **B.** Tôi dùng Docker chạy Ubuntu 24.04 để test CI
+- **C.** Không cần, chạy được trên macOS là đủ
+
+→
+
+### 8.7 🟡 Plugin lưu ở đâu?
+
+- **A.** `~/.agents/plugins/` — copy thư mục vào, không cần git
+- **B.** Một repo riêng chứa plugin, `aes plugin sync` kéo về
+- **C.** Cả hai
+
+→
+
+### 8.8 🟡 Thêm tool mới bằng cách nào?
+
+- **A.** Copy thư mục plugin vào `~/.agents/plugins/`
+- **B.** `aes plugin add <git-url>` tự tải
+- **C.** `aes new-plugin <tên>` sinh skeleton rồi bạn điền
+- **D.** Viết file YAML trong repo `plugins/`, `aes install --all` đọc từ đó
+
+Chọn nhiều được.
+→
+
+### 8.9 🟡 Plugin có cần tham số riêng không?
+
+Ví dụ: plugin `docker` cần nhớ bạn dùng colima hay docker-desktop; plugin `mise` cần
+biết bạn quản lý version nào.
+
+- **A.** Không cần, mọi plugin giống nhau
+- **B.** Cần, có `aes plugin config <tên>` để sửa
+
+→
+
+### 8.10 🟡 Plugin có cần `min_version` không?
+
+Để `doctor` báo "đã có nhưng quá cũ".
+
+- **A.** Không, cài là được
+- **B.** Có, khai trong manifest, `doctor` cảnh báo
+
+→
+
+### 8.11 🟡 Có cần `aes update` nâng version không?
+
+- **A.** Không, tôi tự `brew upgrade` như thường
+- **B.** Có, `aes update` chạy lại install cho tool đang có
+
+Nếu A, tôi bỏ lệnh này khỏi scope.
+→
+
+### 8.12 🟡 `aes remove` gỡ tới đâu?
+
+- **A.** Chỉ gỡ khỏi state, không đụng binary
+- **B.** Gọi `brew uninstall` / xoá binary thật
+- **C.** Hỏi từng lần
+
+→
+
+### 8.13 🟡 `doctor` nên kiểm tra gì?
+
+Ngoài "tool đã cài chưa":
+- ⬜ PATH có hợp lệ, không trùng lặp
+- ⬜ Có tool cài 2 bản ở 2 nơi
+- ⬜ Version quá cũ so với `min_version`
+- ⬜ Thiếu dependency giữa các tool
+- ⬜ `~/.zshrc` có dòng `source ~/.agents/env.sh` chưa
+- ⬜ Shell đang chạy có hấp thụ PATH mới chưa
+- ⬜ Có gì khác: ___
+
+→
+
+### 8.14 🟡 Có `doctor --fix` tự sửa không?
+
+- **A.** Không, chỉ báo cáo *(tôi nghiêng về A — tool tự sửa thì bạn không biết nó đã đổi gì)*
+- **B.** Có, opt-in qua cờ
+
+→
+
+### 8.15 🟡 Cần cài tool cần `sudo` không, xử lý sao?
+
+Ví dụ `apt install`, `systemctl`.
+
+- **A.** In ra lệnh để bạn tự chạy *(an toàn, bạn thấy rõ nó làm gì)*
+- **B.** Hỏi mật khẩu sudo rồi tự chạy
+- **C.** Không hỗ trợ, chỉ cài được thứ không cần root
+
+→
+
+### 8.16 🟡 Có cần shell completion không?
+
+Gõ `aes` rồi Tab. ACFS có nhưng chưa bao giờ test được.
+
+- **A.** Cần
+- **B.** Không cần
+
+→
+
+### 8.17 🟡 Tên binary là gì?
+
+Tôi đặt `aes` (viết tắt). Đổi sau cũng dễ nhưng nên chốt sớm vì xuất hiện ở mọi tài liệu.
+
+Gợi ý: `aes` · `agents-env` · `aenv` · `envsetup`
+→
+
+### 8.18 🟡 Bạn cài binary `aes` bằng cách nào?
+
+| | Cách | Đánh đổi |
+|---|---|---|
+| **A** | `go install github.com/.../cmd/aes@latest` | Quen Go, cần mạng mỗi lần update |
+| **B** | Tải từ GitHub Releases | Nhanh, 1 file, cần CI build |
+| **C** | `brew install` từ tap riêng | Tiện nếu có Homebrew |
+| **D** | Cả A và B | A lúc dev, B khi phát hành |
+
+→
+*(nếu chọn B hoặc C, tôi thêm GitHub Actions vào Giai đoạn 4)*
+
+### 8.19 🟡 Phạm vi bản đầu?
 
 | | Bao gồm |
 |---|---|
 | **Tối thiểu** | `list` + `doctor` + `plugin add` + `install` qua brew/apt, 5 plugin thật |
-| **Đầy đủ** | Thêm `remove`, `update`, `search`, `env`, migration, CI release |
+| **Đầy đủ** | Thêm `remove`, `update`, `search`, `env`, CI release |
 
-### 8.6 🟡 Bạn có Ubuntu không, cần test thật không?
+→
 
-Tôi chỉ chạy được trên máy này. Nếu cần chắc chắn Ubuntu hoạt động, có 2 cách:
-- Bạn test trên máy Ubuntu thật sau khi tôi giao
-- Tôi dùng Docker chạy Ubuntu 24.04 để test CI (thêm dev dependency)
+### 8.20 ⟢ Có cần hỗ trợ bash / fish không?
+
+ACFS chỉ zsh. Tôi nghiêng về chỉ zsh, thiết kế để thêm bash sau.
+
+- **A.** Chỉ zsh *(tôi đề xuất)*
+- **B.** zsh + bash
+- **C.** zsh + bash + fish
+
+→
+
+### 8.21 ⟢ Có cần quản lý `mise` / runtime versions không?
+
+Máy bạn chưa có `mise`. Có cần tool này lo node/python/go version không?
+
+- **A.** Không, để ngoài phạm vi
+- **B.** Có, làm plugin `version-manager`
+
+→
+
+### 8.22 ⟢ Có cần hỗ trợ `direnv` không?
+
+Direnv tự kích hoạt env theo thư mục project. Bạn đã có direnv qua brew.
+
+- **A.** Không đụng, để bạn tự cấu hình
+- **B.** Có, `aes` khởi tạo `.envrc` cho plugin
+
+→
+
+### 8.23 ⟢ Địa chỉ repo ở đâu?
+
+Tên module Go cần dạng `github.com/<user>/<repo>`. Ví dụ:
+`github.com/tranquangdang21/agents-environment-setup`
+
+- ⬜ Đúng, dùng luôn
+- ⬜ Khác: ___
+
+→
+
+### 8.24 ⟢ Có deadline không?
+
+Nếu có, tôi cắt scope cho vừa.
+→
+
+---
+
+### Đã tự quyết, không cần bạn trả lời
+
+| Quyết định | Lý do |
+|---|---|
+| Không tự `sudo` | Nhìn thấy mới tin |
+| State ghi sau verify, không ghi trước | State nói dối thì mọi thứ khác cũng đáng ngờ |
+| Không sửa `~/.zshrc` | ACFS đã chứng minh điều này hỏng |
+| `env.sh` có header ghi nguồn | Luôn biết file nào do tool sinh |
+| Không TUI ở bản đầu | CLI thuần test được, script được, đọc log được |
+| Bỏ khung "flywheel" | Bạn muốn vậy; core của tool nên là core của *công cụ*, không phải của triết lý |
+| Không giữ ACFS | `~/.acfs` bỏ đi khi cái mới chạy được |
+| Không `starship` | Bạn dùng p10k |
 
 ---
 
@@ -336,13 +536,17 @@ Tôi chỉ bắt đầu code khi bạn trả lời §8.1–8.3 (ba câu ⛔).
 
 ---
 
-## 12. Câu hỏi đã tự trả lời
+## 12. Phụ lục
 
-Bạn không cần trả lời những cái này, tôi đã chốt:
+### Trạng thái nghiên cứu ACFS
 
-- **Lưu plugin ở đâu:** `~/.agents/plugins/`, mỗi plugin 1 thư mục, YAML. Thêm = copy
-  thư mục vào, hoặc repo `plugins/` của dự án.
-- **Có cần registry/remote không:** không. Không server, không mạng lúc cài plugin.
-- **`mise`:** chưa làm ở bản đầu. Là plugin `version-manager` nếu sau này cần.
-- **Có giữ ACFS không:** không. `~/.acfs` bỏ đi khi cái mới chạy được.
-- **`starship`:** không. Bạn dùng p10k.
+Deep-research về repo gốc ACFS đang chạy (`/workflows` để xem). Khi xong tôi sẽ bổ sung
+vào plan, chỉ rõ cái gì đáng port và cái gì nên bỏ.
+
+Câu hỏi research trả lời giúp — **bạn không cần trả lời**:
+- `install.sh` dài bao nhiêu, cấu trúc ra sao
+- `acfs.manifest.yaml` 160KB chứa gì
+- Ubuntu bị hardcode ở đâu
+- có macOS support không
+- project còn maintain không, có complaint gì về shell-based
+
