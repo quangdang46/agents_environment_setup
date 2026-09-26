@@ -113,6 +113,15 @@ package manager, checksum rõ, không sudo. `brew`/`apt` là fallback.
 | I11 | Cycle → lỗi không treo | A→B→A báo cycle |
 | I12 | Platform không hỗ trợ → skip | Tool `darwin`-only, chạy linux → skip |
 | I13 | TUI ≡ CLI | Cùng input → cùng Actions |
+| I14 | `sudo` không bao giờ chạy ngầm | Chỉ chạy sau khi in lệnh + xác nhận |
+| I15 | Default profile **chỉ chứa `tested: true`** | Profile chứa tool chưa test → validate fail |
+
+### Về terminology
+
+Không có `plan` trong codebase. Object giữa resolver và installer tên **`Actions`**.
+Cấm tên `InstallPlan` · `PlanCommand` · `PlanRenderer` · `PlanJSON` — feature đã bị loại,
+đừng để nó mọc lại dưới tên khác. `--dry-run` **giữ nguyên**: đó là cơ chế an toàn khi
+chạy pipeline, không phải một product surface riêng.
 
 ---
 
@@ -147,15 +156,67 @@ install:
 
 Không `run` / `needs_sudo` / `phase`. Privilege suy ra từ `(strategy, manager)`:
 
-| Strategy | sudo | đích |
+| Strategy | Privilege | Đích |
 |---|---|---|
 | `github-release` | không | `~/.aes/bin` |
 | `package` + brew | không | `/opt/homebrew` |
 | `package` + apt | **có** | hệ thống |
-| `go`/`npm`/`cargo` | không | prefix user |
+| `go` / `npm` / `cargo` | không | prefix user |
 
 `sha256` bắt buộc **chỉ với `github-release`**. `brew`/`apt` có integrity riêng — ép sha256
-vào đó là metadata giả.
+vào đó là metadata giả. Ví dụ đầy đủ:
+
+```yaml
+install:
+  darwin:
+    strategy: github-release
+    repository: BurntSushi/ripgrep
+    asset:
+      arm64: ripgrep-14.1.1-aarch64-apple-darwin.tar.gz
+      amd64: ripgrep-14.1.1-x86_64-apple-darwin.tar.gz
+    sha256:
+      arm64: 4e0c2b0e8f1a...   # bắt buộc — thiếu thì validate fail
+      amd64: 9a3f1d2c7b4e...
+```
+
+---
+
+## Privilege — câu trả lời cho mâu thuẫn `apt`/sudo
+
+Có mâu thuẫn thật: North Star nói *zero manual install*, còn security model nói *không tự sudo*.
+
+**Quyết định: A — prompt rõ ràng, không bao giờ chạy ngầm.**
+
+Lập luận: rủi ro của `sudo` **không phải là sudo**, mà là *ai chọn cái lệnh đó*. Nếu `sudo`
+chạy âm thầm, một `tool.yaml` độc hại kéo theo `apt install <đồ rác>` với mật khẩu của bạn.
+Nếu `sudo` **hiện lệnh rồi hỏi**, bạn thấy đúng nó sắp làm gì trước khi gõ mật khẩu.
+
+Vậy nguyên tắc là: **không bao giờ chạy ngầm — nhưng không từ chối cả.**
+
+```
+github-release  → không cần sudo → chạy tự do
+brew / go / npm  → không cần sudo → chạy tự do
+package + apt   → sudo
+      ├─ interactive: in lệnh, hỏi xác nhận, rồi chạy
+      └─ non-interactive: thử `sudo -n` (CI NOPASSWD hoặc credential cache)
+                          → thành công: chạy
+                          → thất bại: in lệnh, dừng, exit code riêng
+```
+
+Ba điều khoản phiên bản, tất cả đều test được:
+
+1. **Không bao giờ `sudo` khi không hỏi.** `exec.Command("sudo", ...)` chỉ chạy sau khi in
+   lệnh và (interactive) nhận xác nhận.
+2. **`--non-interactive` dùng `sudo -n`.** Không bao giờ treo chờ mật khẩu. CI có
+   `NOPASSWD` thì chạy trọn; không thì báo cáo thay vì treo.
+3. **Cần thao tác tay → exit code riêng + state không đánh dấu done.** Agent parse được,
+   không giả vờ thành công.
+
+Điều này giữ được cả hai vế: `aes setup` vẫn là **một lệnh chạy đến hết** trên máy có
+`sudo` bình thường, và vẫn không bao giờ tự leo thang quyền.
+
+**Giảm tần suất cần sudo:** catalog ưu tiên `github-release` cho mọi tool có release chính thức.
+`apt` chỉ là fallback cho thư viện hệ thống và tool không có release.
 
 ---
 
@@ -184,28 +245,31 @@ aes/
 
 ## Giai đoạn chi tiết
 
-### GĐ1 — Manifest + Platform
+> Thứ tự đổi so với bản trước: **bootstrap (GĐ0) lên đầu**, vì nó là entry point thật.
+> Không có đường `máy trắng → AES` thì các giai đoạn sau chỉ là code trên giấy.
+
+### GĐ0 — Bootstrap (làm trước tiên)
 
 **File:**
-- `internal/manifest/manifest.go` — struct `Tool`, `Install`, `Strategy`, `Verify`, `Validate()`
-- `internal/manifest/manifest_test.go`
-- `internal/platform/platform.go` — `Host{OS,Arch,PkgManager}`, `Current()`, `Supports(tool)`
-- `internal/platform/detect_test.go`
+- `install.sh` — tầng 0: detect OS/arch → tải binary từ GitHub Release → verify sha256 →
+  đặt vào `~/.aes/bin/aes`
+- `scripts/build.sh` — cross-compile `darwin/{arm64,amd64}` + `linux/{amd64,arm64}`
+- `.github/workflows/release.yml` — build matrix, đính kèm checksum
 
 **Contract:**
-- `Validate()` reject: thiếu name/description/install, field lạ, `run` (không còn hợp lệ),
-  `github-release` thiếu sha256, cycle deps
-- `Platform.Supports(tool)` — tool chỉ có `darwin`, chạy linux → false
+- Chỉ làm 5 việc: detect, download, verify, đặt binary, báo cáo. **Không cài tool gì.**
+  Phần còn lại là `aes setup` lo.
+- Binary luôn tự chứa — không phụ thuộc Go/brew/apt ở máy đích
+- Checksum bắt buộc, từ `checksums.txt` trong release
 
-**Test (contract, không source-grep):**
-- Manifest thiếu field bắt buộc → lỗi nêu đúng tên field
-- Manifest có field không nhận diện (typo) → lỗi, KHÔNG im lặng bỏ qua
-- `github-release` không `sha256` → lỗi
-- Tool `darwin`-only, `Supports` trên linux → false (table test)
-- Tool không có `install` cho platform hiện tại → `Supports` false
-- `runtime.GOOS`/`GOARCH` mapping đúng — table test, không assert host hiện tại
+**Test:**
+- Asset tồn tại + checksum khớp → binary chạy được
+- Checksum **sai** → abort, KHÔNG đặt binary
+- OS/arch không có asset → báo rõ, không tải file rác
 
-**Done:** `go test ./internal/manifest/ ./internal/platform/` xanh.
+**Done:** máy sạch Ubuntu → `curl … | sh` → `aes --version` chạy được.
+
+### GĐ1 — Manifest + Platform
 
 ### GĐ2 — Catalog + Resolver
 
@@ -260,16 +324,20 @@ aes/
 **Contract:**
 - Registry: `strategy → installer`. Không `switch tool.Name`.
 - `github-release`: tải → verify sha256 → **fail thì dừng, KHÔNG giải nén file hỏng** → `chmod +x`
-- `package`+apt: **in lệnh `sudo apt install ...`, KHÔNG exec** — user chạy tay
+- `package`+apt: theo mô hình privilege — in lệnh, xác nhận (interactive) hoặc `sudo -n`
+  (non-interactive). **Không bao giờ `sudo` khi không in trước.**
+- `package`+brew: chạy thẳng, không cần privilege
 - Timeout mọi lệnh. Output capture, cap 1MB.
 
 **Test:**
 - sha256 sai → abort, file `~/.aes/bin` KHÔNG tạo
-- `package`+apt → `Installer` trả `ErrNeedsPrivilege`, KHÔNG spawn `sudo`
+- `package`+apt **interactive**: không có input confirm → `sudo` KHÔNG chạy (I14)
+- `package`+apt **non-interactive**: `sudo -n` fail → in lệnh + exit code riêng, KHÔNG treo
+- `package`+brew: chạy, không hỏi
 - Timeout → lỗi nêu "timed out", không treo
 - Registry resolve strategy lạ → lỗi rõ
 
-**Done:** sha256 sai không bao giờ tạo binary; apt không bao giờ tự sudo.
+**Done:** sha256 sai không tạo binary; `sudo` không bao giờ chạy mà không in trước.
 
 ### GĐ5 — State + Env
 
@@ -317,7 +385,7 @@ aes/
 6. state corrupt → lỗi
 7. manifest hỏng → lỗi, không exec
 8. platform không hỗ trợ → skip
-9. strategy cần privilege → in lệnh
+9. strategy cần privilege → in lệnh trước, `sudo` chỉ chạy sau xác nhận
 10. 10–15 tool verified: cài thật + verify
 
 **Done:** 10 assertion xanh trên máy thật.
@@ -326,13 +394,18 @@ aes/
 
 **File:** `tools/<category>/<name>/tool.yaml` × 40–50
 
-- 10–15 tool **verified**: cài thật, verify thật, so sánh version
-- 25–35 tool: definition hợp lệ (validate pass) nhưng chưa chạy thật
+- 10–15 tool **verified**: cài thật, verify thật, so sánh version → `tested: true`
+- 25–35 tool: definition hợp lệ, `tested: false` — **pool để mở rộng, không vào default profile**
 - Mỗi tool có `tested: true|false`; `doctor` cảnh báo phần chưa test
 
 **Category:** shell · search · terminal · git · runtime · ai · agent · infra · utility
 
-**Done:** `aes list` hiện catalog đúng, ≥10 tool verified trên máy thật.
+**Default profile chỉ chứa `tested: true`** (I14). Nếu không, North Star
+"environment hoàn chỉnh **đã verify**" là nói dối — 25 tool chưa chạy thật chính là chỗ
+sẽ vỡ trên máy người dùng đầu tiên.
+
+**Done:** `aes list` hiện catalog đúng; ≥10 tool verified; `aes setup` cài trọn default
+profile trên máy sạch mà không lỗi.
 
 ### GĐ8 — Sandbox test (GĐ sau)
 
@@ -342,14 +415,31 @@ aes/
 
 ### GĐ9 — TUI (GĐ sau)
 
-- `aes` mở TUI. **Cùng resolver, cùng engine** (I13)
-- Không business logic trong TUI
+`aes` mở TUI. Menu: `Setup` · `Tools` · `Profiles` · `Doctor` · `Environment`
 
-### GĐ10 — Đóng gói (GĐ sau)
+**Tools:** search/filter, tick chọn nhiều → Enter → cùng resolver, cùng installer, cùng verify.
+Chọn `rust` thì resolver tự kéo `cargo`. Không khác gì `aes setup --only rust`, chỉ khác cách chọn.
 
-- `curl|sh` bootstrap (tầng 0)
-- CI: build matrix macOS/Ubuntu, release khi tag
-- Homebrew tap (convenience)
+**Ràng buộc cứng — 3 điều TUI không được làm:**
+
+| Không được | Vì sao |
+|---|---|
+| Nhận command tự do kiểu `brew install xxx` | Phá I1/I3; YAML đã là data, đừng mở lại shell |
+| Có fast-path bypass resolver | TUI và CLI phải cho **cùng** Actions, nếu không I13 vỡ |
+| Chứa business logic cài đặt | Mọi quyết định thuộc về core |
+
+TUI chỉ là: **thu thập lựa chọn → gọi core → hiển thị kết quả.** Giống hệt cách `ssh` không
+tự cấu hình port forwarding.
+
+> Agent: `aes setup` · Human: mở `aes`, chọn đúng cái mình cần. **Hai cách dùng, một engine.**
+
+### GĐ11 — Đóng gói tiện ích (GĐ sau)
+
+Bootstrap đã ở GĐ0. Phần còn lại chỉ là phương tiện thay thế, không phải đường chính:
+- Homebrew tap (`brew install aes`)
+- `go install github.com/…/cmd/aes@latest`
+
+Cả hai đều là *convenience method*. Đường chuẩn vẫn là `curl … | sh` → `aes setup`.
 
 ---
 
@@ -389,7 +479,7 @@ orchestration (beads, swarm, am) — project khác. **Đừng để AES thành A
 
 ## Definition of Done (toàn dự án)
 
-- [ ] 13 invariant có test
+- [ ] 15 invariant có test
 - [ ] 10 assertion MVP xanh
 - [ ] 40–50 tool definitions, ≥10 verified thật
 - [ ] `aes setup` một lệnh bootstrap trọn vẹn, exit 0 chỉ khi verify xong
