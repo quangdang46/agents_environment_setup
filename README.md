@@ -337,6 +337,17 @@ and manages only its own delimited block.
 `aes setup --dry-run` resolves and prints the full plan, changes nothing, and
 exits 0.
 
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Chosen deliberately over a rider. AES exists to be *used* with an AI coding
+assistant: the normal workflow is to paste `aes doctor` output into one and ask
+what it means. A clause restricting "making the software available" to named
+companies would read as forbidding exactly that, which is the product working
+as intended. Plain MIT also keeps the widest adoption and no ambiguity about who
+may read the source.
+
 ## Development
 
 ```bash

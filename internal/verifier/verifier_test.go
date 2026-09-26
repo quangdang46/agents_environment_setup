@@ -37,6 +37,14 @@ func TestExtractVersion(t *testing.T) {
 		// the agent/ catalog. ntm has no --version at all - it prints this from
 		// `ntm version` - so a manifest written by pattern-matching its peers
 		// would have used a command that errors.
+		// btop colours its version, and the first digit run in an escape
+		// sequence is not a version. Without stripping escapes the parser
+		// returns "1m" from the [1m in "\x1b[1m1.4.7\x1b[0m", which compares
+		// as 1 — so a healthy 1.4.7 was reported stale against min 1.2 and
+		// aes setup reinstalled it on every run. A false actionable verdict
+		// is worse than a lossy one, which is what the tmux case was.
+		{"btop with ANSI colour", "btop version: \x1b[1m1.4.7\x1b[0m\n", "1.4.7"},
+		{"ansi with no version after it", "\x1b[1mtool\x1b[0m\n", ""},
 		{"ntm, from the version subcommand", "ntm version 1.18.2\n", "1.18.2"},
 		{"agent-mail", "am 0.3.36\n", "0.3.36"},
 		{"beads viewer, v-prefixed", "bv v0.16.4\n", "0.16.4"},

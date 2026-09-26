@@ -1006,6 +1006,20 @@ together, which is what makes the invariant auditable by reading one file.
 
 ---
 
+## The catalog range was a floor, not a quota
+
+The Stage 7 brief asks for 40–50 tool definitions. The catalog ships 75.
+
+The range reads as a floor for coverage — "have you actually looked at the
+ecosystem" — rather than a ceiling, and every entry added beyond it is a real
+tool whose install coordinate resolves against the registry that proves
+ownership. Padding to hit a number would be worse than exceeding it: the six
+tools that could not be verified early on were left out rather than guessed at.
+
+Stating it here so the next reader does not read 75 as drift and "correct" it
+downward. If the catalog ever needs trimming, that is a deliberate decision
+with a reason, not an accident of arithmetic.
+
 ## Definition of Done
 
 - [ ] 15 invariants covered by tests

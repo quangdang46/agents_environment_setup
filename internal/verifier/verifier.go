@@ -84,6 +84,22 @@ type Result struct {
 // an empty string rather than a guess.
 var versionRe = regexp.MustCompile(`\d+(?:\.\d+)*(?:[a-z]+)?`)
 
+// ansiRe matches the escape sequences a tool may embed in its version output.
+//
+// This is not cosmetic. `btop --version` prints:
+//
+//	btop version: \x1b[1m1.4.7\x1b[0m
+//
+// and the first digit run in that line is the "1" of "[1m", with "m" trailing
+// it as a pre-release suffix. The parser therefore reported "1m", which
+// compares as 1 — so a perfectly healthy btop 1.4.7 was reported stale
+// against a minimum of 1.2, and aes setup would reinstall it on every run.
+//
+// Stripping escapes first is strictly safer than tightening the regex, because
+// every other real format already works and the escape is the one thing
+// standing between the line and its digits.
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
 // ExtractVersion pulls a version out of a tool's version output.
 //
 // Only the first line is considered, because later lines are usually copyright
@@ -91,7 +107,7 @@ var versionRe = regexp.MustCompile(`\d+(?:\.\d+)*(?:[a-z]+)?`)
 // "go version go1.24.0 darwin/arm64" yields "1.24.0" without special-casing.
 func ExtractVersion(output string) string {
 	line, _, _ := strings.Cut(output, "\n")
-	return versionRe.FindString(strings.TrimSpace(line))
+	return versionRe.FindString(ansiRe.ReplaceAllString(strings.TrimSpace(line), ""))
 }
 
 // CompareVersions orders two dotted-integer versions, returning -1, 0 or 1.
