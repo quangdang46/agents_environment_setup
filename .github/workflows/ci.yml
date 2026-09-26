@@ -1,0 +1,148 @@
+name: ci
+
+# Nothing ran on a pull request until now. release.yml is tag-triggered and
+# only covers releases, so a green main meant nothing had been checked —
+# while an unformatted test file, two go vet failures, and a build break all
+# reached main this session. This workflow is the answer to that.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref. A long matrix on a busy branch
+# otherwise queues work nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast, and the checks that catch the most: unformatted code and vet
+  # failures both reached main before this existed.
+  lint:
+    name: fmt and vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          # Only the Go sources. Walking .beads would fail on its JSONL
+          # history, which is data rather than code.
+          unformatted=$(gofmt -l cmd internal embed.go 2>/dev/null || true)
+          if [ -n "$unformatted" ]; then
+            echo "::error::unformatted files:"
+            echo "$unformatted"
+            echo "run 'make fmt' to fix"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+  # The cross-platform promise: the spec claims macOS and Ubuntu, and nothing
+  # in the tree proved it. The macOS leg is the one that matters most — a
+  # darwin-only test failure would otherwise be invisible until release.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, goarch: arm64 }
+          - { os: ubuntu-latest, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        env:
+          # Race needs cgo, which needs a C toolchain. Release builds set
+          # CGO_ENABLED=0; the race detector is a test-time-only concern and
+          # must not change what gets compiled into a release artifact.
+          CGO_ENABLED: "1"
+          GOARCH: ${{ matrix.goarch }}
+        # Layer 1 fixtures verify tools already on the machine, so most skip
+        # on a clean runner. Layer 2 installs real tools and is far too slow
+        # and mutating for a PR gate — it runs in release.yml's build job and
+        # is the reason the catalog's `tested:` flags exist at all.
+        run: go test -race ./...
+
+      - name: Bootstrap
+        # install.sh against a local fixture: no network, no root, no
+        # released binary. This is the only automated check that the tier-0
+        # path still works, and the path users hit first.
+        run: sh scripts/install_test.sh
+
+  # The binary is the product. A green test suite says nothing about whether
+  # `aes` still builds and still embeds a loadable catalog, which is exactly
+  # how the released binary shipped once with no way to find its own data.
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build every target
+        run: sh scripts/build.sh
+
+      - name: The built binary is self-contained
+        env:
+          AES_DIST: dist
+        run: |
+          set -eu
+          ls -l dist/
+          # checksums.txt must cover every asset; an asset with no recorded
+          # digest is the failure mode install.sh aborts on.
+          for asset in dist/aes-*.tar.gz; do
+            name=$(basename "$asset")
+            if ! grep -q " $name\$" dist/checksums.txt; then
+              echo "::error::$name has no entry in checksums.txt"
+              exit 1
+            fi
+          done
+          # Unpack one and confirm the catalog travelled with it. This is
+          # the regression that made `curl … | sh` unable to run
+          # `aes setup` at all.
+          #
+          # The asset is picked with a glob rather than `ls | head`: `ls`
+          # is aliased to a long-listing variant in some shells, and
+          # parsing its output for a filename is a portability trap.
+          asset=""
+          for candidate in dist/aes-*-linux-amd64.tar.gz; do
+            asset="$candidate"
+            break
+          done
+          if [ -z "$asset" ]; then
+            echo "::error::no linux/amd64 asset was built"
+            exit 1
+          fi
+          mkdir -p /tmp/selfcontained
+          tar -xzf "$asset" -C /tmp/selfcontained
+          cd /tmp
+          HOME=/tmp/ci-home /tmp/selfcontained/aes list --json > /tmp/aes-list.json
+          if [ ! -s /tmp/aes-list.json ]; then
+            echo "::error::the built binary produced no catalog — it would fail for every user"
+            exit 1
+          fi
+          echo "binary is self-contained: $(python3 -c 'import json;print(len(json.load(open("/tmp/aes-list.json"))["tools"]),"tools")'
