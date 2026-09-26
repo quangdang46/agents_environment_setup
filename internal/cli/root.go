@@ -49,13 +49,13 @@ import (
 
 // Exit codes. These are the tool's public contract; see the package comment.
 const (
-	ExitOK                 = 0
-	ExitFailure            = 1
-	ExitUsage              = 2
-	ExitInvalidCatalog     = 3
-	ExitUnsupportedPlatfrm = 4
-	ExitNeedsPrivilege     = 5
-	ExitVerifyFailed       = 6
+	ExitOK                  = 0
+	ExitFailure             = 1
+	ExitUsage               = 2
+	ExitInvalidCatalog      = 3
+	ExitUnsupportedPlatform = 4
+	ExitNeedsPrivilege      = 5
+	ExitVerifyFailed        = 6
 )
 
 // UsageError is a bad invocation: an unknown flag, a missing argument, or a
@@ -115,7 +115,7 @@ func ExitCode(err error) int {
 		return ExitInvalidCatalog
 
 	case errors.Is(err, platform.ErrUnsupportedOS):
-		return ExitUnsupportedPlatfrm
+		return ExitUnsupportedPlatform
 
 	// A strategy the build does not implement is a catalog defect too.
 	case errors.Is(err, installer.ErrUnknownStrategy):
@@ -130,7 +130,7 @@ func ExitCode(err error) int {
 func isDocumented(code int) bool {
 	switch code {
 	case ExitOK, ExitFailure, ExitUsage, ExitInvalidCatalog,
-		ExitUnsupportedPlatfrm, ExitNeedsPrivilege, ExitVerifyFailed:
+		ExitUnsupportedPlatform, ExitNeedsPrivilege, ExitVerifyFailed:
 		return true
 	}
 	return false

@@ -333,3 +333,63 @@ func TestInjectedAuthorizeIsConsulted(t *testing.T) {
 		t.Errorf("Authorize saw %v, want [\"apt-get install -y jq\"]", asked)
 	}
 }
+
+// TestCappedWriterMarksTruncation is the regression guard for a real defect:
+// the privileged path's capped writer silently dropped the truncation marker
+// that exec.Run appends, so a truncated apt-get transcript was shown to the
+// user as complete — on the one path where they are about to be asked for a
+// password. A truncated log that does not admit it is truncated is worse
+// than no log.
+func TestCappedWriterMarksTruncation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("short output carries no marker", func(t *testing.T) {
+		t.Parallel()
+		var c cappedWriter
+		c.limit = 100
+		_, _ = c.Write([]byte("short"))
+		if got := c.String(); got != "short" {
+			t.Errorf("String() = %q, want %q with no marker", got, "short")
+		}
+	})
+
+	t.Run("output past the cap is marked", func(t *testing.T) {
+		t.Parallel()
+		var c cappedWriter
+		c.limit = 5
+		_, _ = c.Write([]byte("0123456789"))
+		got := c.String()
+		if !strings.Contains(got, "truncated") {
+			t.Errorf("String() = %q, want a truncation marker", got)
+		}
+		if !strings.HasPrefix(got, "01234") {
+			t.Errorf("String() = %q, want the retained prefix first", got)
+		}
+	})
+
+	t.Run("a write entirely past the cap still marks", func(t *testing.T) {
+		t.Parallel()
+		// The buffer is already full; the overflow case is the one a
+		// naive remaining > 0 check silently forgets.
+		var c cappedWriter
+		c.limit = 2
+		_, _ = c.Write([]byte("ab"))
+		_, _ = c.Write([]byte("cd"))
+		if !strings.Contains(c.String(), "truncated") {
+			t.Errorf("String() = %q, want a truncation marker", c.String())
+		}
+	})
+
+	t.Run("writes report success so the child is not SIGPIPEd", func(t *testing.T) {
+		t.Parallel()
+		var c cappedWriter
+		c.limit = 1
+		n, err := c.Write([]byte("abcdef"))
+		if err != nil {
+			t.Errorf("Write returned %v; a capped writer must not fail the command", err)
+		}
+		if n != 6 {
+			t.Errorf("Write consumed %d bytes, want all 6 reported as consumed", n)
+		}
+	})
+}

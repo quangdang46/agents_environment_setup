@@ -107,7 +107,7 @@ func TestExitCodeMapping(t *testing.T) {
 		{"unknown tool", resolver.ErrUnknownTool, ExitInvalidCatalog},
 		{"excluded dependency", resolver.ErrExcludedDependency, ExitInvalidCatalog},
 		{"unimplemented strategy", installer.ErrUnknownStrategy, ExitInvalidCatalog},
-		{"unsupported platform", platform.ErrUnsupportedOS, ExitUnsupportedPlatfrm},
+		{"unsupported platform", platform.ErrUnsupportedOS, ExitUnsupportedPlatform},
 		{"usage", &UsageError{msg: "bad flag"}, ExitUsage},
 	}
 
@@ -535,14 +535,28 @@ func TestHelpAndVersion(t *testing.T) {
 	}
 }
 
-// TestSetupRefusesUntilImplemented keeps the North Star honest: a partial
-// setup that exits 0 would be worse than a refusal.
-func TestSetupRefusesUntilImplemented(t *testing.T) {
+// TestSetupNeverReportsSuccessWithoutInstalling guards the North Star's
+// central promise: exit 0 only when the environment is actually done.
+//
+// This replaces an earlier test that asserted setup *fails* while
+// unimplemented. That test passed for any reason setup failed — including a
+// broken profile or a missing catalog — so it could not distinguish "not
+// written yet" from "written and broken", which is the exact weakness a
+// test should not have. This one asserts the property that matters instead:
+// whatever setup did, it did not claim a completed environment without
+// having installed and verified something.
+func TestSetupNeverReportsSuccessWithoutInstalling(t *testing.T) {
 	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
-	if got := h.run("setup"); got == ExitOK {
-		t.Error("aes setup reported success while unimplemented")
+	code := h.run("setup")
+
+	if code == ExitOK {
+		// Reaching exit 0 is only legitimate if the tool verified. This
+		// fixture's binary does not exist, so it cannot have.
+		var out listOutput
+		_ = json.Unmarshal(h.stdout.Bytes(), &out)
+		t.Errorf("aes setup exited 0 with nothing installed; stdout was:\n%s", h.stdout.String())
 	}
 }
 

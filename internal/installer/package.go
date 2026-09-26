@@ -264,9 +264,16 @@ func runAuthorized(ctx context.Context, cmd string) (exec.Result, error) {
 // path either. Writes past the cap report success: returning an error here
 // would hand the child a SIGPIPE and turn chatty output into a failed
 // install.
+//
+// It tracks whether truncation happened and says so in String(). The first
+// version of this silently dropped the marker exec appends, which meant a
+// truncated apt-get transcript was presented to the user as complete — on
+// the one code path where they are about to be asked for a password. A
+// truncated log that does not admit it is truncated is worse than no log.
 type cappedWriter struct {
-	buf   strings.Builder
-	limit int
+	buf       strings.Builder
+	limit     int
+	truncated bool
 }
 
 func (c *cappedWriter) Write(p []byte) (int, error) {
@@ -275,11 +282,19 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 			c.buf.Write(p)
 		} else {
 			c.buf.Write(p[:remaining])
+			c.truncated = true
 		}
+	} else if len(p) > 0 {
+		c.truncated = true
 	}
 	return len(p), nil
 }
 
-func (c *cappedWriter) String() string { return c.buf.String() }
+func (c *cappedWriter) String() string {
+	if !c.truncated {
+		return c.buf.String()
+	}
+	return c.buf.String() + "\n[output truncated by aes]\n"
+}
 
 var _ io.Writer = (*cappedWriter)(nil)
