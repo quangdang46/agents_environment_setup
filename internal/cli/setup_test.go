@@ -51,6 +51,8 @@ type toolSpec struct {
 	provides string
 	// minVersion, when set, makes the tool stale if its version is lower.
 	minVersion string
+	// strategyName overrides the install strategy, defaulting to go.
+	strategyName string
 }
 
 func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {

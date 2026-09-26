@@ -126,6 +126,44 @@ func ExitCode(err error) int {
 	}
 }
 
+// permute moves flags ahead of positional arguments so `aes uninstall jq
+// --confirm` works as well as `aes uninstall --confirm jq`.
+//
+// Go's flag package stops parsing at the first non-flag argument, so without
+// this every command taking a tool name would treat a trailing flag as a
+// second tool name — and "uninstall takes exactly one tool name" for a
+// perfectly ordinary invocation is a bad first experience.
+//
+// A bare "--" ends flag parsing, so anything after it stays positional.
+func permute(args []string) []string {
+	var flags, positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			// Everything after the terminator is positional, verbatim.
+			return append(append(flags, positional...), args[i:]...)
+		case len(a) > 1 && a[0] == '-':
+			flags = append(flags, a)
+			// A flag written as "--name value" consumes the value; without
+			// this, "jq" would be pulled out of position and the flag left
+			// with the next flag as its argument.
+			if !strings.Contains(a, "=") && i+1 < len(args) && !isFlagLike(args[i+1]) {
+				i++
+				flags = append(flags, args[i])
+			}
+		default:
+			positional = append(positional, a)
+		}
+	}
+	return append(flags, positional...)
+}
+
+// isFlagLike reports whether s looks like another flag rather than a value.
+func isFlagLike(s string) bool {
+	return len(s) > 1 && s[0] == '-'
+}
+
 // isDocumented reports whether code is one the contract defines.
 func isDocumented(code int) bool {
 	switch code {
@@ -198,6 +236,8 @@ func (s *stringList) Set(v string) error {
 	return nil
 }
 
+func init() { commands = append(commands, lifecycleCommands...) }
+
 // App holds everything a command touches. Injecting it rather than reaching
 // for os.Stdout and os.Getenv is what makes the exit-code contract testable.
 type App struct {
@@ -225,6 +265,9 @@ var Version = "dev"
 
 // commands is the MVP command tree. The TUI is not here: bare `aes` prints
 // help until it is.
+// commands is the full command tree. Lifecycle commands are appended from
+// their own file so the tree stays readable and the split between the two
+// meanings lives next to the code that implements it.
 var commands = []*Command{
 	{Name: "setup", Summary: "install a complete, verified AI coding environment", Run: runSetup},
 	{Name: "list", Summary: "list catalog tools and their verified status", Run: runList},
@@ -334,7 +377,7 @@ func parseFlags(cmd *Command, args []string, errOut io.Writer) (*Flags, any, []s
 		extra = cmd.Register(fs)
 	}
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(permute(args)); err != nil {
 		// flag already wrote the reason; map it onto the usage contract.
 		return nil, nil, nil, &UsageError{msg: err.Error()}
 	}
