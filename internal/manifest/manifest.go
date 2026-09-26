@@ -85,10 +85,17 @@ type Target struct {
 	Strategy string `yaml:"strategy"`
 	Manager  string `yaml:"manager,omitempty"` // brew|apt — only for strategy=package
 	Package  string `yaml:"package,omitempty"` // only for strategy=package
-	// Repository and the arch-keyed maps apply only to github-release.
-	Repository string            `yaml:"repository,omitempty"`
-	Asset      map[string]string `yaml:"asset,omitempty"`  // Go arch → asset filename
-	SHA256     map[string]string `yaml:"sha256,omitempty"` // Go arch → checksum
+	// Repository, Binary and the arch-keyed maps apply only to
+	// github-release.
+	Repository string `yaml:"repository,omitempty"`
+	// Binary is the filename inside the archive, when it differs from the tool
+	// name. opentofu ships a binary called `tofu`, and there was no way to say
+	// so: the installer inferred the name from the tool name, which is right
+	// often enough to be a trap and wrong exactly when a tool is renamed
+	// upstream.
+	Binary string            `yaml:"binary,omitempty"`
+	Asset  map[string]string `yaml:"asset,omitempty"`  // Go arch → asset filename
+	SHA256 map[string]string `yaml:"sha256,omitempty"` // Go arch → checksum
 
 	// Ecosystem coordinates, one per strategy. Exactly the field matching
 	// the strategy may be set.
@@ -138,15 +145,15 @@ var strategySpecs = map[string]strategySpec{
 	},
 	StrategyPackage: {
 		required: []string{"manager", "package"},
-		rejected: []string{"repository", "asset", "sha256", "go_package", "npm_package", "cargo_name", "uv_package"},
+		rejected: []string{"repository", "asset", "sha256", "binary", "go_package", "npm_package", "cargo_name", "uv_package"},
 	},
 	StrategyGo: {
 		required: []string{"go_package"},
-		rejected: []string{"manager", "package", "repository", "asset", "sha256", "npm_package", "cargo_name", "uv_package"},
+		rejected: []string{"manager", "package", "repository", "asset", "sha256", "binary", "npm_package", "cargo_name", "uv_package"},
 	},
 	StrategyNPM: {
 		required: []string{"npm_package"},
-		rejected: []string{"manager", "package", "repository", "asset", "sha256", "go_package", "cargo_name", "uv_package"},
+		rejected: []string{"manager", "package", "repository", "asset", "sha256", "binary", "go_package", "cargo_name", "uv_package"},
 	},
 	StrategyCargo: {
 		required: []string{"cargo_name"},
@@ -154,7 +161,7 @@ var strategySpecs = map[string]strategySpec{
 	},
 	StrategyUV: {
 		required: []string{"uv_package"},
-		rejected: []string{"manager", "package", "repository", "asset", "sha256", "go_package", "npm_package", "cargo_name"},
+		rejected: []string{"manager", "package", "repository", "asset", "sha256", "binary", "go_package", "npm_package", "cargo_name"},
 	},
 }
 

@@ -195,7 +195,16 @@ func RequiresPrivilege(target manifest.Target) bool {
 // override. A tool whose binary is named differently from the tool (ripgrep
 // ships `rg`) declares that on the strategy rather than in the action, so
 // Action stays free of slices and keeps serialising deterministically.
+// binaryName is the filename to look for inside the archive.
+//
+// The manifest wins, then an installer-level override, then the tool name. The
+// manifest is first because that is the only one of the three that describes
+// the upstream artefact; the tool name is a local label and is the last
+// resort precisely because it is the one most likely to be wrong.
 func (a Action) binaryName(override string) string {
+	if a.Target.Binary != "" {
+		return a.Target.Binary
+	}
 	if override != "" {
 		return override
 	}

@@ -5,8 +5,10 @@ category: infra
 tested: false
 tags:
   - infra
+provides:
+  - tofu
 verify:
-  command: opentofu
+  command: tofu
   version:
     command: tofu version
     min: "1.6"
@@ -14,6 +16,7 @@ install:
   darwin:
     strategy: github-release
     repository: opentofu/opentofu
+    binary: tofu
     asset:
       amd64: tofu_1.12.6_darwin_amd64.tar.gz
       arm64: tofu_1.12.6_darwin_arm64.tar.gz
@@ -23,6 +26,7 @@ install:
   linux:
     strategy: github-release
     repository: opentofu/opentofu
+    binary: tofu
     asset:
       amd64: tofu_1.12.6_linux_amd64.tar.gz
       arm64: tofu_1.12.6_linux_arm64.tar.gz
