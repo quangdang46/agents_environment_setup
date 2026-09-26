@@ -380,3 +380,52 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// TestShippedProfilesHaveNoDanglingReferences is the guard that should have
+// caught the profiles referencing a tool and a tag that do not exist.
+//
+// TestShippedProfilesLoad only checks that the files PARSE. Parsing is not
+// resolving: a profile naming a tool the catalog lacks loads perfectly and
+// then fails at run time, which takes `aes setup` down with it. This walks
+// every reference in every shipped profile and asserts it resolves.
+//
+// It deliberately checks references rather than calling Resolve, so it does
+// not depend on the tested: flags. A profile full of untested tools is a
+// legitimate state (the catalog is not required to have any yet); a profile
+// naming something that does not exist never is.
+func TestShippedProfilesHaveNoDanglingReferences(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join("..", "..")
+	cat, err := catalog.Load(filepath.Join(root, "tools"))
+	if err != nil {
+		t.Fatalf("catalog.Load: %v", err)
+	}
+	set, err := LoadDir(filepath.Join(root, "profiles"))
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+
+	for _, name := range set.Names() {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			p, err := set.Get(name)
+			if err != nil {
+				t.Fatalf("Get(%q): %v", name, err)
+			}
+			for _, tool := range p.Include {
+				if _, ok := cat.ByName(tool); !ok {
+					t.Errorf("profile %q includes %q, which is not in the catalog", name, tool)
+				}
+			}
+			for _, sel := range p.Tags {
+				// A selector matches a category, a tag, or both — the
+				// spec's own example lists categories under a field called
+				// tags, so both are fair game.
+				if len(cat.ByCategory(sel)) == 0 && len(cat.ByTag(sel)) == 0 {
+					t.Errorf("profile %q selects %q, which matches no category and no tag", name, sel)
+				}
+			}
+		})
+	}
+}

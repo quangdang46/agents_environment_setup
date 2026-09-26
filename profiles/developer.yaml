@@ -9,7 +9,6 @@ include:
   - jq
   - tmux
   - fzf
-  - zoxide
 tags:
   - terminal
 require_tested: true

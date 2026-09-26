@@ -12,7 +12,6 @@ tags:
   - git
   - runtime
   - ai
-  - agent
   - infra
   - utility
 require_tested: true

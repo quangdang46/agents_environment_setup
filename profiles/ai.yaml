@@ -8,11 +8,9 @@ include:
   - jq
   - tmux
   - fzf
-  - zoxide
   - claude
   - gh
 tags:
   - terminal
   - ai
-  - agent
 require_tested: true
