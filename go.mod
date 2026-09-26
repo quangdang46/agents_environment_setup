@@ -1,4 +1,4 @@
-module github.com/tranquangdang21/agents-environment-setup
+module github.com/quangdang46/agents_environment_setup
 
 go 1.26.4
 
