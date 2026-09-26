@@ -18,7 +18,7 @@ aes setup
 ```
 
 > **Status: pre-1.0, and honest about it.** No release is published yet, so the
-> install line above does not work today. 47 tool definitions exist; **0 are
+> install line above does not work today. 75 tool definitions exist; **0 are
 > marked `tested: true` yet**, which by design means `aes setup` with no flags
 > currently resolves to nothing and exits non-zero. See
 > [Status and limitations](#status-and-limitations) — this is the intended
@@ -206,9 +206,9 @@ description: Fast recursive grep
 category: search
 provides: [rg]
 verify:
-  command: rg --version
+  command: rg            # the BINARY, resolved on PATH — no arguments
   version:
-    command: rg --version
+    command: rg --version   # the command whose output carries the version
     min: "14.0"
 install:
   darwin:
@@ -221,7 +221,7 @@ install:
     package: ripgrep
 ```
 
-Three things that are easy to get wrong and are validated for you:
+Four things that are easy to get wrong and are validated for you:
 
 - **Ecosystem coordinates must pin a version** — `go_package: x@v1.2.3`.
   An unpinned install resolves to different bytes tomorrow.
@@ -229,6 +229,9 @@ Three things that are easy to get wrong and are validated for you:
   an alias.
 - **`asset` and `sha256` must cover the same arches** — a missing checksum on
   exactly one architecture is the failure mode that ships unverified binaries.
+- **`verify.command` is a bare binary, not a command line.** It is resolved with
+  `exec.LookPath`, so `rg --version` there never matches anything; the arguments
+  belong in `verify.version.command`.
 
 ## The 15 invariants
 
@@ -262,10 +265,13 @@ This is an active, pre-1.0 project. Stated plainly:
   complete and tested against a local fixture, but there is no GitHub release
   to download from yet. Build from source for now.
 - **Zero tools are `tested: true`.** Verification requires both Layer 1
-  (fixtures on a real machine) and Layer 2 (a real install in a sandbox), and
-  Layer 2 is not built. So `aes setup` with **no flags resolves to nothing and
-  exits non-zero** — which is I15 working as designed. Use `--only` or a
-  profile until Layer 2 lands.
+  (fixtures on a real machine) and Layer 2 (a real install). Layer 2 is built
+  and green — `internal/sandbox`, opt-in behind `AES_LAYER2=1` — but the two
+  layers have contradictory preconditions: Layer 1 needs a tool **present**,
+  Layer 2 needs it **absent**. On one machine no tool can satisfy both, so the
+  flag cannot honestly be set yet. `aes setup` with **no flags resolves to
+  nothing and exits non-zero** — which is I15 working as designed. Use `--only`
+  or a profile until the container lands.
 - **The TUI is new and lightly exercised.** It exists and its selection
   logic is well tested, but it has never been run on a machine other than
   the one that wrote it, and raw mode goes through `stty`. Expect rough edges
@@ -274,19 +280,21 @@ This is an active, pre-1.0 project. Stated plainly:
   github-release and package-manager tools for real, but `go`/`npm`/`cargo`/
   `uv` have no supported per-package removal, so AES reports *not removed*
   with the manual route rather than pretending. `aes forget` always works.
-- **Layer 2 sandbox is not built**, which is why nothing can honestly be
-  marked `tested: true`.
+- **No container for Layer 2**, which is why nothing can honestly be marked
+  `tested: true`. A fresh container has nothing installed, so it is where Layer 2
+  belongs; the host is where Layer 1 runs.
 - **I7 has no automated guard.** Nothing writes to `~/.agents/`, but nothing
   would catch a regression either.
-- **No CI on pull requests.** `release.yml` is tag-triggered only, and
-  `gofmt` does not run in CI. A green `main` is not currently evidence that
-  anything was checked.
+- **CI runs on pull requests.** `ci.yml` does fmt+vet, a test matrix across
+  macOS arm64 and Ubuntu amd64, and a build job that unpacks a fresh artifact
+  and runs `aes list --json` against a throwaway HOME — the check that catches a
+  binary that cannot find its own catalog.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `profile "default" requires tested tools, but these are not tested: …` | I15; no tool is verified yet | Use `--only <tool>`, or a profile, until Layer 2 lands |
+| `profile "default" requires tested tools, but these are not tested: …` | I15; no tool is verified yet | Use `--only <tool>`, or a profile, until the Layer 2 container lands |
 | `catalog root: stat tools: no such file or directory` | Binary built before the catalog was embedded | Rebuild with the current tree |
 | `profile "x": no tool named "y"` | Profile references a tool not in the catalog | Fix the profile; a dangling reference is a hard error by design |
 | Exit `5` | Something needs root | Run the command AES printed, then re-run |
@@ -307,10 +315,13 @@ without executing. The only privileged path requires that the command was
 printed and confirmed, or `sudo -n` in automation.
 
 **Why is nothing marked `tested: true` yet?**
-Because `tested: true` means "a real install was verified end to end", and the
-sandbox that proves that (Layer 2) doesn't exist. Marking tools tested on
-detection evidence alone would make the tool's central claim — a *verified*
-environment — a lie, which is the one thing the flag exists to prevent.
+Because the flag means a real install was verified end to end, and that needs
+both layers. Layer 1 and Layer 2 have contradictory preconditions — one needs
+the tool present, the other absent — so they cannot both pass on a single
+machine. The resolution is a fresh container for Layer 2 while the host carries
+the Layer 1 fixtures. Marking tools on detection evidence alone would make the
+tool's central claim — a *verified* environment — a lie, which is the one thing
+the flag exists to prevent.
 
 **Can a malicious `tool.yaml` run an arbitrary command?**
 No. The strategy set is closed to six values — `github-release`, `package`,
