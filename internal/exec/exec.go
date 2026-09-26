@@ -90,6 +90,69 @@ func (e *PrivilegeError) Error() string {
 
 func (e *PrivilegeError) Unwrap() error { return ErrNeedsPrivilege }
 
+// Authorization is the evidence that a privileged command was printed and
+// agreed to.
+//
+// It is a struct rather than a bool so that it greps. A bare `true` at a call
+// site is indistinguishable from a plausible-looking argument, whereas
+// `Authorization{Confirmed: true}` names what was confirmed, and grep for this
+// type finds every place in the codebase that is allowed to escalate.
+type Authorization struct {
+	// Confirmed records that the command was printed to the user and they
+	// agreed, or that non-interactive `sudo -n` is in force. It is a promise
+	// from the caller, not proof — which is the same trust level as any API,
+	// and the reason the type exists is to make the promise visible.
+	Confirmed bool
+	// NonInteractive mirrors the caller's mode, so the command can be rewritten
+	// to `sudo -n` rather than left to block on a password nobody will type.
+	NonInteractive bool
+	// Reason is recorded for diagnostics: which policy produced this, e.g.
+	// "apt install". It never affects behaviour.
+	Reason string
+}
+
+// ErrUnauthorized is returned when RunAuthorized is called without evidence
+// that the command was authorized. It is a programming error, not a runtime
+// condition: the whole point of the gate is that no unapproved privileged
+// command runs.
+var ErrUnauthorized = errors.New("privileged command was not authorized")
+
+// RunAuthorized executes a command that contains sudo, and is the ONLY way in
+// this package to do so.
+//
+// It lives beside the refusal it bypasses rather than in the caller's package,
+// for two reasons. There is one place that constructs a privileged command, so
+// `grep -n sudo internal/exec/exec.go` shows both the thing that forbids it and
+// the one thing permitted to, and the invariant is auditable in one screen. And
+// the mechanism — timeout, 1 MiB output cap, shell invocation, Result assembly
+// — is identical to the unprivileged path, so duplicating it would give a
+// changed timeout default two places to be forgotten in.
+//
+// The DECISION to escalate does not move here. Printing the command, asking,
+// or trying `sudo -n` when nobody is there to ask all stay in the installer;
+// this function only executes what that decision produced.
+func RunAuthorized(ctx context.Context, cmd string, opts Options, auth Authorization) (Result, error) {
+	if !auth.Confirmed {
+		return Result{}, fmt.Errorf("%w: %s", ErrUnauthorized, cmd)
+	}
+	if strings.TrimSpace(cmd) == "" {
+		return Result{}, ErrEmptyCommand
+	}
+	if !sudoRe.MatchString(cmd) {
+		// Not privileged after all. Running it through Run keeps one code path
+		// and means a caller that authorized "just in case" is not silently
+		// using the privileged route.
+		return Run(ctx, cmd, opts)
+	}
+	// Non-interactive must never block on a password prompt: `sudo -n` fails
+	// immediately instead, and the caller reports rather than waiting.
+	if auth.NonInteractive {
+		cmd = strings.Replace(cmd, "sudo ", "sudo -n ", 1)
+	}
+	opts.NonInteractive = auth.NonInteractive
+	return run(ctx, cmd, opts)
+}
+
 // Options controls a single Run.
 type Options struct {
 	// Dir is the working directory. Empty means inherit.
@@ -140,6 +203,17 @@ func Run(ctx context.Context, cmd string, opts Options) (Result, error) {
 	// The gate. Before anything is spawned, and before any output is produced.
 	if sudoRe.MatchString(cmd) {
 		return Result{}, &PrivilegeError{Command: cmd, NonInteractive: opts.NonInteractive}
+	}
+	return run(ctx, cmd, opts)
+}
+
+// run is the mechanism, with no policy: timeout, output cap, shell, Result.
+// Run and RunAuthorized are the only two ways to reach it, and both are in this
+// file, so there is exactly one implementation of the parts that are easy to
+// get subtly wrong twice.
+func run(ctx context.Context, cmd string, opts Options) (Result, error) {
+	if strings.TrimSpace(cmd) == "" {
+		return Result{}, ErrEmptyCommand
 	}
 
 	timeout := opts.Timeout

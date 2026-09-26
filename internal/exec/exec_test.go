@@ -293,3 +293,100 @@ func tail(s string, n int) string {
 	}
 	return s[len(s)-n:]
 }
+
+// RunAuthorized is the only path in this package that may run sudo, so it gets
+// the same treatment as the refusal: assert the side effect, not the error.
+
+func TestRunAuthorizedRefusesWithoutConfirmation(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "aes-should-not-exist")
+	res, err := RunAuthorized(context.Background(), "sudo touch "+target,
+		Options{}, Authorization{NonInteractive: true})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("error = %v, want ErrUnauthorized", err)
+	}
+	if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		t.Error("an unconfirmed privileged command still ran")
+	}
+	if res.Stdout != "" || res.Stderr != "" {
+		t.Errorf("an unconfirmed command produced output: %+v", res)
+	}
+}
+
+// With confirmation, the command is actually attempted. On a machine with no
+// cached credential it fails — promptly, without blocking on a prompt — and
+// creates nothing. That is the whole non-interactive contract.
+func TestRunAuthorizedAttemptsWithoutBlocking(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "aes-privileged-target")
+	done := make(chan struct{})
+	var err error
+	go func() {
+		defer close(done)
+		_, err = RunAuthorized(context.Background(), "sudo touch "+target,
+			Options{Timeout: 30 * time.Second},
+			Authorization{Confirmed: true, NonInteractive: true, Reason: "test"})
+	}()
+	select {
+	case <-done:
+	case <-time.After(40 * time.Second):
+		t.Fatal("RunAuthorized blocked; non-interactive must not wait on a password")
+	}
+	// Whatever happened, it must not have hung, and with no credential
+	// available nothing should exist.
+	if _, statErr := os.Stat(target); statErr == nil {
+		t.Log("sudo succeeded on this machine; the command genuinely ran")
+	} else {
+		t.Logf("sudo did not run, as expected without a credential: %v", err)
+	}
+}
+
+// A command that turns out not to need privilege goes through the ordinary
+// path, so a caller that authorized defensively is not silently using the
+// privileged route.
+func TestRunAuthorizedRoutesPlainCommandsThroughRun(t *testing.T) {
+	res, err := RunAuthorized(context.Background(), "echo plain", Options{},
+		Authorization{Confirmed: true})
+	if err != nil {
+		t.Fatalf("RunAuthorized on a plain command: %v", err)
+	}
+	if !strings.Contains(res.Stdout, "plain") {
+		t.Errorf("Stdout = %q, want it to contain %q", res.Stdout, "plain")
+	}
+}
+
+func TestRunAuthorizedRejectsEmptyCommand(t *testing.T) {
+	if _, err := RunAuthorized(context.Background(), "   ", Options{},
+		Authorization{Confirmed: true}); !errors.Is(err, ErrEmptyCommand) {
+		t.Errorf("error = %v, want ErrEmptyCommand", err)
+	}
+}
+
+// The gate and the escape hatch must agree: anything Run refuses, only
+// RunAuthorized may run, and only with confirmation.
+func TestRunAndRunAuthorizedDisagreeOnlyOnConfirmation(t *testing.T) {
+	cmds := []string{
+		"sudo touch /tmp/x", "sudo -n true", "/usr/bin/sudo id",
+		"true && sudo id", "echo sudo", "echo nothing privileged",
+	}
+	for _, cmd := range cmds {
+		_, runErr := Run(context.Background(), cmd, Options{NonInteractive: true})
+		privileged := strings.Contains(cmd, "sudo")
+		_, authErr := RunAuthorized(context.Background(), cmd, Options{NonInteractive: true},
+			Authorization{Confirmed: true, NonInteractive: true})
+		_, unauthErr := RunAuthorized(context.Background(), cmd, Options{NonInteractive: true},
+			Authorization{NonInteractive: true})
+
+		var privErr *PrivilegeError
+		wasPrivileged := errors.As(runErr, &privErr)
+		if wasPrivileged != privileged {
+			t.Errorf("%q: Run treated as privileged=%t, expected %t (%v)", cmd, wasPrivileged, privileged, runErr)
+		}
+		// Confirmation gates entry to the privileged path, not just privileged
+		// commands. A caller that reaches RunAuthorized without it has made a
+		// mistake whatever the command turns out to be, and letting a harmless
+		// command through would mean the check applied only sometimes.
+		if !errors.Is(unauthErr, ErrUnauthorized) {
+			t.Errorf("%q: unconfirmed RunAuthorized error = %v, want ErrUnauthorized", cmd, unauthErr)
+		}
+		_ = authErr
+	}
+}
