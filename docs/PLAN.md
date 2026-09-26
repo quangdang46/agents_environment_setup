@@ -25,47 +25,75 @@ Tôi clone repo gốc và đo. Dưới đây là số thật, không phải ư�
 
 ### 1.2 Đây là phát hiện quan trọng nhất
 
-> **ACFS không có plugin system. Không có.**
+> **ACFS không có plugin system. Và manifest 157KB gần như là tài liệu chết.**
 
 Tôi grep `plugin_add`, `plugin register`, `plugin_dir`, `plugin.yaml` — **không có kết quả nào**.
+Mảng `ACFS_MODULE_PLUGIN_PACKAGE/VERSION/SHA256` có tồn tại nhưng **rỗng**.
 
-Thứ gọi là "module" trong ACFS là 74 entry YAML **nằm chết trong cùng một file 157KB**. Thêm tool mới
-= mở `acfs.manifest.yaml`, chèn entry, sửa `install.sh` nếu cần logic. Không có ranh giới, không
-thể cài plugin từ ngoài, không version riêng.
+Tệ hơn: manifest **không phải đường chạy thật**. Research (109 agent, có adversarial verify) phát
+hiện `ACFS_GENERATED_DEFAULT_CATEGORIES=()` rỗng — nghĩa là codegen từ manifest **bị tắt mặc định**.
+Production chạy các function bash viết tay. Thêm tool = sửa **cả hai file**, và test của chính dự
+phải bật `ACFS_GENERATED_MIGRATED_CATEGORIES` bằng tay mới chạy được codegen.
 
-Đây chính là lý do bạn thấy "không dễ thêm tool". Không phải ACFS làm khó — **nó không có cái
-khuôn đó**.
+Bằng chứng cụ thể — danh sách tool thật là array bash cứng, không phải manifest:
 
-### 1.3 Ubuntu bị hardcode ở đâu
+```bash
+# install.sh:8205
+local optional_pkgs=(lsd eza bat fd-find btop dust neovim htop tree ncdu
+                     httpie entr mtr pv docker.io docker-compose-plugin cosign)
+```
 
-| Mẫu | Số lần trong `install.sh` |
+Ngoài ra `web:` metadata chiếm **30KB (18.7%)** manifest mà installer **không bao giờ đọc**.
+
+**Kết luận:** bạn cảm giác "không dễ thêm tool" là chính xác. ACFS không chỉ thiếu plugin — nó có
+một lớp trừu tượng *trông như* abstraction nhưng thực tế không nối vào đường chạy.
+
+### 1.3 Ba lớp chặn cứng trước macOS
+
+Không chỉ "chưa hỗ trợ" — có **3 cổng chặn cứng**, đều fail trước khi làm bất cứ việc gì:
+
+**Cổng 1 — chặn OS.** `ensure_ubuntu()` (dòng 6512) đọc `/etc/os-release`, không có thì
+`log_fatal "Cannot detect OS. ACFS supports Ubuntu 22.04+ or Arch Linux."`
+macOS không có file đó → chết ngay.
+
+**Cổng 2 — chặn shell.** Dòng 65-66 gate bash:
+```bash
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || { [ ... -eq 4 ] && [ ... -lt 4 ]; }
+```
+Cần **bash ≥ 4.4** (vì `declare -A`). macOS ship **bash 3.2**. Script thậm chí không parse được.
+
+**Cổng 3 — không có nhánh Darwin.** 12.289 dòng:
+
+| Mẫu | Số lần |
 |---|---|
 | `ubuntu` | **117** |
 | `apt` | 76 |
 | `systemctl` | 37 |
 | `/etc/apt` | 19 |
-| `dpkg` | 7 |
-| `Darwin` | **0** |
-| `darwin` | **0** |
+| `Darwin` / `darwin` | **0 / 0** |
 | `brew` | 8 |
 
-Và trong manifest:
-```yaml
-defaults:
-  user: ubuntu              # ← hardcode
-  workspace_root: /data/projects
-```
+`uname` xuất hiện 4 lần, cả 4 đều là `uname -m` (CPU arch) — **không có `uname -s`** để rẽ nhánh OS.
+Trong 4.251 dòng manifest: **0 chuỗi `darwin`/`brew`**. Có `defaults.user: ubuntu` ngay đầu file.
 
-Lệnh cài trong manifest: **13 `apt-get`, 1 `curl`, 0 `brew`**.
+Không có abstraction package manager nào (`apt`/`brew`/`port`) — nên không phải "thêm nhánh Darwin"
+nữa, mà là **thay cả tầng platform**.
 
-`uname` chỉ xuất hiện 4 lần, và cả 4 đều là `uname -m` (kiểm tra kiến trúc CPU) — **không có
-`uname -s`** để phân nhánh OS. Không có nhánh Darwin nào trong 12.289 dòng.
+### 1.3b Lỗi cụ thể liên quan trực tiếp tới bạn
 
-**Kết luận:** chạy trên macOS không chỉ là "chưa hỗ trợ" — nó không hề có đường dẫn.
+| Lỗi | Ảnh hưởng |
+|---|---|
+| `ensure_ubuntu()` chết trước mọi việc | Chạy installer trên Mac = fail ngay |
+| bash 4.4 gate | `install.sh` **không parse** trên macOS bash 3.2 |
+| `~/.zshrc` bị ghi đè bằng `cat >` không guard | Xoá `~/.acfs` → **mọi shell báo lỗi** (khác hẳn trường hợp bạn gặp: silent) |
+| `starhip` chỉ xuất hiện 1 lần, trong comment | Không bao giờ được cài |
+
+Lưu ý dòng `source $HOME/.zshrc.local` **có** guard còn `source $HOME/.acfs/...` thì không —
+một sai sót rõ ràng trong chính code upstream.
 
 ### 1.4 Schema manifest — cái đáng giữ
 
-`acfs.manifest.yaml` đã có gần đúng những gì cần thiết:
+`acfs.manifest.yaml` có schema đúng, dù đường chạy bị tắt:
 
 ```yaml
 modules:
@@ -73,7 +101,6 @@ modules:
     phase: 1
     run_as: root              # root | current | target
     optional: false
-    enabled_by_default: true
     tags: [critical]
     installed_check:          # ← verify
       run_as: current
@@ -82,11 +109,11 @@ modules:
       - apt-get install -y curl git jq
 ```
 
-Phân bố `run_as`: 123 target · 13 root · 9 current.
-Phân bố `phase`: phase 9 có 39 module, phase 1 có 6.
+**Đây là phần duy nhất đáng port.** Schema đúng — chỉ bị nhúng trong file 157KB, không tách, và
+không ai bật nó lên.
 
-**Đây là phần duy nhất của ACFS đáng port.** Schema này đúng, chỉ là bị nhúng trong file 157KB
-thay vì tách ra từng file.
+**Bài học cho thiết kế của tôi:** schema đẹp mà không nối vào đường chạy thì còn tệ hơn không có.
+Tool mới của tôi phải đảm bảo manifest **là** nguồn duy nhất, không có đường vòng nào.
 
 ### 1.5 Checksum contract — cái đáng giữ nhất
 
@@ -121,16 +148,22 @@ tấn công đường dẫn, nó tự chặn mình.
 
 | Thành phần | Quyết định | Lý do |
 |---|---|---|
-| Schema module (id/verify/install/optional) | **PORT** | Đúng, chỉ sai chỗ đặt |
-| Checksum SHA256 contract | **PORT** | Bảo mật thật, tôi đã có trong schema |
+| Schema module (id/verify/install/optional) | **PORT** | Đúng — nhưng bắt buộc nối vào đường chạy, không để chết như ACFS |
+| Checksum SHA256 contract | **PORT** | Bảo mật thật, tôi đã đưa vào schema |
 | `installed_check` → `verify` | **PORT** | Đúng tên gọi hơn |
 | `run_as: root` → `needs_sudo` | **PORT** | Nhưng core **không** tự gọi sudo |
-| `phase` | **GIẢM** còn 3 | 9 là quá |
-| Module file gộp 157KB | **TÁCH** | Mỗi tool 1 file |
-| `onboard/lessons` | **DROP** | Không liên quan |
+| `phase` | **GIẢM** còn 3 | ACFS dùng 9, 39 module dồn vào phase 9 |
+| `web:` metadata | **DROP** | 30KB, installer không đọc |
+| Module gộp 1 file 157KB | **TÁCH** | Mỗi tool 1 file |
+| Codegen bị tắt | **KHÔNG LÀM** | Chính là lỗi kiến trúc của ACFS |
+| `onboard/lessons` | **DROP** | Linux/ssh/tmux, không liên quan |
 | Khung flywheel | **DROP** | Bạn yêu cầu |
 | `systemctl` | **DROP** | Không portable |
+| `ensure_ubuntu()` | **THAY** | Không phải port — phải viết tầng `detect` |
 | Checksum monitor CI (7 workflow) | **CÂN NHẮC** | Nặng, chỉ cần khi public |
+
+Repo có ~1.654 star, 11 issue mở, chưa archive — vẫn hoạt động. Nhưng 12k dòng bash với 1
+contributor là rủi ro bảo trì thật, và người dùng duy nhất của nó là bạn.
 
 ---
 
@@ -142,13 +175,18 @@ Mỗi quyết định dưới đây truy về một sự cố ACFS đã gây ra:
 
 | Nguyên tắc | Vì sao |
 |---|---|
+| **Manifest là nguồn duy nhất** | ACFS có manifest 157KB + đường chạy riêng viết tay. Schema đẹp mà không nối vào hệ thống thì **tệ hơn không có** — nó tạo cảm giác an toàn giả |
 | **Không tự `sudo`** | Bạn phải thấy lệnh trước khi nó chạy với quyền bạn |
-| **Không sửa `~/.zshrc`** | ACFS sửa → hỏng → shell chết âm thầm |
+| **Không sửa `~/.zshrc`** | ACFS dùng `cat >` không guard. Xoá `~/.acfs` → mọi shell báo lỗi |
 | **State ghi sau verify** | State nói dối thì mọi thứ khác cũng đáng ngờ |
 | **`sha256` bắt buộc** | Port trực tiếp từ checksum contract của ACFS |
 | **Mỗi plugin 1 file** | 74 module chung file 157KB không scale |
 | **Deterministic output** | Cùng input → cùng output, dễ debug |
 | **Từ chối ghi file lạ** | `env.sh` không phải do tool sinh → không đụng |
+
+Nguyên tắc đầu tiên là bài học lớn nhất từ research. ACFS *có* abstraction, *có* schema,
+*có* manifest — nhưng đường chạy thật nằm nơi khác. Đó là mẫu hình "trông như đã modular nhưng
+không modular". Tool mới phải tránh đúng cái bẫy đó: **không có đường vòng nào bypass manifest.**
 
 ### 2.2 Plugin là gì
 
