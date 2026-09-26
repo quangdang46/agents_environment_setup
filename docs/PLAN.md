@@ -1,382 +1,398 @@
-# agents_environment_setup — Plan chi tiết (để chốt)
+# agents_environment_setup (AES) — Implementation Plan
 
-> **Trạng thái:** Chờ bạn review · chưa viết dòng code nào
-> **Ngày:** 2026-09-26
-> **Research:** tự tra trực tiếp từ repo gốc, commit `7dd2bb3` (2026-09-25)
+> **Trạng thái:** Kiến trúc đã chốt. Sẵn sàng code.
+> **Ngày:** 2026-09-26 · Research nền: ACFS `7dd2bb3`
+> **Quy ước:** mỗi giai đoạn liệt kê file cụ thể, contract, và test chứng minh nó chạy.
 
 ---
 
-## Phần 1 — Research: ACFS thực sự là gì
+## North Star
 
-Tôi clone repo gốc và đo. Dưới đây là số thật, không phải ước lượng.
-
-### 1.1 Quy mô
-
-| Hạng mục | Số liệu |
-|---|---|
-| `install.sh` | **12.289 dòng** (530 KB) |
-| Tổng shell trong repo | **202.466 dòng**, 238 file `.sh` |
-| `acfs.manifest.yaml` | 157 KB, **74 module** |
-| `install_asset` call | **89 dòng** tra cứu cứng |
-| `checksums.yaml` | 48 installer, có `url` + `sha256` |
-| Version | 0.9.0 |
-| Contributor | 1 người |
-| Commit 90 ngày | 1 |
-
-### 1.2 Đây là phát hiện quan trọng nhất
-
-> **ACFS không có plugin system. Và manifest 157KB gần như là tài liệu chết.**
-
-Tôi grep `plugin_add`, `plugin register`, `plugin_dir`, `plugin.yaml` — **không có kết quả nào**.
-Mảng `ACFS_MODULE_PLUGIN_PACKAGE/VERSION/SHA256` có tồn tại nhưng **rỗng**.
-
-Tệ hơn: manifest **không phải đường chạy thật**. Research (109 agent, có adversarial verify) phát
-hiện `ACFS_GENERATED_DEFAULT_CATEGORIES=()` rỗng — nghĩa là codegen từ manifest **bị tắt mặc định**.
-Production chạy các function bash viết tay. Thêm tool = sửa **cả hai file**, và test của chính dự
-phải bật `ACFS_GENERATED_MIGRATED_CATEGORIES` bằng tay mới chạy được codegen.
-
-Bằng chứng cụ thể — danh sách tool thật là array bash cứng, không phải manifest:
-
-```bash
-# install.sh:8205
-local optional_pkgs=(lsd eza bat fd-find btop dust neovim htop tree ncdu
-                     httpie entr mtr pv docker.io docker-compose-plugin cosign)
-```
-
-Ngoài ra `web:` metadata chiếm **30KB (18.7%)** manifest mà installer **không bao giờ đọc**.
-
-**Kết luận:** bạn cảm giác "không dễ thêm tool" là chính xác. ACFS không chỉ thiếu plugin — nó có
-một lớp trừu tượng *trông như* abstraction nhưng thực tế không nối vào đường chạy.
-
-### 1.3 Ba lớp chặn cứng trước macOS
-
-Không chỉ "chưa hỗ trợ" — có **3 cổng chặn cứng**, đều fail trước khi làm bất cứ việc gì:
-
-**Cổng 1 — chặn OS.** `ensure_ubuntu()` (dòng 6512) đọc `/etc/os-release`, không có thì
-`log_fatal "Cannot detect OS. ACFS supports Ubuntu 22.04+ or Arch Linux."`
-macOS không có file đó → chết ngay.
-
-**Cổng 2 — chặn shell.** Dòng 65-66 gate bash:
-```bash
-if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || { [ ... -eq 4 ] && [ ... -lt 4 ]; }
-```
-Cần **bash ≥ 4.4** (vì `declare -A`). macOS ship **bash 3.2**. Script thậm chí không parse được.
-
-**Cổng 3 — không có nhánh Darwin.** 12.289 dòng:
-
-| Mẫu | Số lần |
-|---|---|
-| `ubuntu` | **117** |
-| `apt` | 76 |
-| `systemctl` | 37 |
-| `/etc/apt` | 19 |
-| `Darwin` / `darwin` | **0 / 0** |
-| `brew` | 8 |
-
-`uname` xuất hiện 4 lần, cả 4 đều là `uname -m` (CPU arch) — **không có `uname -s`** để rẽ nhánh OS.
-Trong 4.251 dòng manifest: **0 chuỗi `darwin`/`brew`**. Có `defaults.user: ubuntu` ngay đầu file.
-
-Không có abstraction package manager nào (`apt`/`brew`/`port`) — nên không phải "thêm nhánh Darwin"
-nữa, mà là **thay cả tầng platform**.
-
-### 1.3b Lỗi cụ thể liên quan trực tiếp tới bạn
-
-| Lỗi | Ảnh hưởng |
-|---|---|
-| `ensure_ubuntu()` chết trước mọi việc | Chạy installer trên Mac = fail ngay |
-| bash 4.4 gate | `install.sh` **không parse** trên macOS bash 3.2 |
-| `~/.zshrc` bị ghi đè bằng `cat >` không guard | Xoá `~/.acfs` → **mọi shell báo lỗi** (khác hẳn trường hợp bạn gặp: silent) |
-| `starhip` chỉ xuất hiện 1 lần, trong comment | Không bao giờ được cài |
-
-Lưu ý dòng `source $HOME/.zshrc.local` **có** guard còn `source $HOME/.acfs/...` thì không —
-một sai sót rõ ràng trong chính code upstream.
-
-### 1.4 Schema manifest — cái đáng giữ
-
-`acfs.manifest.yaml` có schema đúng, dù đường chạy bị tắt:
-
-```yaml
-modules:
-  - id: base.system
-    phase: 1
-    run_as: root              # root | current | target
-    optional: false
-    tags: [critical]
-    installed_check:          # ← verify
-      run_as: current
-      command: "command -v curl && command -v git"
-    install:                  # ← install
-      - apt-get install -y curl git jq
-```
-
-**Đây là phần duy nhất đáng port.** Schema đúng — chỉ bị nhúng trong file 157KB, không tách, và
-không ai bật nó lên.
-
-**Bài học cho thiết kế của tôi:** schema đẹp mà không nối vào đường chạy thì còn tệ hơn không có.
-Tool mới của tôi phải đảm bảo manifest **là** nguồn duy nhất, không có đường vòng nào.
-
-### 1.5 Checksum contract — cái đáng giữ nhất
-
-`install_asset` (dòng 4630) làm việc này trước khi copy **mọi** file:
+> **`aes setup` — một lệnh, đưa máy từ "chưa có gì" → "AI coding environment hoàn chỉnh đã verify", exit 0 chỉ khi xong.**
 
 ```
-1. Chặn path traversal (`..`)
-2. Chỉ chấp nhận source tree đã verify
-3. Chặn symlink
-4. Tính SHA256 file nguồn
-5. So với checksums.yaml (48 entry)
-6. Lệch → abort
+ONE COMMAND → ZERO MANUAL INSTALL → ALL TOOLS → ALL DEPS
+           → CONFIGURE ENV → VERIFY EVERYTHING → READY
 ```
 
-Đây là thiết kế bảo mật thật sự tốt. Tool cài file vào `~/.acfs` và `~/.zshrc.local` — nếu bị
-tấn công đường dẫn, nó tự chặn mình.
+**Core identity:** AES biết *"để có AI coding machine hoàn chỉnh cần những gì, trên OS này cài
+thế nào, verify ra sao, chạy lại thì làm gì."* Người dùng chỉ gõ `aes setup`.
 
-**Port nguyên vẹn.** Tôi đã đưa `sha256` bắt buộc vào schema plugin của mình.
+### Hai kênh, một core
 
-### 1.6 Cái gì nên bỏ
-
-| Của ACFS | Vì sao bỏ |
-|---|---|
-| Khung "agentic coding flywheel" | Bạn thấy quá cứng nhắc — core của tool nên là core của *công cụ* |
-| `onboard/lessons/` 35 file .md | Tài liệu dạy Linux/ssh/tmux, không liên quan macOS |
-| 13 lần `systemctl` | Không có systemd trên macOS |
-| 123 `run_as: target` | Phức tạp thừa — bạn dùng 1 user |
-| 9 phase | Quá nhiều; tool của bạn cần 2-3 |
-| 238 file shell | Đây chính là thứ gây ra vấn đề |
-
-### 1.7 Bảng quyết định port/drop
-
-| Thành phần | Quyết định | Lý do |
+| | Agent / CI | Human |
 |---|---|---|
-| Schema module (id/verify/install/optional) | **PORT** | Đúng — nhưng bắt buộc nối vào đường chạy, không để chết như ACFS |
-| Checksum SHA256 contract | **PORT** | Bảo mật thật, tôi đã đưa vào schema |
-| `installed_check` → `verify` | **PORT** | Đúng tên gọi hơn |
-| `run_as: root` → `needs_sudo` | **PORT** | Nhưng core **không** tự gọi sudo |
-| `phase` | **GIẢM** còn 3 | ACFS dùng 9, 39 module dồn vào phase 9 |
-| `web:` metadata | **DROP** | 30KB, installer không đọc |
-| Module gộp 1 file 157KB | **TÁCH** | Mỗi tool 1 file |
-| Codegen bị tắt | **KHÔNG LÀM** | Chính là lỗi kiến trúc của ACFS |
-| `onboard/lessons` | **DROP** | Linux/ssh/tmux, không liên quan |
-| Khung flywheel | **DROP** | Bạn yêu cầu |
-| `systemctl` | **DROP** | Không portable |
-| `ensure_ubuntu()` | **THAY** | Không phải port — phải viết tầng `detect` |
-| Checksum monitor CI (7 workflow) | **CÂN NHẮC** | Nặng, chỉ cần khi public |
+| Chạy | `aes setup --yes --non-interactive --json` | `aes` (TUI) |
+| Cùng core | ✓ | ✓ |
 
-Repo có ~1.654 star, 11 issue mở, chưa archive — vẫn hoạt động. Nhưng 12k dòng bash với 1
-contributor là rủi ro bảo trì thật, và người dùng duy nhất của nó là bạn.
+TUI không chứa business logic. Cùng nguyên tắc ACFS đã chốt ở `MANIFEST_SCHEMA_VNEXT.md:112`:
+*"No UI surface should maintain a separate dependency graph."*
+
+### Bootstrap tầng 0
+
+```
+curl → GitHub Release → AES binary → ~/.aes/bin/ → aes setup
+```
+
+Go/brew không phải dependency để có AES. Ưu tiên `github-release` khi provision: độc lập
+package manager, checksum rõ, không sudo. `brew`/`apt` là fallback.
 
 ---
 
-## Phần 2 — Đề xuất kiến trúc
+## Định nghĩa đã chốt
 
-### 2.1 Nguyên tắc thiết kế
+| # | Quyết định | Kết quả |
+|---|---|---|
+| 1 | Positioning | **Agent Developer Environment Manager** |
+| 2 | Catalog | 40–50 definitions, **10–15 verified** integration test |
+| 3 | `env` | Minimal trong MVP |
+| 4 | `needs_sudo` | **Bỏ khỏi `tool.yaml`** → thuộc tính strategy |
+| 5 | Shell | Không sửa mặc định; `--link-shell` opt-in có backup |
+| 6 | Thư mục | **`~/.aes/`** — không đụng `~/.agents/` |
+| 7 | Platform | macOS (arm64/x64) + Ubuntu (amd64/arm64) |
+| 8 | Test | unit · dry-run · **real sandbox** |
+| 9 | Arbitrary shell | **KHÔNG** — strategy đóng |
+| 10 | `phase` | **Bỏ** — `tags` + `dependencies` |
+| 11 | `aes plan` | **Bỏ khỏi scope** — resolve vẫn chạy nội bộ |
+| 12 | ACFS trong CLI | **Không** — AES không biết ACFS tồn tại |
+| 13 | Tên binary | `aes` |
 
-Mỗi quyết định dưới đây truy về một sự cố ACFS đã gây ra:
+---
 
-| Nguyên tắc | Vì sao |
-|---|---|
-| **Manifest là nguồn duy nhất** | ACFS có manifest 157KB + đường chạy riêng viết tay. Schema đẹp mà không nối vào hệ thống thì **tệ hơn không có** — nó tạo cảm giác an toàn giả |
-| **Không tự `sudo`** | Bạn phải thấy lệnh trước khi nó chạy với quyền bạn |
-| **Không sửa `~/.zshrc`** | ACFS dùng `cat >` không guard. Xoá `~/.acfs` → mọi shell báo lỗi |
-| **State ghi sau verify** | State nói dối thì mọi thứ khác cũng đáng ngờ |
-| **`sha256` bắt buộc** | Port trực tiếp từ checksum contract của ACFS |
-| **Mỗi plugin 1 file** | 74 module chung file 157KB không scale |
-| **Deterministic output** | Cùng input → cùng output, dễ debug |
-| **Từ chối ghi file lạ** | `env.sh` không phải do tool sinh → không đụng |
+## Kiến trúc
 
-Nguyên tắc đầu tiên là bài học lớn nhất từ research. ACFS *có* abstraction, *có* schema,
-*có* manifest — nhưng đường chạy thật nằm nơi khác. Đó là mẫu hình "trông như đã modular nhưng
-không modular". Tool mới phải tránh đúng cái bẫy đó: **không có đường vòng nào bypass manifest.**
+```
+              aes setup  /  aes (TUI)
+                       │
+              ┌────────▼─────────┐
+              │  Config/Profile  │
+              └────────┬─────────┘
+              ┌────────▼─────────┐
+              │  Catalog         │  tool.yaml
+              └────────┬─────────┘
+              ┌────────▼─────────┐
+              │  Resolver        │  deps DAG · platform · cycle
+              └────────┬─────────┘
+              ┌────────▼─────────┐
+              │  Actions         │  plan nội bộ
+              └────────┬─────────┘
+    ┌──────────┬───────┼───────┬──────────┐
+    ▼          ▼       ▼       ▼          ▼
+  Github    Brew     Apt     Go      Npm/Cargo
+  Release
+    └──────────┴───────┼───────┴──────────┘
+              ┌────────▼─────────┐
+              │  Verify          │  ← sự thật
+              └────────┬─────────┘
+              ┌────────▼─────────┐
+              │  State (cache)   │  ← KHÔNG phải sự thật
+              └────────┬─────────┘
+              ┌────────▼─────────┐
+              │  ~/.aes/         │
+              └──────────────────┘
+```
 
-### 2.2 Plugin là gì
+Đường chạy duy nhất — không bypass `tool.yaml`.
 
-Plugin = **một file YAML**. Không code, không binary riêng.
+---
+
+## Invariant
+
+| # | Invariant | Chứng minh bằng |
+|---|---|---|
+| I1 | Mọi tool qua catalog→resolver→actions→installer | Không `switch tool.Name`; qua strategy registry |
+| I2 | `needs_sudo` là thuộc tính strategy | `tool.yaml` không có field này |
+| I3 | Không arbitrary shell | Validate reject field ngoài schema |
+| I4 | State ghi **sau** verify | Install fail → state không đổi |
+| I5 | State là cache | `doctor` phát hiện drift |
+| I6 | `--dry-run` không mutate | Sau dry-run không file đổi |
+| I7 | Không đụng `~/.agents/` | Sau mọi lệnh, `~/.agents` không đổi |
+| I8 | Cùng input → cùng Actions | Hash 2 lần, so sánh |
+| I9 | Manifest hỏng ≠ "chưa cài" | YAML sai → lỗi |
+| I10 | Không tự sudo | Không `sudo` nào exec |
+| I11 | Cycle → lỗi không treo | A→B→A báo cycle |
+| I12 | Platform không hỗ trợ → skip | Tool `darwin`-only, chạy linux → skip |
+| I13 | TUI ≡ CLI | Cùng input → cùng Actions |
+
+---
+
+## Schema `tool.yaml`
 
 ```yaml
 name: ripgrep
-description: Tìm kiếm text cực nhanh
+description: Fast recursive search
+category: search
+default: true
+tags: [cli, search]
 provides: [rg]
-tags: [search]
+dependencies: []
+
+verify:
+  command: rg
+  version:
+    command: rg --version
+    min: "14.0.0"
 
 install:
   darwin:
-    run: brew install ripgrep
+    strategy: github-release
+    repository: BurntSushi/ripgrep
+    asset:
+      arm64: ripgrep-14.1.1-aarch64-apple-darwin.tar.gz
   linux:
-    run: sudo apt install -y ripgrep
-    needs_sudo: true          # core in ra lệnh, KHÔNG tự chạy
-
-verify:
-  path_based: [rg]            # rẻ hơn shell
-  version: rg --version       # parse để check min_version
-  min_version: "14.0.0"
-
-env:
-  - name: RIPGREP_CONFIG_PATH
-    value: ~/.ripgreprc
+    strategy: package
+    manager: apt
+    package: ripgrep
 ```
 
-**Vì sao YAML thuần, không phải binary plugin:**
+Không `run` / `needs_sudo` / `phase`. Privilege suy ra từ `(strategy, manager)`:
 
-| | YAML | Binary plugin |
+| Strategy | sudo | đích |
 |---|---|---|
-| Thêm tool | viết 1 file | viết + compile |
-| Ngôn ngữ | không giới hạn | bị giới hạn theo runtime |
-| Review | đọc được | phải đọc code |
-| Đủ cho | ripgrep, fzf, zoxide, mise | mọi thứ |
+| `github-release` | không | `~/.aes/bin` |
+| `package` + brew | không | `/opt/homebrew` |
+| `package` + apt | **có** | hệ thống |
+| `go`/`npm`/`cargo` | không | prefix user |
 
-ACFS **không** có manifest per-tool — đó mới là thứ bạn thiếu. Không cần binary plugin để bắt
-đầu. Chỗ cần logic thật sự (như `newproj` của ACFS) mới đáng viết bằng code — và những thứ
-đó bạn đã bỏ.
+`sha256` bắt buộc **chỉ với `github-release`**. `brew`/`apt` có integrity riêng — ép sha256
+vào đó là metadata giả.
 
-### 2.3 Cấu trúc thư mục
+---
+
+## Cấu trúc repo
 
 ```
-agents_environment_setup/
+aes/
 ├── cmd/aes/main.go
 ├── internal/
-│   ├── manifest/     # đọc + validate plugin.yaml
-│   ├── detect/       # OS, arch, package manager
-│   ├── exec/         # chạy lệnh, chặn sudo
-│   ├── state/        # ~/.agents/state.json, atomic
-│   ├── envgen/       # sinh ~/.agents/env.sh
-│   └── cli/          # cây lệnh
-├── plugins/          # plugin của repo này
-│   ├── ripgrep/plugin.yaml
-│   ├── fzf/plugin.yaml
-│   ├── zoxide/plugin.yaml
-│   ├── bat/plugin.yaml
-│   └── direnv/plugin.yaml
+│   ├── manifest/     # schema + validate
+│   ├── catalog/      # load tool.yaml, index
+│   ├── resolver/     # deps DAG, platform, actions
+│   ├── platform/     # OS/arch/manager detect
+│   ├── installer/    # registry + strategies
+│   ├── verifier/
+│   ├── state/
+│   ├── envgen/
+│   └── cli/
+├── profiles/         # minimal, developer, ai, full
+├── tools/
+├── docs/
 └── Makefile
 ```
 
-### 2.4 Bộ lệnh
+---
 
-| Lệnh | Việc |
-|---|---|
-| `aes list` | mọi plugin + trạng thái (✓ cài / ✗ thiếu / ! quá cũ) |
-| `aes install [tên]` | cài 1 tên, hoặc tất cả đang thiếu |
-| `aes remove <tên>` | gỡ khỏi state |
-| `aes doctor` | chẩn đoán, chỉ báo cáo |
-| `aes plugin add <path>` | copy plugin vào `~/.agents/plugins/` |
-| `aes env --write` | sinh `~/.agents/env.sh` |
-| `aes search <từ>` | lọc theo tên/tag |
+## Giai đoạn chi tiết
 
-### 2.5 Luồng cài
+### GĐ1 — Manifest + Platform
 
+**File:**
+- `internal/manifest/manifest.go` — struct `Tool`, `Install`, `Strategy`, `Verify`, `Validate()`
+- `internal/manifest/manifest_test.go`
+- `internal/platform/platform.go` — `Host{OS,Arch,PkgManager}`, `Current()`, `Supports(tool)`
+- `internal/platform/detect_test.go`
+
+**Contract:**
+- `Validate()` reject: thiếu name/description/install, field lạ, `run` (không còn hợp lệ),
+  `github-release` thiếu sha256, cycle deps
+- `Platform.Supports(tool)` — tool chỉ có `darwin`, chạy linux → false
+
+**Test (contract, không source-grep):**
+- Manifest thiếu field bắt buộc → lỗi nêu đúng tên field
+- Manifest có field không nhận diện (typo) → lỗi, KHÔNG im lặng bỏ qua
+- `github-release` không `sha256` → lỗi
+- Tool `darwin`-only, `Supports` trên linux → false (table test)
+- Tool không có `install` cho platform hiện tại → `Supports` false
+- `runtime.GOOS`/`GOARCH` mapping đúng — table test, không assert host hiện tại
+
+**Done:** `go test ./internal/manifest/ ./internal/platform/` xanh.
+
+### GĐ2 — Catalog + Resolver
+
+**File:**
+- `internal/catalog/catalog.go` — load mọi `tool.yaml`, index theo name/category/tag
+- `internal/catalog/catalog_test.go`
+- `internal/resolver/resolver.go` — `Resolve(profile, only, exclude, host) ([]Action, error)`
+- `internal/resolver/dag.go` — cycle detect + topo sort
+- `internal/resolver/dag_test.go`
+
+**Contract:**
+- Resolver luôn: profile → only/exclude → dependency closure → platform filter → actions
+- **Dependency thắng selection**: `--only claude` vẫn kéo deps. Exclude phá dep → lỗi nêu ai cần
+- Actions **deterministic**: sort theo name, cùng input → byte-identical
+
+**Test:**
+- A→B→A (cycle) → lỗi cycle, KHÔNG treo
+- Diamond A→B,A→C,B→D,C→D → D install 1 lần
+- `--only claude` với claude cần git → actions chứa cả git
+- `--exclude node` mà claude cần node → lỗi "node required by claude"
+- Cùng input 2 lần → actions identical (byte compare)
+- Empty profile → tất cả `default: true`
+
+**Done:** resolver trả về đúng thứ tự, cycle không treo, deterministic.
+
+### GĐ3 — Verifier + Platform detect mở rộng
+
+**File:**
+- `internal/verifier/verifier.go` — `Verify(tool) (Result, error)`
+- `internal/verifier/verifier_test.go`
+
+**Contract:**
+- `command` phải có trên PATH → OK
+- `version.min` → parse semver, dưới min → `Result{stale}`, không phải error
+- Verify là **nguồn sự thật**, không đọc state
+
+**Test:**
+- Command có/không trên PATH → OK/NotFound
+- Version dưới/đúng min → Stale/OK
+- `provides` binary thiếu dù command có → phát hiện
+
+**Done:** verify phân biệt được OK / NotFound / Stale.
+
+### GĐ4 — Installer (github-release + package)
+
+**File:**
+- `internal/installer/installer.go` — `Strategy` interface + registry
+- `internal/installer/github_release.go` — tải asset theo OS/arch, verify sha256, giải nén vào `~/.aes/bin`
+- `internal/installer/package.go` — brew/apt, **apt thì in lệnh chứ không exec sudo**
+- `internal/installer/installer_test.go`
+
+**Contract:**
+- Registry: `strategy → installer`. Không `switch tool.Name`.
+- `github-release`: tải → verify sha256 → **fail thì dừng, KHÔNG giải nén file hỏng** → `chmod +x`
+- `package`+apt: **in lệnh `sudo apt install ...`, KHÔNG exec** — user chạy tay
+- Timeout mọi lệnh. Output capture, cap 1MB.
+
+**Test:**
+- sha256 sai → abort, file `~/.aes/bin` KHÔNG tạo
+- `package`+apt → `Installer` trả `ErrNeedsPrivilege`, KHÔNG spawn `sudo`
+- Timeout → lỗi nêu "timed out", không treo
+- Registry resolve strategy lạ → lỗi rõ
+
+**Done:** sha256 sai không bao giờ tạo binary; apt không bao giờ tự sudo.
+
+### GĐ5 — State + Env
+
+**File:**
+- `internal/state/state.go` — `~/.aes/state.json`, atomic write
+- `internal/state/state_test.go`
+- `internal/envgen/envgen.go` — `~/.aes/env.sh`, atomic
+- `internal/envgen/envgen_test.go`
+
+**Contract:**
+- State ghi **sau verify pass**. Fail → không ghi.
+- Atomic: temp + rename. Crash giữa lúc ghi không để lại JSON hỏng.
+- `env.sh` deterministic (không timestamp trong body). Refuse overwrite file không do AES sinh.
+
+**Test:**
+- State corrupt → lỗi, KHÔNG coi là "chưa cài" (I9)
+- Save atomic: `.tmp` không còn sau success
+- Version cao hơn → lỗi nêu version, KHÔNG xoá data
+- `env.sh` 2 lần cùng input → byte-identical (deterministic)
+- `env.sh` tồn tại không có header AES → refuse ghi
+
+**Done:** state/env atomic, deterministic, corrupt ≠ rỗng.
+
+### GĐ6 — CLI + Setup
+
+**File:**
+- `internal/cli/root.go` — cây lệnh
+- `internal/cli/setup.go` — `aes setup` orchestration
+- `internal/cli/list.go` · `verify.go` · `doctor.go` · `env.go`
+- `cmd/aes/main.go`
+
+**Contract:**
+- `setup` chạy: detect → load profile → resolve → verify hiện tại → install thiếu → verify lại → state → env → summary
+- `--dry-run`: in actions, **không mutate gì**
+- `--yes`/`--non-interactive`: không hỏi, deterministic
+- `--json`: output parse được
+- `doctor`: phát hiện drift (state=cài, binary=mất)
+
+**Test (10 assertion DoD):**
+1. `list` hiện trạng thái từ verify
+2. `setup --dry-run` in actions, không file đổi
+3. install đúng strategy
+4. verify pass → state ghi
+5. chạy lại idempotent
+6. state corrupt → lỗi
+7. manifest hỏng → lỗi, không exec
+8. platform không hỗ trợ → skip
+9. strategy cần privilege → in lệnh
+10. 10–15 tool verified: cài thật + verify
+
+**Done:** 10 assertion xanh trên máy thật.
+
+### GĐ7 — Catalog thật
+
+**File:** `tools/<category>/<name>/tool.yaml` × 40–50
+
+- 10–15 tool **verified**: cài thật, verify thật, so sánh version
+- 25–35 tool: definition hợp lệ (validate pass) nhưng chưa chạy thật
+- Mỗi tool có `tested: true|false`; `doctor` cảnh báo phần chưa test
+
+**Category:** shell · search · terminal · git · runtime · ai · agent · infra · utility
+
+**Done:** `aes list` hiện catalog đúng, ≥10 tool verified trên máy thật.
+
+### GĐ8 — Sandbox test (GĐ sau)
+
+- `aes test` — container Ubuntu 24.04: apt thật, binary thật, verify thật
+- macOS: host-safe mode + VM tùy chọn
+- `--keep-sandbox` để debug
+
+### GĐ9 — TUI (GĐ sau)
+
+- `aes` mở TUI. **Cùng resolver, cùng engine** (I13)
+- Không business logic trong TUI
+
+### GĐ10 — Đóng gói (GĐ sau)
+
+- `curl|sh` bootstrap (tầng 0)
+- CI: build matrix macOS/Ubuntu, release khi tag
+- Homebrew tap (convenience)
+
+---
+
+## CLI surface
+
+**Core (2):**
+```bash
+aes setup      # --yes --non-interactive --dry-run --json --profile --only --exclude --force --verbose
+aes            # TUI
 ```
-aes install ripgrep
-  1. Load ~/.agents/plugins/ripgrep/plugin.yaml  → hỏng? báo rõ, dừng
-  2. verify                                     → có rồi? in ra, bỏ qua
-  3. chọn target theo OS                        → darwin | linux
-  4. target cần sudo? → IN LỆNH, dừng ở đây
-  5. chạy lệnh, capture stdout+stderr
-  6. verify lại → pass: ghi state | fail: KHÔNG ghi, báo cáo
-```
+
+**Maintenance:** `install` · `uninstall` · `update` · `list` · `verify` · `doctor` · `env` · `test` · `search` · `profile`
+
+MVP chỉ: `setup`, `list`, `verify`, `doctor`, `env`.
 
 ---
 
-## Phần 3 — Những gì cần bạn chốt
+## Ngoài phạm vi
 
-Tôi đã điền sẵn đề xuất ở cột **→**. Bạn sửa hoặc ghi `đồng ý` là tôi code.
-
-### 3.1 Quyết định kiến trúc
-
-| # | Câu hỏi | Đề xuất | → |
-|---|---|---|---|
-| 1 | Plugin là YAML thuần hay binary? | **YAML thuần** | |
-| 2 | Có tự sửa `~/.zshrc` không? | **Không** — chỉ sinh `env.sh` | |
-| 3 | Cài bằng gì? | **brew/apt + `url`+`sha256` tải thẳng** | |
-| 4 | `sha256` bắt buộc? | **Bắt buộc** (port từ ACFS) | |
-| 5 | Có tự gọi sudo? | **Không** — in lệnh | |
-| 6 | `run_as: target` có cần? | **Không** — bỏ, chỉ `needs_sudo` | |
-| 7 | Bao nhiêu phase? | **3** (core / dev / opt-in) | |
-| 8 | Tên binary? | **`aes`** | |
-| 9 | Có giữ khung flywheel? | **Không** | |
-| 10 | Port checksum contract? | **Có** | |
-
-### 3.2 Câu hỏi tôi chưa tự trả lời
-
-| # | Câu hỏi | Vì sao cần bạn | → |
-|---|---|---|---|
-| 11 | Tool cá nhân hay public? | Quyết định có cần versioning + validate chặt | |
-| 12 | Một máy hay nhiều máy? | Nhiều máy → thêm `export`/`import` | |
-| 13 | Có test Ubuntu thật không? | Tôi chỉ chạy được macOS | |
-| 14 | Cài `aes` bằng cách nào? | `go install` vs GitHub Releases vs brew | |
-| 15 | Phạm vi bản đầu? | Tối thiểu hay đầy đủ | |
-| 16 | Tên repo? | Cần cho module path | |
-| 17 | Deadline? | Tôi cắt scope cho vừa | |
-
-### 3.3 Điều tôi đã quyết, không cần bạn trả lời
-
-| Quyết định | Lý do |
-|---|---|
-| Không tự `sudo` | Nhìn thấy mới tin |
-| State ghi sau verify | State nói dối thì phần còn lại cũng đáng ngờ |
-| Không sửa `~/.zshrc` | ACFS đã chứng minh điều này hỏng |
-| `env.sh` có header "DO NOT EDIT" | Luôn biết file nào do tool sinh |
-| Refuse ghi file không phải do tool sinh | Không đụng việc tay của bạn |
-| Không TUI ở bản đầu | CLI thuần test/script/log được |
-| Bỏ `~/.acfs` | Thay thế trọn vẹn |
-| Không `starship` | Bạn dùng p10k |
-| Ghi state atomic | Crash giữa lúc ghi không được để lại JSON hỏng |
+TUI đồ họa ngoài terminal · dotfiles · Docker quản lý · secrets/tokens · IDE/app GUI ·
+orchestration (beads, swarm, am) — project khác. **Đừng để AES thành ACFS 2.0.**
 
 ---
 
-## Phần 4 — Kế hoạch thực thi
-
-Chỉ bắt đầu khi bạn trả lời **§3.1** (10 câu kiến trúc). §3.2 có thể trả sau.
-
-### Giai đoạn 1 — Nền
-1. `go mod init`, Makefile, `.gitignore`
-2. `internal/manifest` — struct, parse, validate
-3. `internal/detect` — OS, arch, package manager
-4. `internal/state` — atomic read/write
-5. `internal/cli` — `list`, `plugin add`, `plugin list`
-6. 5 plugin thật
-7. Test: manifest hỏng → lỗi rõ; state corrupt → không coi là "chưa cài"
-
-**Xong khi:** `aes list` hiện đúng 5 tool với trạng thái thật.
-
-### Giai đoạn 2 — Cài
-8. `internal/exec` — chạy lệnh, timeout, chặn sudo
-9. `install` theo OS
-10. `internal/envgen` — sinh `env.sh`
-11. `aes env --write`
-12. Test: verify trước/sau; fail thì không ghi state
-
-**Xong khi:** `aes install ripgrep` chạy thật, `env.sh` đúng.
-
-### Giai đoạn 3 — Bảo trì
-13. `remove`, `doctor`
-14. `search`
-15. Test contract: cài hỏng → state không nói dối
-
-### Giai đoạn 4 — Đóng gói *(chỉ khi cần)*
-16. GitHub Actions: build → release khi tag
-17. `curl | sh` installer
-18. Homebrew tap
-
-### Giai đoạn 5 — Để trống cố ý
-Plugin config, binary download nâng cao, TUI điều khiển, export/import. **Không làm sớm** —
-thêm sớm là thêm sớm chỗ sai không sửa được.
-
----
-
-## Phần 5 — Rủi ro
+## Rủi ro
 
 | Rủi ro | Giảm bằng |
 |---|---|
-| YAML không đủ cho tool phức tạp | Không thêm `command:` cho tới khi gặp case thật |
-| Chạy macOS, hỏng Ubuntu | §3.2 #13 — test thật trước khi tin |
-| Module path sai khi đổi tên repo | §3.2 #16 — chốt sớm |
-| Không ai dùng ngoài bạn | Không sao. Tool 1 người dùng là đủ, chỉ cần không cứng |
+| 40–50 YAML chưa verify = lời hứa chưa kiểm | `tested: true/false`; `doctor` cảnh báo |
+| Catalog phình, resolver rối | Category là field, không phải directory |
+| Ubuntu hỏng không biết tới gian | GĐ8 sandbox container; CI matrix |
+| GitHub Release URL vỡ khi đổi tên asset | Asset theo OS/arch + pin version |
+| Plan đúng, thực tế sai | `--dry-run` + `doctor` drift + sandbox |
+| AES vô tình thành ACFS 2.0 | Invariant I1: không bypass manifest |
 
 ---
 
-## Phụ lục — Trạng thái repo
+## Definition of Done (toàn dự án)
 
-Đã tạo, **chưa có code**:
-- `docs/PLAN.md` (file này)
-- `docs/QUESTIONS.md` — bản cũ, đã gộp vào plan, xoá khỏi scope
-
-Lịch sử git: 3 commit docs.
+- [ ] 13 invariant có test
+- [ ] 10 assertion MVP xanh
+- [ ] 40–50 tool definitions, ≥10 verified thật
+- [ ] `aes setup` một lệnh bootstrap trọn vẹn, exit 0 chỉ khi verify xong
+- [ ] `~/.aes/` là ranh giới duy nhất; `~/.agents/` không bị đụng
+- [ ] TUI ≡ CLI (cùng Actions)
+- [ ] Sandbox chứng minh hoạt động trên Ubuntu thật
