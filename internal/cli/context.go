@@ -52,11 +52,16 @@ func (a *App) resolve(f *Flags) (*runContext, error) {
 func (rc *runContext) request() (resolver.Request, error) {
 	req := resolver.Request{Only: rc.Flags.Only, Exclude: rc.Flags.Exclude}
 
+	// An explicit --only IS the selection. Loading a profile on top of it
+	// would mean `aes setup --only ripgrep` also installs whatever the
+	// default profile names — surprising, and it makes --only unusable
+	// whenever the default profile is broken or empty, which is exactly
+	// when a user reaches for --only to get something installed.
 	name := rc.Flags.Profile
-	if name == "" {
-		// An empty --profile means the shipped default, not "no profile".
-		// `aes setup` with no flags doing nothing would make the North
-		// Star a lie.
+	if name == "" && len(rc.Flags.Only) == 0 {
+		// No explicit selection at all: the shipped default, not "no
+		// profile". `aes setup` with no flags doing nothing would make the
+		// North Star a lie.
 		name = DefaultProfile
 	}
 	if name == "" {

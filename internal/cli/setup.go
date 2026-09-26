@@ -119,6 +119,16 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 	sum := summarise(results)
 	sum.DryRun = f.DryRun
 
+	// Persist the cache. This is easy to forget and the symptom is subtle:
+	// within a single run the in-memory store still knows everything, so
+	// idempotence tests pass and the run looks healthy — but the next
+	// process starts blind, and doctor reports every tool as unmanaged.
+	if !f.DryRun {
+		if err := store.Save(); err != nil {
+			return fmt.Errorf("aes: could not write state: %w", err)
+		}
+	}
+
 	// 8: generate the environment. This is best-effort in the sense that a
 	// failure to write env.sh is reported, not fatal: the tools are already
 	// installed, and refusing to finish would leave the user worse off.
