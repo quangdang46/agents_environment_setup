@@ -23,15 +23,12 @@ import (
 var version = "dev"
 
 func main() {
-	home, err := os.UserHomeDir()
+	aesHome, err := resolveHome()
 	if err != nil {
-		// Without a home directory there is nowhere to put ~/.aes, and every
-		// command would fail in a less obvious way later.
-		fmt.Fprintf(os.Stderr, "aes: cannot determine home directory: %v\n", err)
+		fmt.Fprintf(os.Stderr, "aes: %v\n", err)
 		os.Exit(cli.ExitFailure)
 	}
 
-	aesHome := filepath.Join(home, ".aes")
 	catalogRoot, profileDir, err := resolveData(aesHome)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "aes: %v\n", err)
@@ -50,6 +47,29 @@ func main() {
 	cli.Version = version
 
 	os.Exit(app.Run(os.Args[1:]))
+}
+
+// resolveHome returns AES_HOME, defaulting to ~/.aes.
+//
+// AES_HOME is overridable because the sandbox tests need it. A test that
+// installs real tools has to be able to point aes at a throwaway home, or it
+// writes to the developer's real ~/.aes and then asserts - against that same
+// directory - that it did not. That assertion cannot be made honestly while the
+// thing under test is the one being mutated.
+//
+// It is also the honest way to try a release without touching a live install,
+// which is worth having for a tool whose entire job is modifying a machine.
+func resolveHome() (string, error) {
+	if home := os.Getenv("AES_HOME"); home != "" {
+		return home, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Without a home directory there is nowhere to put ~/.aes, and every
+		// command would fail later in a less obvious way.
+		return "", fmt.Errorf("cannot determine home directory (set AES_HOME to override): %w", err)
+	}
+	return filepath.Join(home, ".aes"), nil
 }
 
 // resolveData decides where the catalog and profiles come from.
