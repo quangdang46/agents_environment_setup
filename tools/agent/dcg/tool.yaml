@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (verified via crates.io /owners). A crate's repository field is self-declared, so the owners endpoint is the only real check; the obvious names in this set collide with other people's crates.
+name: dcg
+description: destructive command guard
+category: agent
+tested: false
+tags:
+  - agent
+  - safety
+dependencies:
+  - rust
+verify:
+  command: dcg
+  version:
+    command: dcg --version
+    min: "0.1.0"
+install:
+  darwin:
+    strategy: cargo
+    cargo_name: destructive_command_guard@0.14.4
+  linux:
+    strategy: cargo
+    cargo_name: destructive_command_guard@0.14.4

@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (verified via crates.io /owners). A crate's repository field is self-declared, so the owners endpoint is the only real check; the obvious names in this set collide with other people's crates.
+name: beads
+description: graph-aware issue tracker for AI agents
+category: agent
+tested: false
+tags:
+  - agent
+  - issues
+dependencies:
+  - rust
+verify:
+  command: br
+  version:
+    command: br --version
+    min: "0.1.0"
+install:
+  darwin:
+    strategy: cargo
+    cargo_name: beads_rust@0.7.0
+  linux:
+    strategy: cargo
+    cargo_name: beads_rust@0.7.0
