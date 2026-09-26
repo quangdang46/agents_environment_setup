@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: fmd
+description: markdown tooling for agent documents
+category: agent
+tested: false
+tags:
+  - agent
+  - docs
+dependencies:
+  - go
+verify:
+  command: fmd
+  version:
+    command: fmd --version
+    min: "0.4"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/franken_markdown@v0.4.5
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/franken_markdown@v0.4.5

@@ -1,0 +1,21 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: slb
+description: launches many agent sessions at once
+category: agent
+tested: false
+tags:
+  - agent
+dependencies:
+  - go
+verify:
+  command: slb
+  version:
+    command: slb --version
+    min: "0.5"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/simultaneous_launch_button@v0.5.2
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/simultaneous_launch_button@v0.5.2

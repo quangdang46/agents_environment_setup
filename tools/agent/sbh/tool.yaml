@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: sbh
+description: disk-pressure defence for agent workloads
+category: agent
+tested: false
+tags:
+  - agent
+  - system
+dependencies:
+  - go
+verify:
+  command: sbh
+  version:
+    command: sbh --version
+    min: "0.6"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/storage_ballast_helper@v0.6.10
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/storage_ballast_helper@v0.6.10

@@ -1,0 +1,21 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: asb
+description: backs up agent settings
+category: agent
+tested: false
+tags:
+  - agent
+dependencies:
+  - go
+verify:
+  command: asb
+  version:
+    command: asb --version
+    min: "0.3"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/agent_settings_backup_script@v0.3.2
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/agent_settings_backup_script@v0.3.2

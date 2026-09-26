@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: ubs
+description: bug scanning meta-runner
+category: agent
+tested: false
+tags:
+  - agent
+  - quality
+dependencies:
+  - go
+verify:
+  command: ubs
+  version:
+    command: ubs --version
+    min: "5.0"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/ultimate_bug_scanner@v5.4.15+incompatible
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/ultimate_bug_scanner@v5.4.15+incompatible

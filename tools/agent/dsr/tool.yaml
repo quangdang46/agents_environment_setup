@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: dsr
+description: cuts a release of the current work
+category: agent
+tested: false
+tags:
+  - agent
+  - release
+dependencies:
+  - go
+verify:
+  command: dsr
+  version:
+    command: dsr --version
+    min: "0.1"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/doodlestein_self_releaser@v0.1.2
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/doodlestein_self_releaser@v0.1.2

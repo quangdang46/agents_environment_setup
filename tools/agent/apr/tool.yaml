@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: apr
+description: revises agent plans automatically
+category: agent
+tested: false
+tags:
+  - agent
+  - planning
+dependencies:
+  - go
+verify:
+  command: apr
+  version:
+    command: apr --version
+    min: "1.0"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/automated_plan_reviser_pro@v1.3.0
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/automated_plan_reviser_pro@v1.3.0

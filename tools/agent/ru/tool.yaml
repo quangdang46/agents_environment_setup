@@ -1,0 +1,22 @@
+# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+name: ru
+description: keeps local repos up to date
+category: agent
+tested: false
+tags:
+  - agent
+  - git
+dependencies:
+  - go
+verify:
+  command: ru
+  version:
+    command: ru --version
+    min: "1.0"
+install:
+  darwin:
+    strategy: go
+    go_package: github.com/dicklesworthstone/repo_updater@v1.3.1
+  linux:
+    strategy: go
+    go_package: github.com/dicklesworthstone/repo_updater@v1.3.1
