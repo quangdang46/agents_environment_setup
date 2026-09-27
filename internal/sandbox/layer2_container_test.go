@@ -34,41 +34,48 @@ import (
 // assertion below calls it directly rather than trusting the precondition
 // check inside the sequence to have done it.
 
-// containerTools are the tools a fresh Linux box proves, and they are exactly
-// the seven the default profile names.
+// containerTools is every tool the DEFAULT profile selects, and it is 18
+// rather than the 7 the profile names.
 //
-// The bead asked for three spanning three strategies. Three is where the
-// strategy argument is made — an archive that is downloaded and
-// checksum-verified, a package manager that needs root, an ecosystem installer
-// with its own toolchain — and those three are still here. But a green proof
-// over three tools leaves `aes setup` with no flags resolving to an environment
-// nobody would want, because the default profile names seven and a profile with
-// require_tested refuses to resolve unless every tool in it is verified. Testing
-// the three and calling the North Star done would be proving the mechanism and
-// not the product.
+// A profile's `tags:` are selectors, not decoration: Resolve unions them with
+// `include`, matching by category OR tag. So `default` — which lists seven
+// tools by name and then tags itself `terminal, ai` — actually selects every
+// tool in those two groups, and its name list is redundant with its own tags.
+// `require_tested` then demands all of them be verified, so seven proofs do not
+// make the profile resolve. That is worth knowing before anyone tunes the flag
+// count to match the include list.
 //
-// So the list is the default profile's, and the strategies fall out of it:
-// git/jq/tmux are package+apt, ripgrep/fzf/gh are github-release, and claude
-// is npm. The profile and the test agreeing by construction is deliberate —
-// checkDefaultProfileIsCovered below fails if they ever drift apart, because a
-// test that silently stops covering the profile is worse than no test.
+// The strategies still fall out of the selection rather than being chosen:
+// aadc/git/jq/ntm/tmux package+apt, bat/bottom/btop/dust/eza/fzf/gh/ripgrep/
+// zellij github-release, claude/codex/gemini/opencode npm.
 var containerTools = []struct {
 	name     string
 	strategy string
 }{
 	// package + apt: the privilege path, and the reason a container exists —
 	// brew cannot run here, and on a macOS host this strategy is unreachable.
+	{"aadc", manifest.StrategyPackage},
 	{"git", manifest.StrategyPackage},
 	{"jq", manifest.StrategyPackage},
+	{"ntm", manifest.StrategyPackage},
 	{"tmux", manifest.StrategyPackage},
 	// github-release: a real archive, downloaded, checksum-verified, extracted.
-	{"ripgrep", manifest.StrategyGithubRelease},
+	{"bat", manifest.StrategyGithubRelease},
+	{"bottom", manifest.StrategyGithubRelease},
+	{"btop", manifest.StrategyGithubRelease},
+	{"dust", manifest.StrategyGithubRelease},
+	{"eza", manifest.StrategyGithubRelease},
 	{"fzf", manifest.StrategyGithubRelease},
 	{"gh", manifest.StrategyGithubRelease},
-	// npm: an ecosystem installer, which writes to its own global prefix
-	// rather than to $AES_HOME/bin, and which drags in the `node` dependency
-	// whose version floor is what made this fail the first time.
+	{"ripgrep", manifest.StrategyGithubRelease},
+	{"zellij", manifest.StrategyGithubRelease},
+	// npm: an ecosystem installer that writes to its own global prefix rather
+	// than to $AES_HOME/bin, and that drags in the `node` dependency whose
+	// version floor made every one of these fail the first time.
 	{"claude", manifest.StrategyNPM},
+	{"codex", manifest.StrategyNPM},
+	{"gemini", manifest.StrategyNPM},
+	{"opencode", manifest.StrategyNPM},
 }
 
 // containerPrep are the packages the fixture needs before any strategy can run.
@@ -265,6 +272,7 @@ func checkDefaultProfileIsCovered(t *testing.T, cat *catalog.Catalog) {
 	}
 	var prof struct {
 		Include []string `yaml:"include"`
+		Tags    []string `yaml:"tags"`
 	}
 	if err := yaml.Unmarshal(data, &prof); err != nil {
 		t.Fatalf("parse %s: %v", profilePath, err)
@@ -277,13 +285,34 @@ func checkDefaultProfileIsCovered(t *testing.T, cat *catalog.Catalog) {
 	for _, tc := range containerTools {
 		covered[tc.name] = true
 	}
+
+	// Everything the profile selects: its names AND everything its tags match.
+	// Checking only `include` would pass while the profile still refused to
+	// resolve, which is the failure this assertion exists to prevent.
+	selected := map[string]bool{}
 	for _, name := range prof.Include {
+		selected[name] = true
+	}
+	for _, selector := range prof.Tags {
+		for _, t := range cat.ByCategory(selector) {
+			selected[t.Name] = true
+		}
+		for _, t := range cat.ByTag(selector) {
+			selected[t.Name] = true
+		}
+	}
+	if len(selected) <= len(prof.Include) {
+		t.Fatalf("the profile's tags matched nothing beyond its include list; " +
+			"this assertion would not be checking what the profile actually selects")
+	}
+
+	for name := range selected {
 		if !covered[name] {
-			t.Errorf("the default profile includes %q but this container run does not prove it; "+
+			t.Errorf("the default profile selects %q but this container run does not prove it; "+
 				"the profile will not resolve with require_tested until it does", name)
 		}
 		if _, ok := cat.ByName(name); !ok {
-			t.Errorf("the default profile includes %q, which is not in the catalog", name)
+			t.Errorf("the default profile selects %q, which is not in the catalog", name)
 		}
 	}
 }
