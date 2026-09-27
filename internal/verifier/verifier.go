@@ -21,6 +21,7 @@ package verifier
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -62,6 +63,16 @@ type Result struct {
 	Status  Status
 	Version string // raw, when detected; empty when none could be
 	Path    string // resolved path of the primary binary
+	// ProbeFailed reports that the version command RAN and exited non-zero —
+	// the binary exists and does not work.
+	//
+	// It is separate from Status because StatusUnknown covers both this and
+	// "the tool ran but printed something unreadable", and the two want
+	// opposite treatment: an unreadable version is a warning, a broken binary
+	// is something to roll back. A timeout is neither, and never sets this —
+	// a slow binary is not a broken one, and rolling a working install back
+	// over a slow probe is how a repair becomes damage.
+	ProbeFailed bool
 }
 
 // versionRe finds the first dotted-integer run in a line, plus any trailing
@@ -228,6 +239,9 @@ func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
 	})
 	min := t.Verify.Version.Min
 	if err != nil {
+		// ErrFailed is the binary running and failing; ErrTimeout is the probe
+		// running out of budget. Only the first says anything about the tool.
+		res.ProbeFailed = errors.Is(err, aesexec.ErrFailed)
 		if min != "" {
 			res.Status = StatusUnknown
 		}

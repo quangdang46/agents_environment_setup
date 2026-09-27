@@ -257,6 +257,69 @@ func TestVerifyVersionComparison(t *testing.T) {
 	}
 }
 
+// StatusUnknown covers two situations that call for opposite handling, and the
+// status alone cannot say which happened.
+//
+// A version command that RAN and printed something unparseable means the tool
+// works and we could not read its number. A version command that ran and
+// exited non-zero means the tool is broken. Both are Unknown, and setup treats
+// Unknown as a warning for both — which is right, and is why the rollback path
+// needs a second signal rather than a different verdict.
+//
+// The third case is a timeout, and it belongs with neither: a binary that takes
+// too long may be perfectly good, so a rollback on it would revert a working
+// install. "Unavailable verification is not a failure" is not a nicety here;
+// it is the difference between repairing a machine and breaking it.
+func TestVerifyDistinguishesBrokenFromUnreadable(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		command    string
+		wantStatus Status
+		wantProbe  bool
+	}{
+		{"exits non-zero: the tool ran and failed", "exit 1", StatusUnknown, true},
+		{"prints nothing and fails: still broken", "false", StatusUnknown, true},
+		{"runs and prints garbage: unreadable, not broken", "echo not-a-version", StatusUnknown, false},
+		{"runs and prints a version: healthy", "echo 2.0.0", StatusOK, false},
+		{"below minimum: stale, not broken", "echo 1.0.0", StatusStale, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tool := &manifest.Tool{
+				Name:   "probe",
+				Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: tc.command, Min: "2.0.0"}},
+			}
+			got := Verify(tool)
+			if got.Status != tc.wantStatus {
+				t.Errorf("Status = %q, want %q", got.Status, tc.wantStatus)
+			}
+			if got.ProbeFailed != tc.wantProbe {
+				t.Errorf("ProbeFailed = %v, want %v (the rollback path reads this, not Status)",
+					got.ProbeFailed, tc.wantProbe)
+			}
+		})
+	}
+}
+
+// A timeout must not read as broken. The command is slow rather than wrong,
+// and rolling a working install back because a probe was slow is how a repair
+// turns into damage.
+func TestVerifyTimeoutIsNotProbeFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("sleeps for longer than the probe budget")
+	}
+	tool := &manifest.Tool{
+		Name:   "probe",
+		Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: "sleep 30", Min: "2.0.0"}},
+	}
+	got := Verify(tool)
+	if got.ProbeFailed {
+		t.Error("a timed-out probe was reported as a broken tool; a slow binary is not a broken one")
+	}
+	if got.Status != StatusUnknown {
+		t.Errorf("Status = %q, want %q — a timeout is an unknown, not a verdict", got.Status, StatusUnknown)
+	}
+}
+
 func TestVerifyReportsDetectedVersion(t *testing.T) {
 	tool := &manifest.Tool{
 		Name: "probe",
