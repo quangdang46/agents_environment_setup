@@ -1020,6 +1020,30 @@ Stating it here so the next reader does not read 75 as drift and "correct" it
 downward. If the catalog ever needs trimming, that is a deliberate decision
 with a reason, not an accident of arithmetic.
 
+## "The binary does not run" is a fourth condition, and it is not a status
+
+`StatusUnknown` means "the declared minimum was never checked", and the table
+above gives it two causes: a version command that ran and printed something
+unparseable, and a version command that ran and exited non-zero. `aes setup`
+treats both as a warning, which is right — the North Star survives a tool with
+a flaky version command.
+
+Rollback needs them to be different, and the difference is not a new status.
+`verifier.Result.ProbeFailed` is set when the version command ran and exited
+non-zero, and a timeout never sets it. A slow binary is not a broken one, and
+reverting a working install over a slow probe is how a repair becomes damage —
+the spec's own rule for `StatusUnknown`, "do not resolve an anomaly into a
+verdict the machine does not support", applies to rollback with more force than
+it does to setup, where the worst case is a warning.
+
+So the decision is: **a tool is rolled back only when the probe demonstrably
+failed, and `StatusStale` never rolls back.** A stale install is wrong, but the
+binary runs, and restoring an older build over a user's upgrade is the
+direction that quietly reverts work.
+
+Decided here because it is a second reader of the same four statuses, and a
+decision that lives only in a commit message is one the next agent relitigates.
+
 ## Definition of Done
 
 - [ ] 15 invariants covered by tests
