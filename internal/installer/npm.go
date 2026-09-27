@@ -2,15 +2,21 @@ package installer
 
 import (
 	"context"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
 )
 
 // npmPrefixTimeout bounds the `npm prefix -g` probe. It is a local query, so
 // anything slower than this means npm is not answering.
+//
+// The bound was declared for a long time and used by nothing: defaultProbe ran
+// a bare `sh -c` with no timeout at all. A comment describing behaviour the
+// code does not have is worse than no comment, because the next reader assumes
+// somebody checked.
 const npmPrefixTimeout = 10 // seconds
 
 // NPMBinDir returns the directory npm installs global packages into.
@@ -38,9 +44,18 @@ func NPMBinDir(ctx context.Context, run func(context.Context, string) (string, e
 }
 
 // defaultProbe runs a short local query and returns its stdout.
+//
+// It goes through exec.Run rather than a bare `sh -c` for the two properties
+// that bare invocation does not have: the default timeout, and the 1 MiB output
+// cap. This function used to exec directly, which made it the last place in
+// the tree that spawned a shell without either — in a codebase whose central
+// claim is that one mechanism runs everything, a fallback that does it
+// differently is the fallback someone eventually relies on.
 func defaultProbe(ctx context.Context, cmd string) (string, error) {
-	out, err := exec.CommandContext(ctx, "sh", "-c", cmd).Output()
-	return string(out), err
+	res, err := exec.Run(ctx, cmd, exec.Options{
+		Timeout: npmPrefixTimeout * time.Second,
+	})
+	return res.Stdout, err
 }
 
 // NewNPMInstaller returns the npm strategy.
