@@ -92,7 +92,12 @@ var destinationFor = defaultDestination
 
 // aesBinDir is the directory AES always owns: release binaries land here
 // regardless of which strategy fetched them.
-func aesBinDir(home string) string { return filepath.Join(home, ".aes", "bin") }
+// aesBinDir is where github-release tools land: $AES_HOME/bin.
+//
+// home is AES_HOME, not the user's home directory. Joining ".aes" on here is
+// what produced an env.sh naming a directory that did not exist whenever
+// AES_HOME was anything other than ~/.aes.
+func aesBinDir(home string) string { return filepath.Join(home, "bin") }
 
 func defaultDestination(strategy, home string) (string, bool) {
 	switch strategy {
@@ -123,11 +128,17 @@ func defaultDestination(strategy, home string) (string, bool) {
 
 // Generate renders env.sh for the given installed tools.
 //
+// home is AES_HOME — the directory aes installed into — not the user's home
+// directory. Those coincide only in the default case, and treating them as the
+// same value makes the generated file wrong for anyone who points AES_HOME
+// somewhere else: it would describe a directory that was never created, and
+// sourcing it would move the shell's AES_HOME off the real installation.
+//
 // The output depends only on its inputs: the same tools and home always
 // produce the same bytes, regardless of the order the tools arrive in.
 func Generate(tools []Tool, home string) ([]byte, error) {
 	if home == "" {
-		return nil, fmt.Errorf("envgen: home directory is required")
+		return nil, fmt.Errorf("envgen: AES_HOME is required")
 	}
 
 	dirs := pathEntries(tools, home)
@@ -136,7 +147,7 @@ func Generate(tools []Tool, home string) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString(Header)
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "export AES_HOME=%s\n", shellQuote(filepath.Join(home, ".aes")))
+	fmt.Fprintf(&b, "export AES_HOME=%s\n", shellQuote(home))
 
 	if len(vars) > 0 {
 		b.WriteString("\n")

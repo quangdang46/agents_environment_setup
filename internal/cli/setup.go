@@ -246,6 +246,18 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 		Target: target,
 		Host:   rc.Host,
 		Reason: a.Reason,
+		// Force is derived from `drifted`, NOT from the --force flag. The flag
+		// only decides whether a drift may be corrected; what makes this a
+		// repair is that the verifier saw no binary.
+		//
+		// The distinction matters for package strategies, where the two
+		// commands are different. When the binary is gone but the package
+		// manager still has the package registered, `apt-get install -y` is
+		// a no-op that reports the newest version and restores nothing — so
+		// the install has to be told to re-extract. Deriving Force from the
+		// flag instead would reinstall every tool on the machine whenever
+		// anyone passed --force for one of them.
+		Force: drifted,
 	})
 	if installErr != nil {
 		var pe *exec.PrivilegeError
@@ -327,7 +339,7 @@ func writeEnv(app *App, rc *runContext, results []toolResult) (string, error) {
 		envTools = append(envTools, envgen.Tool{Name: r.Name, Strategy: strategyFor(rc, tool)})
 	}
 	path := filepath.Join(app.Home, "env.sh")
-	if err := envgen.Write(path, envTools, homeOf(app)); err != nil {
+	if err := envgen.Write(path, envTools, app.Home); err != nil {
 		return "", err
 	}
 	return path, nil

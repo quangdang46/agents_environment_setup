@@ -396,6 +396,65 @@ func TestSourcingTwiceIsANoOp(t *testing.T) {
 	}
 }
 
+// AES_HOME is where aes actually put things, and env.sh has to say so.
+//
+// The first version of this took the user's home directory and reconstructed
+// the install location as home + "/.aes". That is right only when AES_HOME is
+// the default. Point it anywhere else and the generated file describes a
+// directory that does not exist — measured in a fresh container with
+// AES_HOME=/opt/aes: aes wrote /opt/aes/env.sh, and the file inside it said
+//
+//	export AES_HOME='/opt/.aes'
+//
+// which is a path that was never created. Sourcing it moves the shell's
+// AES_HOME off the real installation, and the PATH entry for every tool aes
+// installed is wrong by the same amount.
+func TestGenerateExportsTheHomeItWasGivenNotAReconstruction(t *testing.T) {
+	t.Parallel()
+
+	const aesHome = "/opt/aes"
+	content, err := Generate([]Tool{{Name: "zoxide", Strategy: manifest.StrategyGithubRelease}}, aesHome)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	out := string(content)
+
+	if !strings.Contains(out, "export AES_HOME='"+aesHome+"'") {
+		t.Errorf("env.sh does not export the home it was given:\n%s", out)
+	}
+	// The reconstruction is the specific failure: home + "/.aes" when home is
+	// already the install directory.
+	if strings.Contains(out, "/opt/aes/.aes") {
+		t.Errorf("env.sh appends .aes to a path that is already AES_HOME:\n%s", out)
+	}
+	// And the binary directory has to follow the same value, or the export
+	// and the PATH entry describe two different installations.
+	if !strings.Contains(out, "/opt/aes/bin") {
+		t.Errorf("env.sh does not put the install's own bin on PATH:\n%s", out)
+	}
+	if strings.Contains(out, "/opt/aes/.aes/bin") {
+		t.Errorf("PATH entry is built from a reconstructed home:\n%s", out)
+	}
+}
+
+// The default case must not regress: ~/.aes is the conventional location and
+// has to keep working exactly as before.
+func TestGenerateDefaultLocationIsUnchanged(t *testing.T) {
+	t.Parallel()
+
+	content, err := Generate([]Tool{{Name: "zoxide", Strategy: manifest.StrategyGithubRelease}}, "/home/dev/.aes")
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	out := string(content)
+	if !strings.Contains(out, "export AES_HOME='/home/dev/.aes'") {
+		t.Errorf("the conventional location is not exported verbatim:\n%s", out)
+	}
+	if !strings.Contains(out, "/home/dev/.aes/bin") {
+		t.Errorf("the conventional bin is not on PATH:\n%s", out)
+	}
+}
+
 func TestGenerateRequiresHome(t *testing.T) {
 	stubDestinations(t, nil)
 	if _, err := Generate(nil, ""); err == nil {

@@ -454,7 +454,10 @@ func runEnv(ctx context.Context, app *App, f *Flags, extra any, args []string) e
 		envTools = append(envTools, envgen.Tool{Name: t.Name, Strategy: strategyFor(rc, t)})
 	}
 
-	home := homeOf(app)
+	// env.sh is written into AES_HOME and describes AES_HOME. Passing the
+	// user's home here — which is what this used to do — made the generated
+	// file name a directory that only exists in the default configuration.
+	home := app.Home
 	envPath := filepath.Join(app.Home, "env.sh")
 
 	if !e.Write {
@@ -475,28 +478,6 @@ func runEnv(ctx context.Context, app *App, f *Flags, extra any, args []string) e
 		return linkShellRC(app, envPath)
 	}
 	return nil
-}
-
-// homeOf returns the user's home directory, which is distinct from AES_HOME:
-// tool destinations live under the real home, not under ~/.aes.
-// homeOf is the user's home directory, derived from AES_HOME rather than read
-// straight from the environment.
-//
-// os.UserHomeDir() ignores AES_HOME entirely, so with the variable pointed
-// somewhere else the generated env.sh named the real home — a sandbox run
-// produced a file that, if sourced, would put the live installation's bin on
-// PATH. app.Home is $AES_HOME, conventionally ~/.aes, so its parent is the
-// home directory the user actually means.
-func homeOf(app *App) string {
-	if app != nil && app.Home != "" {
-		if home := filepath.Dir(app.Home); home != "" && home != "." {
-			return home
-		}
-	}
-	if h, err := os.UserHomeDir(); err == nil {
-		return h
-	}
-	return ""
 }
 
 // strategyFor reports the strategy a tool would install with on this host,
