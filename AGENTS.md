@@ -170,6 +170,29 @@ deterministic tie-break removed. Each of those passed review and only failed und
 A mutation that *doesn't* fail the suite is also a finding — it means the test cannot distinguish
 correct behaviour from the mutation, and the test is too weak.
 
+### Explain after you exercise, never before
+
+The failure mode that produced the most wrong reports in this project was not a
+missing test — it was reaching for a satisfying explanation and then treating
+the next passing check as confirmation of it.
+
+    "pi reported unknown once, I re-ran it, it passed, therefore transient."
+
+It was not transient. `pi --version` takes **3.67 seconds** and the probe budget
+was 5. The single passing re-run was the warning, not the answer.
+
+The same shape appeared three more times in one day:
+
+- A version parser was reported to extract `"3"` from `tmux 3.6b`. Reasoning
+  about the regex instead of running it produced the wrong answer confidently.
+- A test was named for a property it did not check. It passed, and the pass came
+  from a re-download rather than the mechanism its name promised.
+- A commit message described an assertion that had not been written yet.
+
+The discipline that catches all four: **exercise the thing before you explain
+it**, and treat a surprising green as a question rather than an answer. A check
+that passes once after a failure is the least informative result available.
+
 ### A non-zero exit is not a proxy for "the output is unusable"
 
 A command that exits non-zero *because it did its job* is easy to mistake for a command that
