@@ -214,6 +214,18 @@ func StartContainer(ctx context.Context, cfg ContainerConfig) (*Container, error
 		image, "infinity")
 	out, err := run.CombinedOutput()
 	if err != nil {
+		// The daemon may have created the container and then failed, or the
+		// context may have been cancelled between the two. Either way the
+		// container can exist with nobody holding its name, and a Layer 2 run
+		// that leaks one per attempt fills the disk with ubuntu images' worth
+		// of writable layers that nothing will ever remove.
+		//
+		// `docker rm -f` on a name that does not exist fails, and that failure
+		// must not replace the error the caller needs to see, so it is
+		// deliberately discarded.
+		rmCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		_, _ = exec.CommandContext(rmCtx, runtime, "rm", "-f", c.ID).CombinedOutput()
+		cancel()
 		return nil, fmt.Errorf("sandbox: start %s from %s: %w\n%s", c.ID, image, err, out)
 	}
 	c.owned = true
@@ -421,6 +433,21 @@ func (c *Container) Run(ctx context.Context, argv []string, env []string, dir st
 		res.ExitCode = cmd.ProcessState.ExitCode()
 	}
 	if stepCtx.Err() == context.DeadlineExceeded {
+		// Killing the docker exec CLIENT does not stop the daemon-side exec.
+		// The client is a thin process that forwards stdio; the daemon runs
+		// `sh -c ...` itself, and when the client dies the daemon's copy is
+		// orphaned and keeps running inside the container. A timed-out
+		// `apt-get install` therefore continues writing to dpkg's database
+		// after the harness has moved on, and the next step reads a machine
+		// that is still being changed underneath it.
+		//
+		// `docker exec` has no "kill" verb, so the equivalent is to stop the
+		// container. That is heavier than the leak it prevents, and it is
+		// correct: a container whose command outlived its budget is not a
+		// trustworthy place to keep measuring.
+		stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		_, _ = exec.CommandContext(stopCtx, c.Runtime, "stop", c.ID).CombinedOutput()
+		stopCancel()
 		return res, fmt.Errorf("in-container %s timed out after %s", strings.Join(argv, " "), StepTimeout)
 	}
 	return res, err

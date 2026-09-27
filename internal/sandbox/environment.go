@@ -110,6 +110,15 @@ var (
 )
 
 // Run executes a command on the local machine.
+//
+// The deadline bounds the whole call, not merely the kill. CommandContext
+// signals only the direct child, so a command that forks — `sh -c "sleep 30"`,
+// or an installer that starts a daemon and returns — leaves a grandchild
+// holding the pipe this function is reading, and cmd.Run blocks until that
+// grandchild exits. Measured in internal/exec as a 200ms deadline that blocked
+// 30s; the same shape applies here, and the same two halves fix it: the group
+// kill takes the grandchild with the parent, and WaitDelay bounds Wait itself
+// when there is no group to kill.
 func (Host) Run(ctx context.Context, argv []string, env []string, dir string) (ExecResult, error) {
 	stepCtx, cancel := context.WithTimeout(ctx, StepTimeout)
 	defer cancel()
@@ -119,6 +128,9 @@ func (Host) Run(ctx context.Context, argv []string, env []string, dir string) (E
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+
+	hostIsolate(cmd)
+	cmd.WaitDelay = hostWaitDelay
 
 	err := cmd.Run()
 	res := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
