@@ -16,7 +16,9 @@ install:
   darwin:
     strategy: github-release
     repository: opentofu/opentofu
-    binary: tofu
+    binary:
+      amd64: tofu
+      arm64: tofu
     asset:
       amd64: tofu_1.12.6_darwin_amd64.tar.gz
       arm64: tofu_1.12.6_darwin_arm64.tar.gz
@@ -26,7 +28,9 @@ install:
   linux:
     strategy: github-release
     repository: opentofu/opentofu
-    binary: tofu
+    binary:
+      amd64: tofu
+      arm64: tofu
     asset:
       amd64: tofu_1.12.6_linux_amd64.tar.gz
       arm64: tofu_1.12.6_linux_arm64.tar.gz

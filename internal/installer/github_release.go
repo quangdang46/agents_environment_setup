@@ -116,12 +116,20 @@ func (g *GithubRelease) Install(ctx context.Context, a Action) error {
 	if err := os.MkdirAll(stage, 0o755); err != nil {
 		return fmt.Errorf("create staging directory: %w", err)
 	}
+	// binaryName is the filename INSIDE the archive, which some upstreams make
+	// platform- and arch-specific: yq ships yq_linux_amd64 and
+	// yq_darwin_arm64. installName is what the user will actually type, and it
+	// is a genuinely different fact - a binary left called yq_darwin_arm64 on
+	// PATH is not a working install, it is a file that requires the user to
+	// know which machine they are on. So the archive's name is an input and
+	// the tool's name is the output, and conflating them is what made yq
+	// install and then fail to verify.
 	binary, err := extractArchive(archivePath, stage, a.binaryName())
 	if err != nil {
 		return err
 	}
 
-	final := filepath.Join(g.Dest, a.binaryName())
+	final := filepath.Join(g.Dest, a.Tool)
 	if err := os.Rename(binary, final); err != nil {
 		return fmt.Errorf("install %s: %w", final, err)
 	}

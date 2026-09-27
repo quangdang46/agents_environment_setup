@@ -213,9 +213,17 @@ func RequiresPrivilege(target manifest.Target) bool {
 // unanswerable. The manifest is the only place that describes the upstream
 // artefact; the tool name is a local label, so it is the last resort precisely
 // because it is the one most likely to be wrong.
+//
+// The manifest's entry is per-arch, because the filename inside an archive
+// sometimes is. yq ships yq_linux_amd64 and yq_darwin_arm64, so a single
+// string could not describe it and the lookup is by Host.Arch. Falling back to
+// the tool name when no entry matches keeps every manifest that does not need
+// the map working unchanged.
 func (a Action) binaryName() string {
-	if a.Target.Binary != "" {
-		return a.Target.Binary
+	if len(a.Target.Binary) > 0 && a.Host != nil {
+		if name := a.Target.Binary[a.Host.Arch]; name != "" {
+			return name
+		}
 	}
 	return a.Tool
 }

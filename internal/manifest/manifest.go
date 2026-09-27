@@ -93,7 +93,16 @@ type Target struct {
 	// so: the installer inferred the name from the tool name, which is right
 	// often enough to be a trap and wrong exactly when a tool is renamed
 	// upstream.
-	Binary string            `yaml:"binary,omitempty"`
+	// Binary is the filename INSIDE the archive, keyed by Go arch, when it
+	// differs from the tool name. It is a map for the same reason Asset and
+	// SHA256 are: some upstreams name the binary per platform AND arch. yq
+	// ships yq_linux_amd64, yq_darwin_arm64 and so on, so a single string
+	// cannot describe the artefact and the installer would look for "yq" in
+	// an archive that has never contained it.
+	//
+	// Absent, the tool name is used - which is right for the overwhelming
+	// majority, and keeps every existing manifest working unchanged.
+	Binary map[string]string `yaml:"binary,omitempty"`
 	Asset  map[string]string `yaml:"asset,omitempty"`  // Go arch → asset filename
 	SHA256 map[string]string `yaml:"sha256,omitempty"` // Go arch → checksum
 
@@ -454,6 +463,27 @@ func (t Target) validateArchMaps(where string) error {
 			return fmt.Errorf("%s: sha256 is missing for arch %q present in asset", where, arch)
 		}
 	}
+	// binary, when declared, must cover exactly the arches asset does. A
+	// binary map with a different key set is the same shape of bug as a
+	// checksum map with one: it validates, and then the installer looks for a
+	// filename the archive does not contain on the one machine that matters.
+	if len(t.Binary) > 0 {
+		if len(t.Binary) != len(t.Asset) {
+			return fmt.Errorf("%s: binary covers %d arches but asset covers %d",
+				where, len(t.Binary), len(t.Asset))
+		}
+		for _, arch := range sortedKeys(t.Asset) {
+			if t.Binary[arch] == "" {
+				return fmt.Errorf("%s: binary is empty for arch %q present in asset", where, arch)
+			}
+		}
+		for _, arch := range sortedKeys(t.Binary) {
+			if _, ok := t.Asset[arch]; !ok {
+				return fmt.Errorf("%s: binary has arch %q which asset does not", where, arch)
+			}
+		}
+	}
+
 	for _, arch := range sortedKeys(t.SHA256) {
 		if _, ok := t.Asset[arch]; !ok {
 			return fmt.Errorf("%s: asset is missing for arch %q present in sha256", where, arch)

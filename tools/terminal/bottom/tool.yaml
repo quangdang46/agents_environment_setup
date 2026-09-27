@@ -20,7 +20,9 @@ install:
   darwin:
     strategy: github-release
     repository: ClementTsang/bottom
-    binary: btm
+    binary:
+      amd64: btm
+      arm64: btm
     asset:
       amd64: bottom_x86_64-apple-darwin.tar.gz
       arm64: bottom_aarch64-apple-darwin.tar.gz
@@ -30,7 +32,9 @@ install:
   linux:
     strategy: github-release
     repository: ClementTsang/bottom
-    binary: btm
+    binary:
+      amd64: btm
+      arm64: btm
     asset:
       amd64: bottom_x86_64-unknown-linux-gnu-2-17.tar.gz
       arm64: bottom_aarch64-unknown-linux-gnu.tar.gz

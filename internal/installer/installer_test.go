@@ -425,12 +425,59 @@ func TestBinaryOverride(t *testing.T) {
 	a.Tool = "ripgrep"
 
 	g := newInstaller(fixture.URL, dest)
-	a.Target.Binary = "rg" // declared in the manifest, not on the installer
+	// Keyed by Go arch, because that is how a manifest declares it and because
+	// some upstreams name the file per platform AND arch. The action's Host
+	// selects the entry, so this also exercises the lookup rather than just
+	// the field.
+	a.Target.Binary = map[string]string{
+		platform.ArchAMD64: "rg",
+		platform.ArchARM64: "rg",
+	} // declared in the manifest, not on the installer
 	if err := g.Install(context.Background(), a); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "rg")); err != nil {
 		t.Errorf("binary 'rg' not installed: %v", err)
+	}
+}
+
+// The arch lookup has to be a lookup. Both arches declaring the SAME name
+// cannot tell it apart from "take whichever entry came first", and the tool
+// that makes this matter is yq: it ships yq_linux_amd64 and yq_linux_arm64, so
+// a lookup that ignored the arch would install the wrong binary on every
+// machine and still report success.
+//
+// Deleting the Host.Arch indexing and ranging the map instead left the whole
+// suite green before this test existed.
+func TestBinaryNameIsSelectedByArch(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		arch   string
+		want   string
+		binary map[string]string
+	}{
+		{platform.ArchAMD64, "tool_linux_amd64", map[string]string{
+			platform.ArchAMD64: "tool_linux_amd64", platform.ArchARM64: "tool_linux_arm64"}},
+		{platform.ArchARM64, "tool_linux_arm64", map[string]string{
+			platform.ArchAMD64: "tool_linux_amd64", platform.ArchARM64: "tool_linux_arm64"}},
+		// An arch nobody declared falls back to the tool name rather than
+		// failing: the name is right often enough that breaking installs on an
+		// undeclared arch would be the worse trade.
+		{"riscv64", "tool", map[string]string{
+			platform.ArchAMD64: "tool_linux_amd64", platform.ArchARM64: "tool_linux_arm64"}},
+		// No binary declared at all is the overwhelming majority of the
+		// catalog, and must keep working.
+		{platform.ArchARM64, "tool", nil},
+	} {
+		a := Action{
+			Tool:   "tool",
+			Target: manifest.Target{Binary: tc.binary},
+			Host:   &platform.Host{OS: platform.OSLinux, Arch: tc.arch},
+		}
+		if got := a.binaryName(); got != tc.want {
+			t.Errorf("arch %s: binaryName() = %q, want %q", tc.arch, got, tc.want)
+		}
 	}
 }
 

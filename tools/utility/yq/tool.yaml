@@ -1,4 +1,12 @@
-# AES catalog. github-release for darwin, linux at mikefarah/yq release v4.53.6; asset names and sha256 read from the upstream release by scripts/release_probe.py.
+# AES catalog. github-release for darwin, linux at mikefarah/yq release v4.53.6;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# `binary:` is per-arch and the names differ from the asset names by the .tar.gz
+# suffix, because that is what is actually inside: the archives contain
+# yq_linux_amd64, yq_darwin_arm64 and so on. There is no plain `yq` in any of
+# them, so a single binary name would look for a file this release has never
+# shipped. `verify.command` below is what a user types; `binary` is what gets
+# installed, and those are different facts.
 name: yq
 description: command-line YAML processor
 category: utility
@@ -14,6 +22,9 @@ install:
   darwin:
     strategy: github-release
     repository: mikefarah/yq
+    binary:
+      amd64: yq_darwin_amd64
+      arm64: yq_darwin_arm64
     asset:
       amd64: yq_darwin_amd64.tar.gz
       arm64: yq_darwin_arm64.tar.gz
@@ -23,6 +34,9 @@ install:
   linux:
     strategy: github-release
     repository: mikefarah/yq
+    binary:
+      amd64: yq_linux_amd64
+      arm64: yq_linux_arm64
     asset:
       amd64: yq_linux_amd64.tar.gz
       arm64: yq_linux_arm64.tar.gz
