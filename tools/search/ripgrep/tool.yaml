@@ -17,6 +17,11 @@ install:
   darwin:
     strategy: github-release
     repository: BurntSushi/ripgrep
+    # The release archive ships the binary as `rg`. Without this the installer
+    # looks for a file called `ripgrep`, does not find it, and fails the install
+    # with "archive does not contain the expected binary" — while the verifier
+    # in the same manifest is quite correctly looking for `rg`.
+    binary: rg
     asset:
       amd64: ripgrep-15.2.0-x86_64-apple-darwin.tar.gz
       arm64: ripgrep-15.2.0-aarch64-apple-darwin.tar.gz
@@ -26,6 +31,7 @@ install:
   linux:
     strategy: github-release
     repository: BurntSushi/ripgrep
+    binary: rg
     asset:
       amd64: ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz
       arm64: ripgrep-15.2.0-aarch64-unknown-linux-gnu.tar.gz

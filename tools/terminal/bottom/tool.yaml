@@ -5,15 +5,22 @@ category: terminal
 tested: false
 tags:
   - terminal
+# Upstream ships the binary as `btm` on every platform. The installer's
+# fallback is the tool name, so without `binary:` below it looks for a file
+# called `bottom`, does not find one, and fails with "archive does not contain
+# the expected binary" — while the verifier, reading `command:` here, would look
+# for the same missing name. Both have to change together; that they are two
+# fields is the `c4481e6` shape again, and `binary` exists to break it.
 verify:
-  command: bottom
+  command: btm
   version:
-    command: bottom --version
+    command: btm --version
     min: "0.9"
 install:
   darwin:
     strategy: github-release
     repository: ClementTsang/bottom
+    binary: btm
     asset:
       amd64: bottom_x86_64-apple-darwin.tar.gz
       arm64: bottom_aarch64-apple-darwin.tar.gz
@@ -23,6 +30,7 @@ install:
   linux:
     strategy: github-release
     repository: ClementTsang/bottom
+    binary: btm
     asset:
       amd64: bottom_x86_64-unknown-linux-gnu-2-17.tar.gz
       arm64: bottom_aarch64-unknown-linux-gnu.tar.gz

@@ -100,16 +100,23 @@ func (p *PackageInstaller) Uninstall(ctx context.Context, a Action) (Outcome, er
 	case manifest.ManagerApt:
 		base := "apt remove -y " + pkg
 
-		// Already root: no escalation question arises.
+		// Already root: no escalation question arises, and `base` carries no
+		// sudo — so it is an ordinary command and goes down the unprivileged
+		// path rather than claiming an Authorization it never needed.
 		if p.root() {
-			if _, err := p.privileged()(ctx, base); err != nil {
+			if _, err := p.unprivileged()(ctx, base); err != nil {
 				return Outcome{}, err
 			}
 			return Removed(), nil
 		}
 
 		if p.NonInteractive {
-			if _, err := p.privileged()(ctx, "sudo -n "+base); err != nil {
+			auth := exec.Authorization{
+				Confirmed:      true,
+				NonInteractive: true,
+				Reason:         "apt remove (non-interactive)",
+			}
+			if _, err := p.privileged()(ctx, "sudo -n "+base, auth); err != nil {
 				plain := strings.TrimPrefix(base, "")
 				p.printf("aes: could not remove %s automatically. Run this yourself:\n\n    sudo %s\n\n", a.Tool, plain)
 				return Outcome{}, &exec.PrivilegeError{Command: "sudo " + plain, NonInteractive: true}
@@ -122,7 +129,11 @@ func (p *PackageInstaller) Uninstall(ctx context.Context, a Action) (Outcome, er
 		if err := p.authorize(base); err != nil {
 			return Outcome{}, err
 		}
-		if _, err := p.privileged()(ctx, "sudo "+base); err != nil {
+		auth := exec.Authorization{
+			Confirmed: true,
+			Reason:    "apt remove (confirmed by the user)",
+		}
+		if _, err := p.privileged()(ctx, "sudo "+base, auth); err != nil {
 			return Outcome{}, err
 		}
 		return Removed(), nil

@@ -269,7 +269,16 @@ func (c *Container) Prepare(ctx context.Context, packages ...string) error {
 	if _, _, err := c.Sh(ctx, "apt-get update -qq", nil); err != nil {
 		return fmt.Errorf("sandbox: apt-get update: %w", err)
 	}
-	script := "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq " + strings.Join(packages, " ")
+	// --no-install-recommends, because a recommendation silently installs a
+	// package the fixture never asked for and then breaks a precondition.
+	// Measured: `npm` Recommends: git, so `apt-get install -y npm` leaves
+	// /usr/bin/git on the machine — and the git test then correctly refuses to
+	// run, which reads as a product failure and is nothing of the kind.
+	//
+	// A fixture must install exactly what it declares. Anything else and the
+	// test is measuring the fixture.
+	script := "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends " +
+		strings.Join(packages, " ")
 	if _, _, err := c.Sh(ctx, script, nil); err != nil {
 		return fmt.Errorf("sandbox: install %v: %w", packages, err)
 	}

@@ -256,11 +256,14 @@ func TestAptAsRootNeedsNoSudo(t *testing.T) {
 
 	// Already root: no escalation question, so no sudo anywhere. This is the
 	// container path that makes the sandbox tests work without a password.
-	if len(rec.privileged) != 1 || rec.privileged[0] != "apt-get install -y jq" {
-		t.Errorf("privileged calls = %v, want [\"apt-get install -y jq\"] with no sudo", rec.privileged)
+	if len(rec.privileged) != 0 {
+		t.Errorf("privileged calls = %v, want none: as root there is no escalation", rec.privileged)
 	}
-	if strings.Contains(rec.privileged[0], "sudo") {
-		t.Errorf("command %q escalates despite already being root", rec.privileged[0])
+	if len(rec.unprivileged) != 1 || rec.unprivileged[0] != "apt-get install -y jq" {
+		t.Errorf("unprivileged calls = %v, want [\"apt-get install -y jq\"] with no sudo", rec.unprivileged)
+	}
+	if strings.Contains(rec.unprivileged[0], "sudo") {
+		t.Errorf("command %q escalates despite already being root", rec.unprivileged[0])
 	}
 }
 
@@ -299,14 +302,23 @@ func TestAptForceReinstallsRatherThanTrustingDpkg(t *testing.T) {
 		t.Fatalf("Install: %v", err)
 	}
 
-	if len(rec.privileged) != 1 {
-		t.Fatalf("privileged calls = %v, want exactly one", rec.privileged)
+	// Already root means the command carries no sudo, so it runs on the
+	// UNprivileged path. Asserting on which runner it took is not a detail:
+	// a command that needs no elevation has no business claiming an
+	// Authorization, and routing it through the privileged runner would make
+	// the gate mean nothing the first time it was handed something true.
+	if len(rec.privileged) != 0 {
+		t.Errorf("privileged calls = %v, want none: as root there is no escalation",
+			rec.privileged)
 	}
-	if !strings.Contains(rec.privileged[0], "--reinstall") {
+	if len(rec.unprivileged) != 1 {
+		t.Fatalf("unprivileged calls = %v, want exactly one", rec.unprivileged)
+	}
+	if !strings.Contains(rec.unprivileged[0], "--reinstall") {
 		t.Errorf("forced apt command = %q, want --reinstall.\n"+
 			"Without it apt trusts dpkg's database, reports the package as already "+
 			"newest, and leaves a deleted binary deleted -- so --force repairs nothing",
-			rec.privileged[0])
+			rec.unprivileged[0])
 	}
 }
 
@@ -329,8 +341,11 @@ func TestAptWithoutForceDoesNotReinstall(t *testing.T) {
 	if err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "jq")); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	if strings.Contains(rec.privileged[0], "--reinstall") {
-		t.Errorf("a first install ran %q; --reinstall is for a repair only", rec.privileged[0])
+	if len(rec.unprivileged) != 1 {
+		t.Fatalf("unprivileged calls = %v, want exactly one", rec.unprivileged)
+	}
+	if strings.Contains(rec.unprivileged[0], "--reinstall") {
+		t.Errorf("a first install ran %q; --reinstall is for a repair only", rec.unprivileged[0])
 	}
 }
 
@@ -391,6 +406,95 @@ func TestAptForceRespectsThePrivilegeModel(t *testing.T) {
 			t.Errorf("forced command %q lost --reinstall on the sudo -n path", rec.privileged[0])
 		}
 	})
+}
+
+// I14 — "sudo never runs silently" — is an ORDERING claim, and ordering is the
+// only part of it that is not a mechanism. The command must reach the user
+// BEFORE a privileged process exists; everything else about the confirmation
+// flow is just how that is achieved.
+//
+// Nothing tested the ordering. authorize() was exercised, and the code did
+// print first, but "it printed first" is not the same claim as "it printed
+// before the process was spawned", and a refactor that moved the print after
+// the call would have kept every other test in this file green.
+//
+// The check is made inside the privileged runner, because that is the only
+// moment the ordering can be observed: by the time Install returns, both
+// things have happened and their order is unrecoverable.
+func TestPrivilegedCommandIsPrintedBeforeAnythingRuns(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	// The exact string the user is shown, which is the sudo form — not `base`,
+	// which is what actually gets executed.
+	const shown = "sudo apt-get install -y jq"
+
+	var sawPrint bool
+	var ranWithoutPrinting bool
+	var order []string
+
+	p := &PackageInstaller{
+		IsRoot:          func() bool { return false },
+		In:              strings.NewReader("y\n"),
+		Out:             &out,
+		RunUnprivileged: func(context.Context, string) (exec.Result, error) { return exec.Result{}, nil },
+		RunPrivileged: func(_ context.Context, cmd string) (exec.Result, error) {
+			order = append(order, "run")
+			sawPrint = strings.Contains(out.String(), shown)
+			if !sawPrint {
+				ranWithoutPrinting = true
+			}
+			return exec.Result{}, nil
+		},
+	}
+
+	if err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "jq")); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	if ranWithoutPrinting {
+		t.Errorf("a privileged process was spawned before the command reached the user.\n"+
+			"order=%v\nprinted so far: %q\n"+
+			"I14 is that the user sees what is about to run; a process that exists "+
+			"before the print is a command that already ran, whatever it does next",
+			order, out.String())
+	}
+	if !sawPrint {
+		t.Error("the printed output never contained the command that was run")
+	}
+}
+
+// The negative control, and the reason the first test is not vacuous: when the
+// answer is no, nothing runs at all. An ordering test that passes because the
+// privileged path was never reached proves nothing about order.
+func TestNothingRunsWhenConfirmationIsDeclined(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	spawned := false
+
+	p := &PackageInstaller{
+		IsRoot:          func() bool { return false },
+		In:              strings.NewReader("n\n"),
+		Out:             &out,
+		RunUnprivileged: func(context.Context, string) (exec.Result, error) { return exec.Result{}, nil },
+		RunPrivileged: func(context.Context, string) (exec.Result, error) {
+			spawned = true
+			return exec.Result{}, nil
+		},
+	}
+
+	err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "jq"))
+	if err == nil {
+		t.Fatal("declining the confirmation still reported success")
+	}
+	if spawned {
+		t.Error("a privileged process ran after the user said no")
+	}
+	// Printed before the question, so the user could see what they refused.
+	if !strings.Contains(out.String(), "apt-get install -y jq") {
+		t.Errorf("the command was not shown to the user before asking:\n%s", out.String())
+	}
 }
 
 func TestUnknownManagerIsNotDefaulted(t *testing.T) {
@@ -464,62 +568,10 @@ func TestInjectedAuthorizeIsConsulted(t *testing.T) {
 	}
 }
 
-// TestCappedWriterMarksTruncation is the regression guard for a real defect:
-// the privileged path's capped writer silently dropped the truncation marker
-// that exec.Run appends, so a truncated apt-get transcript was shown to the
-// user as complete — on the one path where they are about to be asked for a
-// password. A truncated log that does not admit it is truncated is worse
-// than no log.
-func TestCappedWriterMarksTruncation(t *testing.T) {
-	t.Parallel()
-
-	t.Run("short output carries no marker", func(t *testing.T) {
-		t.Parallel()
-		var c cappedWriter
-		c.limit = 100
-		_, _ = c.Write([]byte("short"))
-		if got := c.String(); got != "short" {
-			t.Errorf("String() = %q, want %q with no marker", got, "short")
-		}
-	})
-
-	t.Run("output past the cap is marked", func(t *testing.T) {
-		t.Parallel()
-		var c cappedWriter
-		c.limit = 5
-		_, _ = c.Write([]byte("0123456789"))
-		got := c.String()
-		if !strings.Contains(got, "truncated") {
-			t.Errorf("String() = %q, want a truncation marker", got)
-		}
-		if !strings.HasPrefix(got, "01234") {
-			t.Errorf("String() = %q, want the retained prefix first", got)
-		}
-	})
-
-	t.Run("a write entirely past the cap still marks", func(t *testing.T) {
-		t.Parallel()
-		// The buffer is already full; the overflow case is the one a
-		// naive remaining > 0 check silently forgets.
-		var c cappedWriter
-		c.limit = 2
-		_, _ = c.Write([]byte("ab"))
-		_, _ = c.Write([]byte("cd"))
-		if !strings.Contains(c.String(), "truncated") {
-			t.Errorf("String() = %q, want a truncation marker", c.String())
-		}
-	})
-
-	t.Run("writes report success so the child is not SIGPIPEd", func(t *testing.T) {
-		t.Parallel()
-		var c cappedWriter
-		c.limit = 1
-		n, err := c.Write([]byte("abcdef"))
-		if err != nil {
-			t.Errorf("Write returned %v; a capped writer must not fail the command", err)
-		}
-		if n != 6 {
-			t.Errorf("Write consumed %d bytes, want all 6 reported as consumed", n)
-		}
-	})
-}
+// The regression this guarded is now exec's, not ours. A truncated apt-get
+// transcript once dropped the truncation marker, so a log shown to a user
+// about to type a password read as complete when it was not. The mechanism that
+// appends the marker now lives in internal/exec alongside the 1 MiB cap, and
+// exec_test.go asserts both directions: a capped stream ends with the marker,
+// and a complete one does not carry it. Deleting the local cappedWriter removes
+// the second implementation rather than the coverage.

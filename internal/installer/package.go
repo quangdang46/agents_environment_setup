@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	osexec "os/exec"
 	"strings"
-	"time"
 
 	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
@@ -111,11 +109,27 @@ func (p *PackageInstaller) unprivileged() func(context.Context, string) (exec.Re
 	}
 }
 
-func (p *PackageInstaller) privileged() func(context.Context, string) (exec.Result, error) {
+// privileged executes a command that has already been printed and authorized.
+//
+// The default is exec.RunAuthorized rather than a local copy of the mechanism.
+// That function exists in exec precisely to be the one place a privileged
+// command is spawned, and a second implementation here made that untrue: the
+// spec claims one place constructs a privileged command, and while this copy
+// existed there were two — with the one in exec unreachable, so its
+// Authorization gate guarded nothing at all.
+//
+// An injected RunPrivileged short-circuits the gate, which is the point of
+// injection: these tests are about the installer's DECISIONS, and exec has its
+// own tests for what RunAuthorized does once given a decision.
+func (p *PackageInstaller) privileged() func(context.Context, string, exec.Authorization) (exec.Result, error) {
 	if p.RunPrivileged != nil {
-		return p.RunPrivileged
+		return func(ctx context.Context, cmd string, _ exec.Authorization) (exec.Result, error) {
+			return p.RunPrivileged(ctx, cmd)
+		}
 	}
-	return runAuthorized
+	return func(ctx context.Context, cmd string, auth exec.Authorization) (exec.Result, error) {
+		return exec.RunAuthorized(ctx, cmd, exec.Options{Timeout: defaultPrivilegeTimeout}, auth)
+	}
 }
 
 // Install dispatches on the target's manager. It never dispatches on the
@@ -174,8 +188,17 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 
 	// Already root: no escalation question arises. Containers and CI images
 	// land here, and it is why `aes test` needs no password.
+	//
+	// The command carries no sudo, so it goes down the UNprivileged path.
+	// Routing a command that needs no elevation through the privileged runner
+	// would have it claim an Authorization it never earned, and the gate would
+	// stop meaning anything the first time it was passed something true.
 	if p.root() {
-		return p.runApt(ctx, a.Tool, base, false)
+		_, err := p.unprivileged()(ctx, base)
+		if err != nil {
+			return fmt.Errorf("install %s: %w", a.Tool, err)
+		}
+		return nil
 	}
 
 	if p.NonInteractive {
@@ -183,10 +206,15 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 		// install ran; failure means we stop and report. There is no retry:
 		// a second attempt is how a tool ends up waiting on a prompt that
 		// nobody is there to answer.
-		if err := p.runApt(ctx, a.Tool, "sudo -n "+base, true); err != nil {
-			return err
+		// Confirmed is true because `sudo -n` is itself the authorization: it
+		// cannot block on a password nobody is there to type, so there is
+		// nothing to ask and nothing to wait for. It fails fast and reports.
+		auth := exec.Authorization{
+			Confirmed:      true,
+			NonInteractive: true,
+			Reason:         "apt install (non-interactive)",
 		}
-		return nil
+		return p.runApt(ctx, a.Tool, "sudo -n "+base, auth)
 	}
 
 	// Interactive. Print first — the user sees the exact command before
@@ -195,7 +223,13 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	if err := p.authorize(base); err != nil {
 		return err
 	}
-	return p.runApt(ctx, a.Tool, "sudo "+base, false)
+	// Reached only because the command was printed and then agreed to, which is
+	// the whole content of Confirmed.
+	auth := exec.Authorization{
+		Confirmed: true,
+		Reason:    "apt install (confirmed by the user)",
+	}
+	return p.runApt(ctx, a.Tool, "sudo "+base, auth)
 }
 
 // runApt executes an apt command, translating failure into a PrivilegeError
@@ -203,12 +237,12 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 //
 // On the failure path the printable command is emitted, because the user's
 // next move is to run it themselves and the CLI will exit 5.
-func (p *PackageInstaller) runApt(ctx context.Context, tool, cmd string, escalated bool) error {
-	_, err := p.privileged()(ctx, cmd)
+func (p *PackageInstaller) runApt(ctx context.Context, tool, cmd string, auth exec.Authorization) error {
+	_, err := p.privileged()(ctx, cmd, auth)
 	if err == nil {
 		return nil
 	}
-	if escalated {
+	if auth.NonInteractive {
 		// Strip the sudo prefix so the message shows the command, not the
 		// escalation wrapper.
 		plain := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(cmd, "sudo -n "), "sudo "))
@@ -249,79 +283,3 @@ func (p *PackageInstaller) authorize(command string) error {
 func (p *PackageInstaller) printf(format string, args ...any) {
 	fmt.Fprintf(p.out(), format, args...)
 }
-
-// runAuthorized executes a command that the caller has already printed and
-// authorized.
-//
-// This is the only function in AES that runs sudo, and it deliberately does
-// not go through exec.Run — that package exists to refuse exactly this. It is
-// reachable only through PackageInstaller.RunPrivileged, which is only
-// assigned after Authorize has agreed.
-func runAuthorized(ctx context.Context, cmd string) (exec.Result, error) {
-	runCtx, cancel := context.WithTimeout(ctx, defaultPrivilegeTimeout)
-	defer cancel()
-
-	shell := osexec.CommandContext(runCtx, "sh", "-c", cmd)
-	var stdout, stderr cappedWriter
-	stdout.limit, stderr.limit = exec.DefaultOutputLimit, exec.DefaultOutputLimit
-	shell.Stdout = &stdout
-	shell.Stderr = &stderr
-
-	started := time.Now()
-	err := shell.Run()
-	result := exec.Result{
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
-		Duration: time.Since(started),
-	}
-	if shell.ProcessState != nil {
-		result.ExitCode = shell.ProcessState.ExitCode()
-	}
-	if runCtx.Err() == context.DeadlineExceeded {
-		return result, fmt.Errorf("%w after %s: %s", exec.ErrTimeout, defaultPrivilegeTimeout, cmd)
-	}
-	if err != nil {
-		return result, fmt.Errorf("%w with exit code %d: %s", exec.ErrFailed, result.ExitCode, cmd)
-	}
-	return result, nil
-}
-
-// cappedWriter collects up to limit bytes and discards the rest, mirroring
-// exec's cap so a runaway command cannot exhaust memory on the privileged
-// path either. Writes past the cap report success: returning an error here
-// would hand the child a SIGPIPE and turn chatty output into a failed
-// install.
-//
-// It tracks whether truncation happened and says so in String(). The first
-// version of this silently dropped the marker exec appends, which meant a
-// truncated apt-get transcript was presented to the user as complete — on
-// the one code path where they are about to be asked for a password. A
-// truncated log that does not admit it is truncated is worse than no log.
-type cappedWriter struct {
-	buf       strings.Builder
-	limit     int
-	truncated bool
-}
-
-func (c *cappedWriter) Write(p []byte) (int, error) {
-	if remaining := c.limit - c.buf.Len(); remaining > 0 {
-		if len(p) <= remaining {
-			c.buf.Write(p)
-		} else {
-			c.buf.Write(p[:remaining])
-			c.truncated = true
-		}
-	} else if len(p) > 0 {
-		c.truncated = true
-	}
-	return len(p), nil
-}
-
-func (c *cappedWriter) String() string {
-	if !c.truncated {
-		return c.buf.String()
-	}
-	return c.buf.String() + "\n[output truncated by aes]\n"
-}
-
-var _ io.Writer = (*cappedWriter)(nil)

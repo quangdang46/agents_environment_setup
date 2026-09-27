@@ -455,3 +455,60 @@ func TestRunAuthorizedRewritesForNonInteractive(t *testing.T) {
 		t.Errorf("Stdout = %q, want it to contain %q", res.Stdout, "plain")
 	}
 }
+
+// RunAuthorized must ADD -n when the caller says non-interactive, and the test
+// above could not tell whether it did: it exercised the rewrite function
+// directly, and exercised RunAuthorized only on a command with no sudo in it.
+//
+// Deleting the rewrite from RunAuthorized entirely left the suite green. That
+// is a mutation that does not fail, which is a finding rather than a shrug —
+// the guarantee at stake is that --non-interactive never blocks on a password
+// prompt, and nothing was standing between removing the rewrite and a hang.
+//
+// The probe is a fake sudo on PATH that reports the arguments it was handed,
+// so the assertion is about what the child actually received rather than about
+// what the string looked like before it was executed.
+func TestRunAuthorizedAddsDashNToASudoCommandWhenNonInteractive(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "sudo")
+	const script = "#!/bin/sh\nprintf 'sudo-argv:'; for a in \"$@\"; do printf ' %s' \"$a\"; done; printf '\\n'\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake sudo: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	res, err := RunAuthorized(context.Background(), "sudo mytool", Options{},
+		Authorization{Confirmed: true, NonInteractive: true})
+	if err != nil {
+		t.Fatalf("RunAuthorized: %v", err)
+	}
+	if !strings.Contains(res.Stdout, "-n") {
+		t.Errorf("a non-interactive privileged run reached sudo without -n: %q\n"+
+			"that is the hang --non-interactive exists to prevent", res.Stdout)
+	}
+	if !strings.Contains(res.Stdout, "mytool") {
+		t.Errorf("the command did not reach sudo intact: %q", res.Stdout)
+	}
+}
+
+// The negative control: interactive must NOT have -n added, or the user is
+// never asked for their password and `sudo` fails in a way that looks like a
+// permissions problem.
+func TestRunAuthorizedLeavesInteractiveSudoAlone(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "sudo")
+	const script = "#!/bin/sh\nprintf 'sudo-argv:'; for a in \"$@\"; do printf ' %s' \"$a\"; done; printf '\\n'\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake sudo: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	res, err := RunAuthorized(context.Background(), "sudo mytool", Options{},
+		Authorization{Confirmed: true})
+	if err != nil {
+		t.Fatalf("RunAuthorized: %v", err)
+	}
+	if strings.Contains(res.Stdout, "-n") {
+		t.Errorf("an interactive run reached sudo with -n: %q; the user is never asked", res.Stdout)
+	}
+}
