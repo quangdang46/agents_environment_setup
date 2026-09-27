@@ -120,9 +120,22 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 		return err
 	}
 
-	// A profile that resolves to nothing is a failure, not a quiet success.
+	// A selection that resolves to nothing is a failure, not a quiet success.
+	//
+	// It is deliberately NOT a usage error. `aes setup --only git` on a machine
+	// where git is proven only on linux/arm64 is a well-formed command naming a
+	// real tool; exit 2 is documented as "invalid usage / bad flags" and an
+	// agent acting on that code rewrites the invocation, which cannot help,
+	// because the invocation was never wrong. The spec's exit table has no code
+	// for "you asked for something this machine has not verified", and 1 is
+	// the honest one: the run could not proceed.
+	//
+	// The message names what was asked for and what this host is, because the
+	// resolver comment claims "doctor can say why the tool is absent" — which
+	// leaves a user with a refusal and no explanation until they go looking.
 	if len(actions) == 0 {
-		return usagef("nothing to install: the resolved profile selected no tools on this platform")
+		return fmt.Errorf("nothing to install: %s",
+			explainEmptySelection(f, rc))
 	}
 
 	// state is a cache, opened once. A corrupt file is an error here and
@@ -187,6 +200,74 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 		return &setupError{code: code}
 	}
 	return nil
+}
+
+// explainEmptySelection says WHY a selection resolved to nothing, in terms the
+// user can act on.
+//
+// The previous message was "the resolved profile selected no tools on this
+// platform" — which names neither the tools nor the platform and offers no
+// remedy, so a user who typed `aes setup --only git` and got a refusal had to
+// go and run `aes doctor` to find out why. The commonest cause is a tool
+// proven on another platform, and that case has a remedy worth naming.
+func explainEmptySelection(f *Flags, rc *runContext) string {
+	here := rc.Host.Key() + "/" + rc.Host.Arch
+
+	if len(f.Only) == 0 {
+		return "the resolved profile selected no tools on this platform " +
+			"(" + here + "). `aes list` shows which tools this host can install; " +
+			"pass --profile or --only to choose explicitly."
+	}
+
+	// Name the tools that were dropped for being unproven HERE, which is the
+	// case where --allow-unproven is the answer. Anything else (no install
+	// target for this OS, say) is named as the general case rather than
+	// guessing which it was.
+	var unprovenHere, other []string
+	for _, name := range f.Only {
+		tool, ok := rc.Catalog.ByName(name)
+		switch {
+		case !ok:
+			other = append(other, name)
+		case tool.Tested && !rc.Host.ProvenOn(tool):
+			unprovenHere = append(unprovenHere, name)
+		default:
+			other = append(other, name)
+		}
+	}
+
+	parts := []string{"no tool in this selection can be installed on " + here}
+	if len(unprovenHere) > 0 {
+		parts = append(parts, "proven only on "+
+			strings.Join(provenElsewhere(rc, unprovenHere), ", ")+
+			", not on this host: "+strings.Join(unprovenHere, ", ")+
+			" — re-run with --allow-unproven to install them anyway")
+	}
+	if len(other) > 0 {
+		parts = append(parts, "not installable here: "+strings.Join(other, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// provenElsewhere is the set of platforms the named tools WERE proven on,
+// which is the thing the user has to weigh against --allow-unproven.
+func provenElsewhere(rc *runContext, names []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, name := range names {
+		tool, ok := rc.Catalog.ByName(name)
+		if !ok {
+			continue
+		}
+		for _, where := range tool.TestedOn {
+			if !seen[where] {
+				seen[where] = true
+				out = append(out, where)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // setupOne runs the install half of the pipeline for a single action and

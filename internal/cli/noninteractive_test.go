@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -187,5 +189,47 @@ func TestNonInteractiveNeverCallsAuthorize(t *testing.T) {
 	}
 	if asked {
 		t.Error("the privilege confirmation was asked for under --non-interactive")
+	}
+}
+
+// A tool that is proven only on another platform must not be reported as a bad
+// invocation.
+//
+// The spec's exit table says 2 is "invalid usage / bad flags". `aes setup
+// --only git` on a machine where git is proven only on linux/arm64 is a
+// well-formed command naming a real tool, and an agent acting on exit 2 goes
+// and rewrites the invocation — which cannot help, because the invocation was
+// never wrong. The resolver's own comment claimed "doctor can say why the
+// tool is absent", which leaves the user with a refusal and no reason.
+func TestEmptySelectionIsAFailureNotAUsageError(t *testing.T) {
+	t.Parallel()
+
+	// A tool marked tested for a platform this test is definitely not on.
+	h := newHarness(t, [3]string{"demo", "utility", "go"})
+	dir := filepath.Join(h.catRoot, "utility", "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "name: demo\ndescription: fixture demo\ncategory: utility\n" +
+		"tested: true\ntested_on:\n  - darwin/arm64\n" +
+		"verify:\n  command: demo\n" +
+		"install:\n  darwin:\n    strategy: go\n    go_package: example.com/demo@v1.0.0\n" +
+		"  linux:\n    strategy: go\n    go_package: example.com/demo@v1.0.0\n"
+	if err := os.WriteFile(filepath.Join(dir, "tool.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write tool.yaml: %v", err)
+	}
+
+	got := h.run("setup", "--only", "demo", "--dry-run")
+	if got == ExitUsage {
+		t.Errorf("exit = %d; a tool proven only elsewhere is not a usage error", got)
+	}
+	if got != ExitFailure {
+		t.Errorf("exit = %d, want %d (a failure to proceed)", got, ExitFailure)
+	}
+	for _, want := range []string{"demo", "darwin/arm64", "--allow-unproven"} {
+		if !strings.Contains(h.stderr.String(), want) {
+			t.Errorf("the message does not mention %q, so the user cannot tell "+
+				"what was refused or what to do: %q", want, h.stderr.String())
+		}
 	}
 }
