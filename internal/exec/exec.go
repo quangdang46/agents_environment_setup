@@ -43,11 +43,23 @@ import (
 	"time"
 )
 
-// Timeouts. Install is the slow case; a version probe must not sit on a network
-// round trip for ten minutes.
+// Timeouts. Install is the slow case; a version probe is bounded but not
+// instant.
+//
+// VerifyTimeout was 5s and that was too tight by a factor of three. `pi
+// --version` measures 3.67s unloaded on a developer machine and 5.02s when the
+// full race suite is running, so a healthy tool on a loaded machine was
+// reported StatusUnknown — a false verdict, and the same class of bug as the
+// ANSI one. Fifteen seconds gives roughly 3x headroom over the worst observed
+// healthy case.
+//
+// Raising it is cheap in the direction that matters: a version probe is
+// read-only and bounded, so a BROKEN tool still fails its own checks and the
+// budget is only spent by a tool that is slow rather than broken. The
+// expensive direction — a hung probe — burns the whole allowance either way.
 const (
 	DefaultTimeout = 10 * time.Minute
-	VerifyTimeout  = 5 * time.Second
+	VerifyTimeout  = 15 * time.Second
 )
 
 // DefaultOutputLimit caps each output stream. A runaway command must not
