@@ -345,6 +345,7 @@ func (t Target) present() map[string]bool {
 		"repository":  t.Repository != "",
 		"asset":       len(t.Asset) > 0,
 		"sha256":      len(t.SHA256) > 0,
+		"binary":      len(t.Binary) > 0,
 		"go_package":  t.GoPackage != "",
 		"npm_package": t.NPMPackage != "",
 		"cargo_name":  t.CargoName != "",
@@ -378,7 +379,13 @@ func (t Target) validate(osName string) error {
 			return err
 		}
 	}
-	if t.Strategy == StrategyGithubRelease {
+	// Every strategy that can carry an arch-keyed map gets its keys checked.
+	// This used to run only for github-release, which left `binary` — added
+	// later and keyed the same way — unvalidated on the other four. The
+	// failure is silent and total: a `go` target with `binary: {x86_64: ...}`
+	// parsed cleanly, and the installer then looked for a file that was never
+	// there.
+	if t.Strategy == StrategyGithubRelease || len(t.Binary) > 0 {
 		if err := t.validateArchMaps(where); err != nil {
 			return err
 		}
@@ -458,12 +465,21 @@ func (t Target) validateManager(where string) error {
 // validateArchMaps enforces the arch vocabulary and the rule that a missing
 // checksum is an error rather than an unchecked download.
 func (t Target) validateArchMaps(where string) error {
+	// 1. Every arch-keyed map must speak Go naming. This runs FIRST, because a
+	//    bad key is the actual mistake and every later check reports a
+	//    consequence of it instead.
+	//
+	//    `binary` was absent from this list, which is the whole bug: a
+	//    `binary: {x86_64: ...}` key passed every check because nothing ever
+	//    looked at it, and the installer then hunted for a file no release
+	//    contains.
 	for _, f := range []struct {
 		name string
 		m    map[string]string
 	}{
 		{"asset", t.Asset},
 		{"sha256", t.SHA256},
+		{"binary", t.Binary},
 	} {
 		for _, arch := range sortedKeys(f.m) {
 			if !contains(supportedGoArches, arch) {
@@ -473,30 +489,40 @@ func (t Target) validateArchMaps(where string) error {
 				return fmt.Errorf("%s: %s key %q is not a Go arch (valid: %s)",
 					where, f.name, arch, strings.Join(supportedGoArches, ", "))
 			}
-			if strings.TrimSpace(f.m[arch]) == "" {
+			// `binary` is exempt: step 3 checks it with wording that also says
+			// why the arch was required, and saying it twice with the weaker
+			// message last would be a regression in the error.
+			if f.name != "binary" && strings.TrimSpace(f.m[arch]) == "" {
 				return fmt.Errorf("%s: %s[%s] is empty", where, f.name, arch)
 			}
 		}
 	}
 
-	// The two maps must cover the same arches, or a release silently ships
-	// without a checksum on exactly one architecture.
+	// 2. asset and sha256 must cover the same arches, or a release ships
+	//    without a checksum on exactly one architecture.
 	for _, arch := range sortedKeys(t.Asset) {
 		if _, ok := t.SHA256[arch]; !ok {
 			return fmt.Errorf("%s: sha256 is missing for arch %q present in asset", where, arch)
 		}
 	}
-	// binary, when declared, must cover exactly the arches asset does. A
-	// binary map with a different key set is the same shape of bug as a
-	// checksum map with one: it validates, and then the installer looks for a
-	// filename the archive does not contain on the one machine that matters.
+	for _, arch := range sortedKeys(t.SHA256) {
+		if _, ok := t.Asset[arch]; !ok {
+			return fmt.Errorf("%s: asset is missing for arch %q present in sha256", where, arch)
+		}
+	}
+
+	// 3. binary, when declared, must cover exactly the arches asset does, and
+	//    every value must name something. A binary map with a different key set
+	//    is the same shape of bug as a checksum map with one: it validates, and
+	//    then the installer looks for a filename the archive does not contain
+	//    on the one machine that matters.
 	if len(t.Binary) > 0 {
 		if len(t.Binary) != len(t.Asset) {
 			return fmt.Errorf("%s: binary covers %d arches but asset covers %d",
 				where, len(t.Binary), len(t.Asset))
 		}
 		for _, arch := range sortedKeys(t.Asset) {
-			if t.Binary[arch] == "" {
+			if strings.TrimSpace(t.Binary[arch]) == "" {
 				return fmt.Errorf("%s: binary is empty for arch %q present in asset", where, arch)
 			}
 		}
@@ -504,12 +530,6 @@ func (t Target) validateArchMaps(where string) error {
 			if _, ok := t.Asset[arch]; !ok {
 				return fmt.Errorf("%s: binary has arch %q which asset does not", where, arch)
 			}
-		}
-	}
-
-	for _, arch := range sortedKeys(t.SHA256) {
-		if _, ok := t.Asset[arch]; !ok {
-			return fmt.Errorf("%s: asset is missing for arch %q present in sha256", where, arch)
 		}
 	}
 	return nil

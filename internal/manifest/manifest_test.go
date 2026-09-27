@@ -347,6 +347,104 @@ install:
 			want: []string{"asset", "arm64"},
 		},
 		{
+			// `binary` is an arch-keyed map exactly like `asset` and `sha256`,
+			// so the same vocabulary applies — and it did not. validateArchMaps
+			// only ran inside the github-release branch, and Target.present()
+			// omitted "binary" entirely, so on the other four strategies the
+			// field was accepted silently AND its keys went unvalidated.
+			//
+			// The two halves fail independently. The rejected-list half means a
+			// `go` target may carry a `binary` map at all; the arch half means
+			// that map's keys are never checked. Either alone is the hole.
+			name: "binary on a non-github-release strategy",
+			yaml: `
+name: bad
+description: binary map where the strategy has none
+provides: [bad]
+install:
+  linux:
+    strategy: go
+    go_package: example.com/bad@v1.0.0
+    binary:
+      amd64: bad
+`,
+			// "must not set field", not a bare "binary": the coverage check
+			// also mentions binary, so a loose substring passes against an
+			// unrelated error and the rejected-list entry could be deleted
+			// without anything noticing.
+			want: []string{"must not set field", "binary"},
+		},
+		{
+			// The uname vocabulary must not reach a binary key either, and this
+			// is the one that has no guard at all today: the github-release
+			// branch validates, the go branch does not.
+			name: "x86_64 binary key",
+			yaml: `
+name: bad
+description: uname arch in a manifest
+provides: [bad]
+install:
+  linux:
+    strategy: github-release
+    repository: owner/repo
+    asset:
+      amd64: tool-linux.tar.gz
+    sha256:
+      amd64: abc
+    binary:
+      x86_64: bad
+`,
+			want: []string{"x86_64", "amd64", "arm64"},
+		},
+		{
+			// The other half of the same hole. `binary` is a github-release
+			// field, so a `go` target carrying one is a manifest that
+			// contradicts itself — and it parsed cleanly until the
+			// rejected-list entry could actually fire.
+			name: "binary on a go target is rejected",
+			yaml: `
+name: bad
+description: binary map on a strategy that has none
+provides: [bad]
+install:
+  linux:
+    strategy: go
+    go_package: example.com/bad@v1.0.0
+    binary:
+      amd64: bad
+`,
+			want: []string{"binary"},
+		},
+		{
+			// The arch vocabulary question on a non-github strategy, and why
+			// this case names `binary` rather than `x86_64`.
+			//
+			// Both are true, and the rejected-field error comes first because
+			// it is the more fundamental one: a `go` target has no `binary` to
+			// be spelled wrongly. Reordering the checks to name the bad arch
+			// would report a consequence and hide the cause.
+			//
+			// It also means the arch-vocabulary rule is unreachable on the
+			// other four strategies today — every one of them rejects `binary`
+			// outright — so the "or carries a binary map" half of the
+			// validation is defence in depth for a future strategy, not
+			// something a test can reach. Said here rather than left for a
+			// reader to assume it is covered.
+			name: "x86_64 binary key on a go target",
+			yaml: `
+name: bad
+description: uname arch in a manifest
+provides: [bad]
+install:
+  linux:
+    strategy: go
+    go_package: example.com/bad@v1.0.0
+    binary:
+      x86_64: bad
+`,
+			want: []string{"must not set field", "binary"},
+		},
+		{
 			// uname's vocabulary has no place inside a manifest.
 			name: "x86_64 asset key",
 			yaml: `
