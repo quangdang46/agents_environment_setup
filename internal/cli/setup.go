@@ -40,6 +40,12 @@ type toolResult struct {
 	// Command is the exact command a human should run, when one is known.
 	Command string `json:"command,omitempty"`
 	Version string `json:"version,omitempty"`
+	// Warnings are things that went wrong without making the tool's outcome
+	// wrong: a backup that could not be taken, a restore that could not
+	// complete. They are reported rather than swallowed because each one is
+	// the reason a future failure will have nothing to roll back to — silent
+	// here means discovered during an outage.
+	Warning []string `json:"warnings,omitempty"`
 }
 
 // summaryOutput is what `aes setup` prints. It is the last thing a user
@@ -241,6 +247,27 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 		res.Status, res.Error = outcomeFailed, err.Error()
 		return res
 	}
+	// Retain the predecessor before anything can replace the binary in place.
+	//
+	// The strategies differ in how badly they need this. github-release
+	// verifies the checksum BEFORE extracting, so a corrupt download never
+	// becomes a working install. go install, npm -g, cargo install and uv
+	// REPLACE the file, and if the result crashes we have destroyed a working
+	// install with no way back. Retaining is a no-op on a first install, so
+	// the cost is one file copy on a reinstall and nothing otherwise.
+	prevPath := ""
+	if dest, ok := app.registry().DestinationFor(ctx, target.Strategy); ok && dest != "" {
+		binPath := filepath.Join(dest, installNameOf(tool))
+		if err := installer.Retain(binPath); err != nil {
+			// Failing to retain is worth saying out loud but is not a reason to
+			// refuse an install: the user still gets the tool they asked for,
+			// and the alternative is turning a backup problem into an outage.
+			res.Warning = append(res.Warning, "could not retain the previous binary: "+err.Error())
+		} else {
+			prevPath = binPath
+		}
+	}
+
 	installErr := inst.Install(ctx, installer.Action{
 		Tool: a.Tool,
 		// The installed filename comes from the manifest's own verify.command,
@@ -282,10 +309,53 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 	// success is exactly the drift doctor exists to clean up.
 	after := verifier.Verify(tool)
 	if after.Status != verifier.StatusOK {
+		// A probe that ran and exited non-zero means the binary is BROKEN, not
+		// merely unreadable, and the difference decides what happens to the
+		// predecessor. StatusUnknown covers both cases; ProbeFailed is what
+		// tells them apart.
+		//
+		// A timeout never sets it. A slow binary is not a broken one, and
+		// reverting a working install over a slow probe is how a repair turns
+		// into damage — which is the failure this whole mechanism exists to
+		// prevent, arriving by the opposite route.
+		if prevPath != "" {
+			if after.ProbeFailed {
+				if restored, rerr := installer.Restore(prevPath); rerr != nil {
+					res.Warning = append(res.Warning, "could not restore the previous binary: "+rerr.Error())
+				} else if restored {
+					res.Error = "the installed binary does not run; the previous one has been restored"
+					// Deliberately not "working": the predecessor may well be a
+					// stale build, since that is the state in which an ecosystem
+					// install overwrites a file at all. Calling it working
+					// would be a claim nobody checked.
+					res.Warning = append(res.Warning,
+						"the installed binary does not run, so the previous one was put back "+
+							"(it may be older than what was just installed); reinstall once the cause is fixed")
+				} else {
+					res.Warning = append(res.Warning,
+						"the installed binary does not run and there was no previous one to restore")
+				}
+			} else {
+				// OK, stale, or unknown-but-running: the new binary is not
+				// broken, so the predecessor has served its purpose. Leaving it
+				// would leave a stale copy nobody can distinguish from truth.
+				if derr := installer.Discard(prevPath); derr != nil {
+					res.Warning = append(res.Warning, "could not remove the retained binary: "+derr.Error())
+				}
+			}
+		}
 		res.Status = outcomeFailed
 		res.Version = after.Version
-		res.Error = fmt.Sprintf("installed but verification says %s", after.Status)
+		if res.Error == "" {
+			res.Error = fmt.Sprintf("installed but verification says %s", after.Status)
+		}
 		return res
+	}
+	if prevPath != "" {
+		// Verified working: the retained copy is now dead weight.
+		if derr := installer.Discard(prevPath); derr != nil {
+			res.Warning = append(res.Warning, "could not remove the retained binary: "+derr.Error())
+		}
 	}
 
 	// 7: state, only now.

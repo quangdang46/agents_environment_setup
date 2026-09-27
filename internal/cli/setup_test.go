@@ -39,6 +39,15 @@ type setupHarness struct {
 	installErr error
 	// privErr, when set, makes every install return a PrivilegeError.
 	privErr error
+	// breakInstall makes the next install write a binary that exits non-zero
+	// on --version: the thing an ecosystem installer can leave behind, and the
+	// only failure the rollback exists to repair.
+	breakInstall bool
+	// installVersion is what a non-broken install writes. Empty means the
+	// default 9.9.9; a lower one produces a tool that is present but below the
+	// declared minimum, which is the OTHER wrong answer a rollback must not
+	// treat as broken.
+	installVersion string
 }
 
 // toolSpec describes one catalog entry.
@@ -81,10 +90,14 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 		}
 		verify := ""
 		if s.minVersion != "" {
-			// verify.command is mandatory whenever a version check is
-			// declared, so the presence check stays honest.
-			verify = "verify:\n  command: " + s.provides + " --version\n  version:\n    command: " +
-				s.provides + " --version\n    min: \"" + s.minVersion + "\"\n"
+			// verify.command is a BARE BINARY, resolved with LookPath — the
+			// arguments belong in verify.version.command. This fixture wrote
+			// "tool --version" into the command field, which can never resolve,
+			// so every test that set minVersion would have reported the tool
+			// missing. Nothing used this path, which is why it went unnoticed.
+			verify = "verify:\n  command: " + s.provides +
+				"\n  version:\n    command: " + s.provides +
+				" --version\n    min: \"" + s.minVersion + "\"\n"
 		}
 		content := "name: " + s.name + "\ndescription: fixture " + s.name + "\ncategory: " + s.category +
 			"\nprovides: [" + s.provides + "]\n" + verify +
@@ -115,15 +128,26 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 	// The recording installer replaces the go strategy. Recording the
 	// strategy is how "install runs the resolved strategy" is asserted: a
 	// switch on the tool name would show up here as the wrong name.
-	h.app.Registry.Register(manifest.StrategyGo, installerFunc(h.install))
+	h.app.Registry.Register(manifest.StrategyGo, installerFunc{fn: h.install, dest: binDir})
 
 	return h
 }
 
-// installerFunc adapts a func to installer.Installer.
-type installerFunc func(ctx context.Context, a installer.Action) error
+// installerFunc adapts a func to installer.Installer, and reports a
+// destination the way the real Ecosystem installer does.
+//
+// The destination is not decoration: `aes` resolves an action's binary path
+// through it, and the rollback path retains that path's predecessor. A fake
+// that omitted Destiner would make the whole mechanism untestable — it would
+// look like rollback was never wired up, when in fact the fixture had nowhere
+// to put a binary.
+type installerFunc struct {
+	fn   func(ctx context.Context, a installer.Action) error
+	dest string
+}
 
-func (f installerFunc) Install(ctx context.Context, a installer.Action) error { return f(ctx, a) }
+func (f installerFunc) Install(ctx context.Context, a installer.Action) error { return f.fn(ctx, a) }
+func (f installerFunc) Destination(context.Context) string                    { return f.dest }
 
 // install records the call and, unless told otherwise, makes the tool's
 // binary appear by writing an executable into binDir.
@@ -141,7 +165,18 @@ func (h *setupHarness) install(ctx context.Context, a installer.Action) error {
 	}
 	// A real executable, so the post-install Verify genuinely passes.
 	bin := filepath.Join(h.binDir, a.Tool)
-	return os.WriteFile(bin, []byte("#!/bin/sh\necho "+a.Tool+" 9.9.9\n"), 0o755)
+	h.mu.Lock()
+	broken := h.breakInstall
+	h.breakInstall = false
+	h.mu.Unlock()
+	if broken {
+		return os.WriteFile(bin, []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	}
+	version := "9.9.9"
+	if h.installVersion != "" {
+		version = h.installVersion
+	}
+	return os.WriteFile(bin, []byte("#!/bin/sh\necho "+a.Tool+" "+version+"\n"), 0o755)
 }
 
 func (h *setupHarness) invocations() []string {
@@ -327,12 +362,15 @@ func TestInstallWithoutVerifyWritesNoState(t *testing.T) {
 	h.mu.Lock()
 	h.installErr = nil
 	h.mu.Unlock()
-	h.app.Registry.Register(manifest.StrategyGo, installerFunc(func(context.Context, installer.Action) error {
-		h.mu.Lock()
-		h.calls = append(h.calls, "ghost")
-		h.mu.Unlock()
-		return nil // claims success, installs nothing
-	}))
+	h.app.Registry.Register(manifest.StrategyGo, installerFunc{
+		fn: func(context.Context, installer.Action) error {
+			h.mu.Lock()
+			h.calls = append(h.calls, "ghost")
+			h.mu.Unlock()
+			return nil // claims success, installs nothing
+		},
+		dest: h.binDir,
+	})
 
 	code, sum := h.run(t, "--only", "ghost")
 	if code != ExitVerifyFailed {
@@ -353,15 +391,18 @@ func TestFailureIsContained(t *testing.T) {
 		toolSpec{name: "bad", category: "utility", provides: "bad"},
 	)
 
-	h.app.Registry.Register(manifest.StrategyGo, installerFunc(func(ctx context.Context, a installer.Action) error {
-		h.mu.Lock()
-		h.calls = append(h.calls, a.Tool)
-		h.mu.Unlock()
-		if a.Tool == "bad" {
-			return errors.New("network unreachable")
-		}
-		return os.WriteFile(filepath.Join(h.binDir, a.Tool), []byte("#!/bin/sh\necho "+a.Tool+" 9.9.9\n"), 0o755)
-	}))
+	h.app.Registry.Register(manifest.StrategyGo, installerFunc{
+		fn: func(ctx context.Context, a installer.Action) error {
+			h.mu.Lock()
+			h.calls = append(h.calls, a.Tool)
+			h.mu.Unlock()
+			if a.Tool == "bad" {
+				return errors.New("network unreachable")
+			}
+			return os.WriteFile(filepath.Join(h.binDir, a.Tool), []byte("#!/bin/sh\necho "+a.Tool+" 9.9.9\n"), 0o755)
+		},
+		dest: h.binDir,
+	})
 
 	code, sum := h.run(t, "--only", "good", "--only", "bad")
 	if code != ExitVerifyFailed {
@@ -389,9 +430,12 @@ func TestFailureIsContained(t *testing.T) {
 func TestPrivilegeStepIsReported(t *testing.T) {
 	h := newSetupHarness(t, toolSpec{name: "apt-tool", category: "utility", provides: "apt-tool"})
 
-	h.app.Registry.Register(manifest.StrategyGo, installerFunc(func(context.Context, installer.Action) error {
-		return &exec.PrivilegeError{Command: "sudo apt-get install -y jq", NonInteractive: true}
-	}))
+	h.app.Registry.Register(manifest.StrategyGo, installerFunc{
+		fn: func(context.Context, installer.Action) error {
+			return &exec.PrivilegeError{Command: "sudo apt-get install -y jq", NonInteractive: true}
+		},
+		dest: h.binDir,
+	})
 
 	code, sum := h.run(t, "--only", "apt-tool")
 	if code != ExitNeedsPrivilege {
@@ -472,5 +516,188 @@ func TestSetupNeverBlocks(t *testing.T) {
 	case <-done:
 	case <-timeoutAfterSeconds(10):
 		t.Fatal("aes setup blocked; it must never wait on input")
+	}
+}
+
+// eu4, end to end: an ecosystem install replaces an existing binary with one
+// that does not run, and the previous one comes back.
+//
+// The sequence is the whole failure, and getting it right took a correction.
+// The obvious version of this test — install, delete the binary, install again
+// — cannot work: deleting it means there is no predecessor to retain, and
+// `aes` correctly reports that rather than inventing one. An ecosystem install
+// only overwrites a file that is ALREADY there, and the only state in which
+// setup installs over a present file is when that file is STALE. So the
+// predecessor being protected here is a stale build, not a good one.
+//
+// That is the honest shape of the defect, and it is why restoring it is still
+// right: the alternative on offer is a binary that does not run at all, and a
+// stale one beats that on every axis.
+//
+// github-release cannot reach this state — it verifies the checksum before
+// extracting. The strategies that replace a file in place can, which is why
+// the fixture registers one of those.
+func TestBrokenInstallRestoresThePreviousBinary(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{
+		name: "tool", category: "utility", provides: "tool", minVersion: "1.0.0",
+	})
+
+	if code, sum := h.run(t, "--only", "tool"); code != ExitOK {
+		t.Fatalf("first install: exit = %d, want 0 (%v)", code, sum)
+	}
+	bin := filepath.Join(h.binDir, "tool")
+
+	// Age the installed binary in place, the way a machine does between runs.
+	// It is now present but below the declared minimum, so the next setup is an
+	// install candidate and the ecosystem will write over it.
+	const stale = "#!/bin/sh\necho tool 0.5.0\n"
+	if err := os.WriteFile(bin, []byte(stale), 0o755); err != nil {
+		t.Fatalf("age the binary: %v", err)
+	}
+
+	h.mu.Lock()
+	h.breakInstall = true
+	h.mu.Unlock()
+
+	code, sum := h.run(t, "--only", "tool")
+	if code == ExitOK {
+		t.Fatal("an install that produced a non-running binary exited 0")
+	}
+	if sum == nil {
+		t.Fatal("no summary")
+	}
+
+	after, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatalf("eu4: the binary is gone entirely; a working install was destroyed. %v", err)
+	}
+	if string(after) == "#!/bin/sh\nexit 1\n" {
+		t.Error("eu4: the broken binary is still in place; the predecessor was not restored")
+	}
+	if string(after) != stale {
+		t.Errorf("eu4: the restored binary is %q, want the predecessor %q", after, stale)
+	}
+	if _, err := os.Stat(installer.PrevPath(bin)); !os.IsNotExist(err) {
+		t.Error("eu4: a .prev survived the restore")
+	}
+	// And the failure is reported rather than swallowed.
+	if !strings.Contains(strings.Join(sum.Results[0].Warning, " "), "put back") {
+		t.Errorf("the run did not say the previous binary was restored: %v", sum.Results[0].Warning)
+	}
+}
+
+// A probe that came back OK must not leave a .prev behind. A tool that is
+// never reinstalled would otherwise carry a stale copy of itself indefinitely,
+// with nothing in the directory saying which file is the truth.
+func TestSuccessfulInstallLeavesNoRetainedBinary(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{
+		name: "tool", category: "utility", provides: "tool", minVersion: "1.0.0",
+	})
+	if code, sum := h.run(t, "--only", "tool"); code != ExitOK {
+		t.Fatalf("install: exit = %d, want 0 (%v)", code, sum)
+	}
+	// A second install with the binary removed retains, then discards.
+	bin := filepath.Join(h.binDir, "tool")
+	if err := os.Remove(bin); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if code, sum := h.run(t, "--only", "tool"); code != ExitOK {
+		t.Fatalf("reinstall: exit = %d, want 0 (%v)", code, sum)
+	}
+	if _, err := os.Stat(installer.PrevPath(bin)); !os.IsNotExist(err) {
+		t.Error("a .prev survived a successful reinstall; a stale copy is indistinguishable from a fresh one")
+	}
+}
+
+// The first install has no predecessor. That must not be reported as a failed
+// restore — there was simply nothing to put back, which is a different and much
+// less alarming fact.
+func TestFirstInstallThatBreaksHasNothingToRestore(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{
+		name: "tool", category: "utility", provides: "tool", minVersion: "1.0.0",
+	})
+	h.mu.Lock()
+	h.breakInstall = true
+	h.mu.Unlock()
+
+	code, sum := h.run(t, "--only", "tool")
+	if code == ExitOK {
+		t.Fatal("a broken first install exited 0")
+	}
+	warnings := strings.Join(sum.Results[0].Warning, " ")
+	if !strings.Contains(warnings, "no previous one") {
+		t.Errorf("warnings = %q, want them to say there was no previous binary rather than implying a failed restore", warnings)
+	}
+}
+
+// The over-correction, and the one that matters most here.
+//
+// A tool that installs to a version BELOW its minimum is a wrong answer, but it
+// is not a broken one: the binary runs, and rolling back would replace it with
+// something even older. Every other bug in this bead is about restoring too
+// little; this is about restoring too much, and it is the direction that
+// quietly reverts a user's upgrade.
+func TestStaleInstallIsNotRolledBack(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{
+		name: "tool", category: "utility", provides: "tool", minVersion: "1.0.0",
+	})
+	if code, sum := h.run(t, "--only", "tool"); code != ExitOK {
+		t.Fatalf("first install: exit = %d, want 0 (%v)", code, sum)
+	}
+	bin := filepath.Join(h.binDir, "tool")
+
+	// Age it so the next setup is an install candidate with a predecessor.
+	const stale = "#!/bin/sh\necho tool 0.5.0\n"
+	if err := os.WriteFile(bin, []byte(stale), 0o755); err != nil {
+		t.Fatalf("age: %v", err)
+	}
+	// The reinstall produces a DIFFERENT stale version: present, runs, below
+	// the minimum. A rollback would replace this with the 0.5.0 predecessor.
+	h.mu.Lock()
+	h.installVersion = "0.6.0"
+	h.mu.Unlock()
+
+	code, sum := h.run(t, "--only", "tool")
+	if code != ExitVerifyFailed {
+		t.Fatalf("exit = %d, want %d — a stale tool is still a failed verification", code, ExitVerifyFailed)
+	}
+	after, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatalf("binary gone: %v", err)
+	}
+	if !strings.Contains(string(after), "0.6.0") {
+		t.Errorf("the reinstall produced %q; a STALE install was rolled back to %q. "+
+			"Stale is wrong, but the binary runs, and reverting a working upgrade "+
+			"to an older one is worse than leaving it stale", after, stale)
+	}
+	if _, err := os.Stat(installer.PrevPath(bin)); !os.IsNotExist(err) {
+		t.Error("a .prev survived a stale install; the predecessor should be discarded there too")
+	}
+	_ = sum
+}
+
+// A successful reinstall over a predecessor must clear it. The earlier version
+// of this test deleted the binary first, which meant Retain had nothing to
+// retain — so no .prev was ever created and the assertion passed without
+// anything having happened.
+func TestSuccessfulReinstallClearsTheRetainedBinary(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{
+		name: "tool", category: "utility", provides: "tool", minVersion: "1.0.0",
+	})
+	if code, sum := h.run(t, "--only", "tool"); code != ExitOK {
+		t.Fatalf("first install: exit = %d, want 0 (%v)", code, sum)
+	}
+	bin := filepath.Join(h.binDir, "tool")
+
+	// Age it so the next run genuinely retains a predecessor before replacing.
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho tool 0.5.0\n"), 0o755); err != nil {
+		t.Fatalf("age: %v", err)
+	}
+	if code, sum := h.run(t, "--only", "tool"); code != ExitOK {
+		t.Fatalf("reinstall: exit = %d, want 0 (%v)", code, sum)
+	}
+	if _, err := os.Stat(installer.PrevPath(bin)); !os.IsNotExist(err) {
+		t.Error("a .prev survived a successful reinstall; a stale copy of the binary is " +
+			"indistinguishable from a current one to anyone reading the directory")
 	}
 }
