@@ -571,3 +571,21 @@ func contains(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// RequiresPrivilege reports whether a target's strategy needs root.
+//
+// It lives here rather than in installer because it is a fact about a MANIFEST's
+// own fields, and this is the only package both the resolver and the installer
+// can reach — resolver must not import installer (that would invert the
+// layering), so a derivation kept in installer could only be reached by the
+// installer and copied by the resolver.
+//
+// It had been copied. Two byte-identical definitions existed, and the
+// installer's carried a comment saying the derivation lived there "so the
+// resolver, the installer and the CLI cannot drift apart" — which is the
+// opposite of what two copies guarantee. This is the eighth instance of that
+// shape in this project, and the cure is always the same: one declaration, and
+// the second one deleted rather than left as a fallback.
+func RequiresPrivilege(t Target) bool {
+	return t.Strategy == StrategyPackage && t.Manager == ManagerApt
+}

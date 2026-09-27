@@ -207,15 +207,6 @@ func (r *Registry) DestinationFor(ctx context.Context, strategy string) (string,
 	return destinationFor(ctx, inst)
 }
 
-// RequiresPrivilege reports whether a strategy needs root.
-//
-// It is derived from the strategy, never read from YAML (invariant I2). The
-// derivation lives here so the resolver, the installer and the CLI cannot
-// drift apart on which strategies escalate.
-func RequiresPrivilege(target manifest.Target) bool {
-	return target.Strategy == manifest.StrategyPackage && target.Manager == manifest.ManagerApt
-}
-
 // binaryName is the filename a tool's binary is expected to have inside its
 // release archive: the tool name, unless the strategy was configured with an
 // override. A tool whose binary is named differently from the tool (ripgrep

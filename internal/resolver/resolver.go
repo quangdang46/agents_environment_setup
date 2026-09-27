@@ -155,7 +155,7 @@ func Resolve(c *catalog.Catalog, req Request, h *platform.Host) ([]Action, error
 			Strategy:          target.Strategy,
 			Operation:         OpInstall,
 			Host:              h,
-			RequiresPrivilege: requiresPrivilege(target),
+			RequiresPrivilege: manifest.RequiresPrivilege(target),
 			Reason:            closure[name],
 		})
 	}
@@ -164,9 +164,6 @@ func Resolve(c *catalog.Catalog, req Request, h *platform.Host) ([]Action, error
 
 // requiresPrivilege is the whole of the privilege model: a strategy needs root
 // or it does not, and the catalog never gets a say (I2).
-func requiresPrivilege(t manifest.Target) bool {
-	return t.Strategy == manifest.StrategyPackage && t.Manager == manifest.ManagerApt
-}
 
 // selectTools picks the roots of the resolution.
 //

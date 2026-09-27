@@ -159,58 +159,6 @@ func TestEcosystemRequiresToolchain(t *testing.T) {
 	}
 }
 
-// TestNoEcosystemNeedsPrivilege is the assertion the bead asks for: this must
-// be a derived fact, not an assumption. All four write to user-owned
-// directories.
-func TestNoEcosystemNeedsPrivilege(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		strategy string
-		target   manifest.Target
-	}{
-		{manifest.StrategyGo, manifest.Target{Strategy: manifest.StrategyGo, GoPackage: "x@v1"}},
-		{manifest.StrategyNPM, manifest.Target{Strategy: manifest.StrategyNPM, NPMPackage: "x@1"}},
-		{manifest.StrategyCargo, manifest.Target{Strategy: manifest.StrategyCargo, CargoName: "x@1"}},
-		{manifest.StrategyUV, manifest.Target{Strategy: manifest.StrategyUV, UVPackage: "x@1"}},
-	} {
-		if RequiresPrivilege(tc.target) {
-			t.Errorf("strategy %s requires privilege, want false", tc.strategy)
-		}
-	}
-}
-
-// TestOnlyAptNeedsPrivilege pins the other half of the derivation: exactly
-// one strategy-manager pair escalates, and nothing else does.
-func TestOnlyAptNeedsPrivilege(t *testing.T) {
-	t.Parallel()
-
-	escalating := manifest.Target{Strategy: manifest.StrategyPackage, Manager: manifest.ManagerApt}
-	if !RequiresPrivilege(escalating) {
-		t.Error("package+apt should require privilege")
-	}
-	for _, notEscalating := range []manifest.Target{
-		{Strategy: manifest.StrategyPackage, Manager: manifest.ManagerBrew},
-		{Strategy: manifest.StrategyGithubRelease},
-		{Strategy: manifest.StrategyGo},
-		{Strategy: manifest.StrategyNPM},
-		{Strategy: manifest.StrategyCargo},
-		{Strategy: manifest.StrategyUV},
-		// A strategy other than package carrying a stray apt manager must
-		// still not escalate. manifest validation rejects this combination,
-		// so it is unreachable through a parsed manifest — but the
-		// derivation is documented as being on (Strategy, Manager), and
-		// this is the case that pins the Strategy half of that pair. A
-		// Manager-only check would pass every other case here.
-		{Strategy: manifest.StrategyGithubRelease, Manager: manifest.ManagerApt},
-		{Strategy: manifest.StrategyGo, Manager: manifest.ManagerApt},
-	} {
-		if RequiresPrivilege(notEscalating) {
-			t.Errorf("%s should not require privilege", notEscalating.Strategy)
-		}
-	}
-}
-
 // TestEcosystemDestination feeds envgen. A go tool that installed into
 // ~/go/bin is installed and not runnable unless that directory reaches PATH.
 func TestEcosystemDestination(t *testing.T) {

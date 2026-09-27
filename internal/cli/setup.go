@@ -385,7 +385,7 @@ func recordInstalled(store *state.Store, tool *manifest.Tool, target manifest.Ta
 	}
 	store.Set(tool.Name, state.Installed{
 		Strategy:    target.Strategy,
-		Privileged:  installer.RequiresPrivilege(target),
+		Privileged:  manifest.RequiresPrivilege(target),
 		Version:     version,
 		InstalledAt: installedAt,
 	})

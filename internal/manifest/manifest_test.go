@@ -768,3 +768,55 @@ func TestBinaryMapCoversExactlyTheAssetArches(t *testing.T) {
 		})
 	}
 }
+
+// TestNoEcosystemNeedsPrivilege is the assertion the bead asks for: this must
+// be a derived fact, not an assumption. All four write to user-owned
+// directories.
+func TestNoEcosystemNeedsPrivilege(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		strategy string
+		target   Target
+	}{
+		{StrategyGo, Target{Strategy: StrategyGo, GoPackage: "x@v1"}},
+		{StrategyNPM, Target{Strategy: StrategyNPM, NPMPackage: "x@1"}},
+		{StrategyCargo, Target{Strategy: StrategyCargo, CargoName: "x@1"}},
+		{StrategyUV, Target{Strategy: StrategyUV, UVPackage: "x@1"}},
+	} {
+		if RequiresPrivilege(tc.target) {
+			t.Errorf("strategy %s requires privilege, want false", tc.strategy)
+		}
+	}
+}
+
+// TestOnlyAptNeedsPrivilege pins the other half of the derivation: exactly
+// one strategy-manager pair escalates, and nothing else does.
+func TestOnlyAptNeedsPrivilege(t *testing.T) {
+	t.Parallel()
+
+	escalating := Target{Strategy: StrategyPackage, Manager: ManagerApt}
+	if !RequiresPrivilege(escalating) {
+		t.Error("package+apt should require privilege")
+	}
+	for _, notEscalating := range []Target{
+		{Strategy: StrategyPackage, Manager: ManagerBrew},
+		{Strategy: StrategyGithubRelease},
+		{Strategy: StrategyGo},
+		{Strategy: StrategyNPM},
+		{Strategy: StrategyCargo},
+		{Strategy: StrategyUV},
+		// A strategy other than package carrying a stray apt manager must
+		// still not escalate. manifest validation rejects this combination,
+		// so it is unreachable through a parsed manifest — but the
+		// derivation is documented as being on (Strategy, Manager), and
+		// this is the case that pins the Strategy half of that pair. A
+		// Manager-only check would pass every other case here.
+		{Strategy: StrategyGithubRelease, Manager: ManagerApt},
+		{Strategy: StrategyGo, Manager: ManagerApt},
+	} {
+		if RequiresPrivilege(notEscalating) {
+			t.Errorf("%s should not require privilege", notEscalating.Strategy)
+		}
+	}
+}

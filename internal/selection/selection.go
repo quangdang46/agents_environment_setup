@@ -74,17 +74,17 @@ func (s Selection) String() string {
 // user needs to know about.
 func Resolve(c *catalog.Catalog, h *platform.Host, sel Selection) ([]resolver.Action, error) {
 	if c == nil {
-		return nil, fmt.Errorf("plan: no catalog")
+		return nil, fmt.Errorf("selection: no catalog")
 	}
 	if h == nil {
-		return nil, fmt.Errorf("plan: no host")
+		return nil, fmt.Errorf("selection: no host")
 	}
 	if sel.Empty() {
 		return nil, nil
 	}
 	for _, name := range sel.Names() {
 		if _, ok := c.ByName(name); !ok {
-			return nil, fmt.Errorf("plan: no tool named %q in the catalog", name)
+			return nil, fmt.Errorf("selection: no tool named %q in the catalog", name)
 		}
 	}
 	return resolver.Resolve(c, resolver.Request{
