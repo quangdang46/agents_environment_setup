@@ -66,11 +66,25 @@ var supportedGoArches = []string{"amd64", "arm64"}
 // Tool is one declarative unit describing a tool: how to install it per
 // platform, how to tell it is present, and what it needs.
 type Tool struct {
-	Name         string            `yaml:"name"`
-	Description  string            `yaml:"description"`
-	Category     string            `yaml:"category,omitempty"`
-	Default      bool              `yaml:"default,omitempty"`
-	Tested       bool              `yaml:"tested,omitempty"`
+	Name        string `yaml:"name"`
+	Description string `yaml:"description"`
+	Category    string `yaml:"category,omitempty"`
+	Default     bool   `yaml:"default,omitempty"`
+	Tested      bool   `yaml:"tested,omitempty"`
+	// TestedOn records WHERE this was proven, as GOOS/GOARCH pairs.
+	//
+	// Tested alone is a single bool against a per-platform fact. The Layer 2
+	// container proves an install path, and that path differs by platform: a
+	// different asset, a different extraction, sometimes a different package
+	// manager. A bool set from a linux/arm64 run asserts something about macOS
+	// that was never measured, and `require_tested` reads the bool, not a
+	// comment.
+	//
+	// Empty means "the reference platform", which keeps a one-platform tool
+	// from carrying ceremony. Non-empty is what a multi-platform proof needs,
+	// and it is checked against the host before the tool is resolved, so an
+	// unproven host skips rather than silently installing.
+	TestedOn     []string          `yaml:"tested_on,omitempty"`
 	Tags         []string          `yaml:"tags,omitempty"`
 	Provides     []string          `yaml:"provides,omitempty"`
 	Dependencies []string          `yaml:"dependencies,omitempty"`
@@ -197,6 +211,10 @@ var nameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // else is a catalog-load error rather than a runtime surprise.
 var minRe = regexp.MustCompile(`^v?\d+(\.\d+)*$`)
 
+// testedOnRe matches a GOOS/GOARCH pair. It uses the same vocabulary as the
+// `install:` map, so a value here means what the same word means there.
+var testedOnRe = regexp.MustCompile(`^(darwin|linux)/(amd64|arm64)$`)
+
 // removedFields are schema fields from the pre-spec plugin format. Unknown
 // fields already fail parsing; this map upgrades that failure into a message
 // that tells the author what to do instead.
@@ -240,6 +258,11 @@ func Parse(data []byte) (*Tool, error) {
 // Validate reports the first structural problem with the manifest. Errors
 // name the offending field so an author can fix it without guessing.
 func (t *Tool) Validate() error {
+	for _, where := range t.TestedOn {
+		if !testedOnRe.MatchString(where) {
+			return fmt.Errorf("tested_on has %q, want GOOS/GOARCH (darwin/arm64, linux/amd64)", where)
+		}
+	}
 	if t.Name == "" {
 		return fmt.Errorf("name is required")
 	}

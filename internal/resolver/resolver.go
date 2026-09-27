@@ -141,6 +141,15 @@ func Resolve(c *catalog.Catalog, req Request, h *platform.Host) ([]Action, error
 		if !ok {
 			continue // I12: this tool does not run here.
 		}
+		if tool.Tested && !h.ProvenOn(tool) {
+			// The tool claims to be verified, but not on this platform. A
+			// Layer 2 proof is per-platform - a different asset, a different
+			// package manager - so treating the flag as global would install
+			// something this host has never verified and report it as done.
+			// Skipping keeps the claim honest without blocking the run; doctor
+			// can say why the tool is absent.
+			continue
+		}
 		actions = append(actions, Action{
 			Tool:              name,
 			Strategy:          target.Strategy,

@@ -529,3 +529,46 @@ func TestStringRendersEveryAction(t *testing.T) {
 		t.Errorf("String() = %q", got)
 	}
 }
+
+// A tool marked tested was proven on ONE platform. Resolving on another must
+// skip it rather than install something this host has never verified and report
+// the result as done.
+func TestUnprovenPlatformIsSkipped(t *testing.T) {
+	proved := "linux/arm64"
+	c := build(t, spec{name: "was-here", isDefault: true, platforms: []string{"darwin", "linux"}})
+	// Set the flags on the CATALOG's copy, which is the one the resolver reads.
+	// Building a separate manifest here would prove nothing: a second Tool with
+	// the same name is not the tool that gets resolved.
+	tool, ok := c.ByName("was-here")
+	if !ok {
+		t.Fatal("was-here missing from the catalog")
+	}
+	tool.Tested = true
+	tool.TestedOn = []string{proved}
+
+	// On the platform it was proven for, it resolves.
+	onProven := &platform.Host{OS: platform.OSLinux, Arch: platform.ArchARM64}
+	actions, err := Resolve(c, Request{}, onProven)
+	if err != nil {
+		t.Fatalf("Resolve on the proven platform: %v", err)
+	}
+	if toolOrder(actions) != "was-here" {
+		t.Errorf("on %s the tool should resolve, got %q", proved, toolOrder(actions))
+	}
+
+	// On a host it was never proven for, it is skipped - not an error, since an
+	// unsupported platform is a skip (I12) and an unproven one is the same
+	// kind of fact about this machine.
+	other := &platform.Host{OS: platform.OSDarwin, Arch: platform.ArchARM64}
+	actions, err = Resolve(c, Request{}, other)
+	if err != nil {
+		t.Fatalf("Resolve on an unproven platform: %v", err)
+	}
+	if len(actions) != 0 {
+		t.Errorf("on darwin/arm64 the tool was proven only on %s and should be skipped, got %q",
+			proved, toolOrder(actions))
+	}
+	if actions == nil {
+		t.Error("actions is nil; callers must be able to range over it without a nil check")
+	}
+}

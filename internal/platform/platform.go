@@ -204,3 +204,30 @@ func unameArchToGo(m string) string {
 		return ""
 	}
 }
+
+// ProvenOn reports whether a tool marked tested was actually proven on this
+// host.
+//
+// It is the difference between a flag that records what was measured and one
+// that records that something was measured somewhere. `Tested` alone cannot
+// distinguish "verified on linux/arm64" from "verified on every platform",
+// and a Layer 2 install path genuinely differs by platform: a different
+// release asset, a different archive, a different package manager. Treating an
+// unproven host as proven is how aes ends up installing tools it has never
+// checked and calling the result verified.
+//
+// A tool with no TestedOn is treated as proven here: for a single-platform
+// tool, or one verified from the reference platform, requiring the annotation
+// would be ceremony.
+func (h *Host) ProvenOn(t *manifest.Tool) bool {
+	if len(t.TestedOn) == 0 {
+		return true
+	}
+	want := h.Key() + "/" + h.Arch
+	for _, where := range t.TestedOn {
+		if where == want {
+			return true
+		}
+	}
+	return false
+}
