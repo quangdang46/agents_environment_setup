@@ -252,6 +252,10 @@ const (
 	driftDrifted   driftKind = "drifted"   // state says installed, binary is gone
 	driftOutdated  driftKind = "outdated"  // state says installed, below declared min
 	driftUnmanaged driftKind = "unmanaged" // present, but aes does not track it
+	// driftShadowed is a tool aes verified whose name is aliased to something
+	// else in the user's shell rc. The binary is real and the check passed;
+	// what the user's shell runs is not it.
+	driftShadowed driftKind = "shadowed"
 )
 
 // finding is one line of `aes doctor` output.
@@ -310,6 +314,7 @@ func runDoctor(ctx context.Context, app *App, f *Flags, extra any, args []string
 		}
 	}
 	addEnvFindings(app, rc, add)
+	addAliasFindings(app, rc, st, add)
 
 	if f.JSON {
 		if !rep.OK {
