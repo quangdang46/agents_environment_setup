@@ -404,6 +404,14 @@ func printSummary(app *App, sum summaryOutput) {
 
 // withBinOnPath prepends dir to PATH for the duration of a run and returns a
 // function restoring the previous value.
+//
+// WARNING: this mutates process-global state. Go's race detector does NOT
+// instrument os.Setenv, so a test that runs in parallel with one of these
+// commands will not be reported — the failure is a wrong PATH, not a data race.
+//
+// No test that calls t.Parallel() may reach a command using this. That is
+// enforced by TestNoParallelTestReachesPathMutation, not by the compiler, and
+// nothing else in the type system would notice.
 func withBinOnPath(dir string) func() {
 	old, had := os.LookupEnv("PATH")
 	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+old); err != nil {

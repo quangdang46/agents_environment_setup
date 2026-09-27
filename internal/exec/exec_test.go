@@ -414,3 +414,44 @@ func TestPrivilegeErrorMessageNamesTheCommand(t *testing.T) {
 		t.Errorf("formatted error %q lost the command", err)
 	}
 }
+
+// The rewrite is tested directly rather than inferred from whether a
+// subprocess ran, because the whole failure is silent: an unrewritten command
+// still executes, it just blocks on a password first.
+func TestWithNonInteractiveSudo(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"sudo apt-get install jq", "sudo -n apt-get install jq"},
+		{"/usr/bin/sudo apt-get install jq", "sudo -n apt-get install jq"},
+		{"/bin/sudo id", "sudo -n id"},
+		{"sudo -n id", "sudo -n id"}, // already rewritten
+		{"echo hi; sudo reboot", "echo hi; sudo -n reboot"},
+		{"echo hi && sudo reboot", "echo hi && sudo -n reboot"},
+		{"/usr/bin/sudo", "/usr/bin/sudo"}, // no argument: nothing to run
+		{"echo mysudo", "echo mysudo"},     // not a command
+		{"echo sudo", "echo sudo"},         // not a command
+	} {
+		if got := WithNonInteractiveSudo(tc.in); got != tc.want {
+			t.Errorf("WithNonInteractiveSudo(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// The authorised branch of RunAuthorized was previously discarded with
+// `_ = authErr`, so nothing checked that a confirmed privileged command is
+// actually rewritten. Asserting the rewrite happens is what makes the
+// non-interactive guarantee testable without a real sudo.
+func TestRunAuthorizedRewritesForNonInteractive(t *testing.T) {
+	if got := WithNonInteractiveSudo("/usr/bin/sudo apt-get install -y jq"); got != "sudo -n apt-get install -y jq" {
+		t.Fatalf("absolute-path sudo was not rewritten: %q", got)
+	}
+	// And a command that turns out not to need privilege is routed through Run
+	// rather than the privileged path.
+	res, err := RunAuthorized(context.Background(), "echo plain", Options{},
+		Authorization{Confirmed: true, NonInteractive: true})
+	if err != nil {
+		t.Fatalf("RunAuthorized on a plain command: %v", err)
+	}
+	if !strings.Contains(res.Stdout, "plain") {
+		t.Errorf("Stdout = %q, want it to contain %q", res.Stdout, "plain")
+	}
+}

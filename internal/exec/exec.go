@@ -102,6 +102,31 @@ func (e *PrivilegeError) Error() string {
 
 func (e *PrivilegeError) Unwrap() error { return ErrNeedsPrivilege }
 
+// sudoInvocationRe matches sudo at a command position, with or without a path
+// prefix, followed by whitespace.
+//
+// The optional path matters. sudoRe deliberately matches `/usr/bin/sudo`, so a
+// command can arrive on the authorized path in that form — and a rewrite that
+// only looked for a literal "sudo " would leave it unrewritten. It would then
+// block on a password prompt in --non-interactive mode, which is precisely the
+// hang the flag exists to prevent. The prefix is normalised away rather than
+// preserved: `/usr/bin/sudo -n` and `sudo -n` are the same program, and one
+// form is easier to reason about than two.
+// The trailing group also consumes an existing "-n" so the rewrite is
+// idempotent: `sudo -n id` must not become `sudo -n -n id`. That bug was in the
+// first version of this function and only the direct test caught it, which
+// is the argument for testing the rewrite rather than inferring it from
+// whether a subprocess ran.
+var sudoInvocationRe = regexp.MustCompile("(^|[\\s;&|(`$'\"])((?:[\\w./-]*/)?)sudo(\\s+(?:-n\\s+)?)")
+
+// WithNonInteractiveSudo rewrites every sudo invocation in cmd to use -n, so
+// the command fails immediately instead of blocking on a password nobody is
+// there to type. It is exported so the rewrite can be tested directly rather
+// than inferred from whether a subprocess happened to run.
+func WithNonInteractiveSudo(cmd string) string {
+	return sudoInvocationRe.ReplaceAllString(cmd, "${1}sudo -n ")
+}
+
 // Authorization is the evidence that a privileged command was printed and
 // agreed to.
 //
@@ -159,7 +184,7 @@ func RunAuthorized(ctx context.Context, cmd string, opts Options, auth Authoriza
 	// Non-interactive must never block on a password prompt: `sudo -n` fails
 	// immediately instead, and the caller reports rather than waiting.
 	if auth.NonInteractive {
-		cmd = strings.Replace(cmd, "sudo ", "sudo -n ", 1)
+		cmd = WithNonInteractiveSudo(cmd)
 	}
 	opts.NonInteractive = auth.NonInteractive
 	return run(ctx, cmd, opts)
