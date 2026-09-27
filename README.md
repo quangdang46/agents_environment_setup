@@ -4,7 +4,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue.svg)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)
-![Status](https://img.shields.io/badge/status-pre--1.0%20%7C%20no%20tested%20tools%20yet-orange.svg)
+![Status](https://img.shields.io/badge/status-pre--1.0%20%7C%207%20tools%20proven%20on%20linux%2Farm64-orange.svg)
 
 </div>
 
@@ -18,11 +18,12 @@ aes setup
 ```
 
 > **Status: pre-1.0, and honest about it.** No release is published yet, so the
-> install line above does not work today. 61 tool definitions exist; **0 are
-> marked `tested: true` yet**, which by design means `aes setup` with no flags
-> currently resolves to nothing and exits non-zero. See
-> [Status and limitations](#status-and-limitations) — this is the intended
-> behaviour, not a bug, and the reasoning is below.
+> install line above does not work today. 61 tool definitions exist; **7 are
+> marked `tested: true`**, each carrying `tested_on: [linux/arm64]` so the flag
+> says where it was proven rather than implying everywhere. `aes setup` with no
+> flags still resolves to nothing and exits non-zero, because the default
+> profile selects 18 tools and only some of them are proven. See
+> [Status and limitations](#status-and-limitations).
 
 ---
 
@@ -132,7 +133,7 @@ AES treats installation as a **declared, verifiable** process:
 | Verify is ground truth; state is a cache | Never decide from `state.json` alone. |
 | Corruption is an error, never emptiness | A truncated file must not read as "nothing installed". |
 | Refuse loudly rather than fail quietly | An unknown strategy errors listing the valid set. |
-| Two frontends, one engine | The TUI and the CLI call the same `plan.Resolve`; identical `Action`s, by construction, not by agreement. |
+| Two frontends, one engine | The TUI and the CLI call the same `selection.Resolve`; identical `Action`s, by construction, not by agreement. |
 
 ---
 
@@ -264,24 +265,22 @@ This is an active, pre-1.0 project. Stated plainly:
 - **No published release.** `install.sh` and the checksum verification are
   complete and tested against a local fixture, but there is no GitHub release
   to download from yet. Build from source for now.
-- **Zero tools are `tested: true`.** Verification requires both Layer 1
-  (fixtures on a real machine) and Layer 2 (a real install). Layer 2 is built
-  and green — `internal/sandbox`, opt-in behind `AES_LAYER2=1`.
-  `aes setup` with **no flags resolves to nothing and exits non-zero**, which
-  is I15 working as designed. Use `--only` or a profile until the container
-  lands.
+- **7 of 61 tools are `tested: true`, and `aes setup` with no flags still
+  exits non-zero.** Verification requires both layers — a real install, then
+  `aes verify` confirming the result on that same machine. Both now run in a
+  fresh `ubuntu:24.04` container (`internal/sandbox`, opt-in behind
+  `AES_LAYER2=1`), which is the only place a tool can start absent.
 
-  An earlier version of this file said the two layers have *contradictory
-  preconditions* and that no tool on one machine could pass both. That was
-  overstated, and it was mine: the conflict applies to a tool in one of the two
-  states — already present, so Layer 2 refuses it, or already absent, so Layer 1
-  skips it. A tool in **neither** state passes both in sequence, because Layer 2
-  installs it and Layer 1 then detects it. The real constraint is narrower: the
-  Layer-1 fixture list is a fixed set of eight tools that are all pre-installed
-  here, so every one of them is refused by Layer 2. The container still matters,
-  but for isolation and reproducibility rather than impossibility — a
-  container-sourced flag means "works on a clean machine, everywhere", which is
-  the claim the North Star actually makes.
+  The default profile selects **18** tools and 11 of them are unproven, so
+  `require_tested` refuses the whole thing. That is I15 working, not a bug —
+  the profile would be making a claim nothing has verified. Use `--only`, or
+  `--only` plus `--profile` once more tools are proven.
+
+  The proven scope is honest and narrow: `tested_on: [linux/arm64]`, and the
+  resolver skips a tool on a host it was not proven on. Two of the remaining
+  tools are known-broken and tracked rather than quietly excluded — see
+  below.
+
 - **The TUI is new and lightly exercised.** It exists and its selection
   logic is well tested, but it has never been run on a machine other than
   the one that wrote it, and raw mode goes through `stty`. Expect rough edges
@@ -290,11 +289,15 @@ This is an active, pre-1.0 project. Stated plainly:
   github-release and package-manager tools for real, but `go`/`npm`/`cargo`/
   `uv` have no supported per-package removal, so AES reports *not removed*
   with the manual route rather than pretending. `aes forget` always works.
-- **No container for Layer 2**, which is why nothing can honestly be marked
-  `tested: true`. A fresh container has nothing installed, so it is where Layer 2
-  belongs; the host is where Layer 1 runs.
-- **I7 has no automated guard.** Nothing writes to `~/.agents/`, but nothing
-  would catch a regression either.
+- **Two catalog entries in the default profile cannot install**, both found by
+  running the container rather than by reading the manifests. `aadc` publishes
+  `.tar.xz` assets and the extractor is pure-Go gzip, so it needs a capability
+  the installer does not have. `gemini` installs and then dies — its npm
+  package declares `engines: node >=20` and Ubuntu 24.04 ships 18.19.1 (codex,
+  claude and opencode all run fine on 18; it is gemini alone). Both are open
+  decisions rather than exclusions.
+- **The `tested: true` scope is one platform.** The flag is a bool plus a
+  `tested_on` list; nothing has been proven on darwin or linux/amd64 yet.
 - **CI runs on pull requests.** `ci.yml` does fmt+vet, a test matrix across
   macOS arm64 and Ubuntu amd64, and a build job that unpacks a fresh artifact
   and runs `aes list --json` against a throwaway HOME — the check that catches a
@@ -304,7 +307,7 @@ This is an active, pre-1.0 project. Stated plainly:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `profile "default" requires tested tools, but these are not tested: …` | I15; no tool is verified yet | Use `--only <tool>`, or a profile, until the Layer 2 container lands |
+| `profile "default" requires tested tools, but these are not tested: …` | I15; the profile selects 18 tools and 11 are unproven | Use `--only <tool>` to bypass the profile |
 | `catalog root: stat tools: no such file or directory` | Binary built before the catalog was embedded | Rebuild with the current tree |
 | `profile "x": no tool named "y"` | Profile references a tool not in the catalog | Fix the profile; a dangling reference is a hard error by design |
 | Exit `5` | Something needs root | Run the command AES printed, then re-run |
@@ -324,23 +327,27 @@ No. The `sudo` gate is structural: a command containing `sudo` is refused
 without executing. The only privileged path requires that the command was
 printed and confirmed, or `sudo -n` in automation.
 
-**Why is nothing marked `tested: true` yet?**
-Because the flag means a real install was verified end to end, which needs both
-layers, and Layer 2 is only proven on the host so far. Marking tools on
-detection evidence alone would make the tool's central claim — a *verified*
-environment — a lie, which is the one thing the flag exists to prevent.
+**Why aren't more tools marked `tested: true`?**
+Because the flag means a real install was verified end to end, in a fresh
+container, and only 7 tools have been through that. Marking tools on detection
+evidence alone would make the tool's central claim — a *verified* environment —
+a lie, which is the one thing the flag exists to prevent.
+
+The flag also carries `tested_on`, so "verified" is a claim about a named
+platform rather than about the world. `aes` on darwin will skip a tool proven
+only on linux/arm64 rather than assume the other platform behaves the same.
 
 Worth being precise about why, because an earlier version of this file got it
 wrong. The two layers do NOT have contradictory preconditions in general: a
 tool that is neither installed nor proven passes both in sequence, since Layer 2
-installs it and Layer 1 then detects it. The real constraint is narrower — the
-Layer-1 fixture list is a fixed set of eight tools that are all pre-installed on
-the machine that ran the tests, so every one of them is refused by Layer 2's
+installs it and Layer 1 then detects it. The real constraint was narrower — the
+Layer-1 fixture list is a fixed set of eight tools that are all pre-installed
+on the machine that ran the tests, so every one of them is refused by Layer 2's
 "must start absent" rule.
 
-The container is still worth building, for a better reason than impossibility:
-a container-sourced flag means "this works on a clean machine, everywhere",
-which is the claim the North Star actually makes.
+The container is worth having for a better reason than impossibility: a
+container-sourced flag means "this works on a clean machine", which is the claim
+the North Star actually makes.
 
 **Can a malicious `tool.yaml` run an arbitrary command?**
 No. The strategy set is closed to six values — `github-release`, `package`,
