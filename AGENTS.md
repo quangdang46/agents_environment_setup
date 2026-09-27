@@ -114,6 +114,28 @@ actually cost time here:
 Both produce convincing errors. When a test fails, check whether the code is wrong before you
 conclude it is; re-reading the failing output by hand is cheap and catches this class immediately.
 
+**A shell that is not the one you assumed will quietly drop your arguments.** This project's shell
+is zsh, which does **not** word-split an unquoted parameter expansion the way bash does. So
+
+```zsh
+FLAGS="-e HOME=/tmp/x -e AES_HOME=/tmp/x/.aes"
+docker exec $FLAGS $C aes setup ...     # ONE argument, not four
+```
+
+runs the command with the container's real environment and no error at all. The measurement that
+follows looks like a product bug — "AES_HOME is ignored" — when nothing was ever passed. This cost
+an hour of chasing a nonexistent defect in `envgen`. Pass flags explicitly, or use an array
+(`flags=(-e "HOME=$h" -e "AES_HOME=$h/.aes")` then `docker exec $flags $C ...`), and **confirm the
+environment arrived before believing a result that depends on it**:
+
+```zsh
+docker exec -e HOME=$h -e AES_HOME=$h/.aes $C sh -c 'echo $HOME $AES_HOME $PWD'
+```
+
+A related one, same shape: a bind-mounted **file** is bound by inode, so `go build -o ./aes` after
+the container started leaves the container running the old binary. Rebuilding changes the host's
+inode; the mount still points at the old one. Recreate the container, or mount a directory.
+
 **Parsing is not resolving.** A profile naming a tool or a tag that does not exist parses
 perfectly and then fails at run time, taking the whole binary down — `aes setup --dry-run` exits 1
 on a profile it happily loaded. A test that only checks "the file parses" cannot catch this. Ship
@@ -130,6 +152,29 @@ legitimate, a catalog with nothing tested is.
 flag-semantics table in the spec. `--yes` asserts a TTY exists and is a usage error (exit 2)
 without one; `--non-interactive` never blocks on input and resolves privilege via `sudo -n`,
 finishing with exit code 5 if a manual step is needed.
+
+**Any value computed in two places will eventually disagree with itself, and the disagreement is
+silent.** This is the shape of every duplicate-decision bug in this repo, and it has four
+instances now — reach for it first when a value looks wrong in a way nobody can explain:
+
+| Value | Two computations | Symptom when they drift |
+|---|---|---|
+| the installed binary's name | `Target.Binary`, then an installer override, then the tool name | opentofu ships `tofu`; the wrong name installs and then fails to verify |
+| privilege | a `needs_sudo` field, then derivation from the strategy | one path re-introduces auto-sudo, which I2 forbids |
+| the user's home | `homeOf`, then `os.UserHomeDir()` | with `AES_HOME` relocated, env.sh names a directory that was never created |
+| AES_HOME | passed to envgen, then rebuilt as `home + "/.aes"` | same symptom, opposite cause: the *output* re-derived what the *input* already had right |
+
+The cure is always the same and it is structural, not a matter of care: compute it once, pass it,
+and delete the second computation rather than leaving it as a fallback. `homeOf` was fixed and
+then deleted for exactly this reason. A helper that exists "just in case" is the second
+computation waiting to disagree.
+
+**A tool's own cache is not aes's output.** `$HOME` and `$AES_HOME` are different directories, and
+the distinction is load-bearing: npm writes a timestamped debug log per invocation, cargo and go
+keep registries, and pointing both variables at one directory puts all of it inside the tree the
+idempotence check digests — so "re-running changes nothing" is false for reasons that have nothing
+to do with the installer. The sandbox gives a run a HOME with a `.aes` beneath it and digests only
+the `.aes`. Do not "fix" that failure with a denylist of noisy paths; that hides real drift too.
 
 ---
 
