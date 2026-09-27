@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/quangdang46/agents_environment_setup/internal/envgen"
@@ -455,7 +456,20 @@ func printSummary(app *App, sum summaryOutput) {
 
 	cells := make([][]string, 0, len(sum.Results))
 	for _, r := range sum.Results {
-		cells = append(cells, []string{r.Name, string(r.Status), r.Error})
+		// A warning is the tool's story in a way Error is not: the tool failed
+		// for one reason, and the warnings say what else went wrong around it.
+		// They go in the same cell so a human running without --json sees
+		// them at all — the field used to be JSON-only, while its own comment
+		// claimed they were reported rather than swallowed, which is a comment
+		// describing behaviour the code did not have.
+		detail := r.Error
+		if len(r.Warning) > 0 {
+			if detail != "" {
+				detail += " "
+			}
+			detail += "(" + strings.Join(r.Warning, "; ") + ")"
+		}
+		cells = append(cells, []string{r.Name, string(r.Status), detail})
 	}
 	_ = table(app.Out, []string{"TOOL", "STATUS", "DETAIL"}, cells)
 

@@ -511,3 +511,22 @@ func (c *Container) Env(home string) []string {
 func randomSuffix() string {
 	return strconv.FormatInt(time.Now().UnixNano()%1e8, 36)
 }
+
+// Sh2 runs a script and discards the exit code, for setup that legitimately
+// fails while preparing an environment.
+//
+// It is Sh without the ceremony for a caller that is not asserting anything —
+// installing a helper binary, say. Anything that IS an assertion uses Sh, so
+// that a failure to prepare is not mistaken for a pass.
+func (c *Container) Sh2(ctx context.Context, script string) error {
+	_, _, err := c.Sh(ctx, script, nil)
+	return err
+}
+
+// writeFile puts a file inside the container, used to age an installed binary
+// so the next run is an install candidate that overwrites something already
+// there.
+func (c *Container) writeFile(ctx context.Context, path, body string) error {
+	_, _, err := c.Sh(ctx, "cat > "+shellQuote(path)+" <<'AES_EOF'\n"+body+"AES_EOF\n", nil)
+	return err
+}
