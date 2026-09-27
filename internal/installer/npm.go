@@ -67,8 +67,14 @@ func NewNPMInstaller() *Ecosystem {
 	}
 	// The bin-dir probe runs the same injected runner as installs, so a test
 	// that records invocations sees both and can tell them apart by command.
+	//
+	// It is NOT the install runner, though, and that distinction is the point.
+	// `npm prefix -g` is a local query that answers in milliseconds; routing it
+	// through run() gave it DefaultTimeout, ten minutes, so a hung npm stalled
+	// `aes setup` at the Retain step before any install output appeared. The
+	// budget belongs to the query, not to the command that happens to run it.
 	e.probe = func(ctx context.Context, cmd string) (string, error) {
-		res, err := e.run()(ctx, cmd)
+		res, err := exec.Run(ctx, cmd, exec.Options{Timeout: npmPrefixTimeout * time.Second})
 		return res.Stdout, err
 	}
 	e.binDir = func(ctx context.Context) (string, error) {

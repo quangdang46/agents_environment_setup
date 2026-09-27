@@ -35,9 +35,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
+	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/installer"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
 )
@@ -236,9 +236,11 @@ func variableEntries(tools []Tool) []varEntry {
 // needing care is the quote itself, and the standard '\” form round-trips
 // it. Newlines are safe inside single quotes, so a value cannot break out of
 // the generated file.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
+// shellQuote delegates to exec.ShellQuote. It was a byte-identical copy in
+// three packages, and a quoting fix applied to one would have left the other
+// two generating differently-quoted shell that consumes the same env.sh and
+// PATH values.
+func shellQuote(s string) string { return exec.ShellQuote(s) }
 
 // Write renders env.sh and writes it to path atomically.
 //

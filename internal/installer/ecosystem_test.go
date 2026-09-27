@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
@@ -304,5 +305,37 @@ func TestEcosystemSurfacesRunnerFailure(t *testing.T) {
 	err := e.Install(context.Background(), ecoAction(t, "github.com/x/y@v1.0.0"))
 	if !errors.Is(err, boom) {
 		t.Errorf("error = %v, want the runner's error to be surfaced", err)
+	}
+}
+
+// The npm prefix probe must be bounded by npmPrefixTimeout, not by the
+// install runner's DefaultTimeout.
+//
+// The probe used to be routed through e.run(), which is the install runner,
+// so a local query that answers in milliseconds was given ten minutes. A hung
+// npm then stalled `aes setup` at the Retain step — before any install output
+// — for the full budget. The budget belongs to the query, not to the command
+// that happens to run it.
+func TestNPMProbeIsBoundedByTheProbeBudget(t *testing.T) {
+	t.Parallel()
+
+	// A runner that never returns, standing in for a hung npm.
+	blocked := func(context.Context, string) (exec.Result, error) {
+		select {} // never returns
+	}
+
+	// The production wiring: NewNPMInstaller's probe, not a hand-built one.
+	inst := NewNPMInstaller()
+	inst.Run = blocked
+
+	start := time.Now()
+	_ = inst.Destination(context.Background())
+	elapsed := time.Since(start)
+
+	// npmPrefixTimeout is 10s; allow slack for scheduling, but the point is
+	// that this is seconds, not the 10-minute DefaultTimeout.
+	if elapsed > 30*time.Second {
+		t.Errorf("the npm prefix probe blocked for %s; it is using the install "+
+			"runner's budget, not npmPrefixTimeout", elapsed)
 	}
 }

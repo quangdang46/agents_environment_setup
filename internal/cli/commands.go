@@ -12,6 +12,7 @@ import (
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/envgen"
+	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
 	"github.com/quangdang46/agents_environment_setup/internal/state"
@@ -588,6 +589,9 @@ func bytesContain(haystack []byte, needle string) bool {
 }
 
 // shellSingleQuote renders s as a single-quoted POSIX shell word.
-func shellSingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
+//
+// It delegates to exec.ShellQuote. It was a byte-identical copy in three
+// packages, and a quoting fix applied to one would have left the other two
+// generating differently-quoted shell that consumes the same env.sh and PATH
+// values.
+func shellSingleQuote(s string) string { return exec.ShellQuote(s) }

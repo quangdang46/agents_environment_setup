@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	aesexec "github.com/quangdang46/agents_environment_setup/internal/exec"
 )
 
 // ContainerRunner executes a command inside the sandbox container and returns
@@ -90,9 +92,12 @@ func isNotFound(out string) bool {
 // shellQuote wraps a token in single quotes for POSIX sh, escaping any embedded
 // single quote. Binary names come from a manifest, and a manifest is data — but
 // data still should not be concatenated into a shell unquoted.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
+//
+// It delegates to exec.ShellQuote. This was a byte-identical copy in three
+// packages, and a quoting fix applied to one copy would have left the other
+// two generating differently-quoted shell that consumes the same env.sh and
+// PATH values — the duplicate-computation shape AGENTS.md warns about.
+func shellQuote(s string) string { return aesexec.ShellQuote(s) }
 
 // ---------------------------------------------------------------------------
 // The container itself.

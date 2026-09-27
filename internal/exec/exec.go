@@ -333,6 +333,21 @@ func run(ctx context.Context, cmd string, opts Options) (Result, error) {
 // waitDelay.
 const waitDelay = 2 * time.Second
 
+// ShellQuote renders s as a single POSIX shell word.
+//
+// It existed as three byte-identical copies — in internal/sandbox,
+// internal/envgen and internal/cli — and that is the shape every duplicate
+// computation in this repo has taken: a quoting fix or a hardening applied to
+// one copy silently leaves the other two generating differently-quoted shell
+// that consumes the same env.sh and PATH values. Compute it once.
+//
+// The algorithm is the only one that has no edge case on POSIX sh: close the
+// quote, emit an escaped quote, reopen. No character is interpreted, so a path
+// containing a space, a newline, a backslash or `$(...)` survives intact.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // formatDuration renders a duration for an error message. Sub-second deadlines
 // keep their precision, because rounding 200ms to "0s" would make the message
 // useless.

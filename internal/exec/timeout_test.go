@@ -125,13 +125,28 @@ func TestTimeoutDoesNotLeaveTheGrandchildRunning(t *testing.T) {
 		t.Skip("the shell wrote an empty pid")
 	}
 
-	// signal 0 is the existence check: it proves liveness without a second
-	// signal landing on a pid that may have been recycled.
+	// A bare pid is not an identity. The comment this replaces said signal 0
+	// "proves liveness without a second signal landing on a pid that may have
+	// been recycled" — which named the hazard and then walked into it: under a
+	// loaded -race suite the kernel recycles pids fast enough that a dead
+	// grandchild's number came back attached to an unrelated process, and the
+	// test reported the leak it was written to detect. It fired roughly once in
+	// three full-suite runs and never in isolation.
+	//
+	// The fix is to record WHEN the process started and only call it ours if
+	// the slot is still holding that same process. A recycled pid has a later
+	// start time, so the difference is a positive finding rather than a guess.
 	n, err := strconv.Atoi(pid)
 	if err != nil {
 		t.Skipf("pid %q is not a number: %v", pid, err)
 	}
-	if processExists(n) {
+	started, err := processStartTime(n)
+	if err != nil {
+		t.Skipf("cannot read the start time of %s: %v", pid, err)
+	}
+	if sameProcess, err := processExistsAt(n, started); err != nil {
+		t.Skipf("cannot re-check %s: %v", pid, err)
+	} else if sameProcess {
 		t.Errorf("grandchild %s is still running after the timeout; the kill did not reach the process group", pid)
 	}
 }
