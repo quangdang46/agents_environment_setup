@@ -201,7 +201,13 @@ func (p *Profile) checkTested(tools []*manifest.Tool, host *platform.Host) error
 			// Collected either way. When the caller opted in this is not a
 			// refusal but a warning, and the names have to be known before
 			// deciding which it is.
-			unprovenHere = append(unprovenHere, t.Name)
+			//
+			// Appended once. This was appended twice, and the duplicate was
+			// invisible in every message because uniq sorts before joining —
+			// but len(unprovenHere) is also the count in the warning at the
+			// bottom of this function, so a user was told "installing 2
+			// tool(s)" about one tool. A value that is wrong only where it is
+			// counted rather than printed is the harder kind to notice.
 			unprovenHere = append(unprovenHere, t.Name)
 		}
 	}

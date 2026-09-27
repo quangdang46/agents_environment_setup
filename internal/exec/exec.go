@@ -28,6 +28,20 @@
 //
 // Every command has one. A hung apt-get must not hang AES forever. Zero means
 // DefaultTimeout, sized for an install; version probes should pass VerifyTimeout.
+//
+// # Killing the whole process group
+//
+// `sh -c "sleep 30"` does not exec sleep: it forks a grandchild and waits. Go's
+// CommandContext kills only the direct child, so the deadline fires, the kill
+// lands, and the grandchild survives holding the pipe AES is reading. Wait then
+// blocks until that grandchild exits — the timeout is honoured and the caller
+// still waits for the full command. Measured on this host: 200ms deadline, 30s
+// of blocking, `err=signal: killed` the whole time.
+//
+// So the child is put in its own process group and the deadline kills the group.
+// That is also why WaitDelay is set: it bounds Wait itself, so a child that
+// ignores SIGKILL cannot hold the call open either. Both are needed — the group
+// kill stops the orphan, WaitDelay stops the hang when there is no group to kill.
 package exec
 
 import (
@@ -272,6 +286,13 @@ func run(ctx context.Context, cmd string, opts Options) (Result, error) {
 		shell.Env = os.Environ()
 	}
 
+	// Bound the run two ways, because either alone leaves a hole. The group kill
+	// is what makes the deadline mean anything for a command that forked (see
+	// the package comment); WaitDelay is what bounds Wait when there is no
+	// process group to kill, or when a child outlives SIGKILL.
+	isolate(shell)
+	shell.WaitDelay = waitDelay
+
 	var stdout, stderr cappedBuffer
 	stdout.limit = limit
 	stderr.limit = limit
@@ -303,6 +324,14 @@ func run(ctx context.Context, cmd string, opts Options) (Result, error) {
 	}
 	return result, nil
 }
+
+// waitDelay bounds Wait itself. It is deliberately longer than any timeout AES
+// passes: it exists so that a child which ignores SIGKILL cannot hold the call
+// open after the deadline, not to shorten a legitimate run. A version probe
+// (VerifyTimeout, 15s) that is killed at its deadline therefore returns within
+// roughly VerifyTimeout + waitDelay, and an install within DefaultTimeout +
+// waitDelay.
+const waitDelay = 2 * time.Second
 
 // formatDuration renders a duration for an error message. Sub-second deadlines
 // keep their precision, because rounding 200ms to "0s" would make the message

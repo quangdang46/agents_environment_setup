@@ -522,6 +522,12 @@ func TestAllowUnprovenWaivesPlatformButNotEvidence(t *testing.T) {
 				t.Errorf("warning does not mention %q: %q", want, w[0])
 			}
 		}
+		// The count is asserted separately from the text because it is the half
+		// that was wrong: the name was collected twice, uniq hid it in the
+		// message, and a user was told "installing 2 tool(s)" about one tool.
+		if !strings.Contains(w[0], "installing 1 tool(s)") {
+			t.Errorf("warning counts the wrong number of tools: %q", w[0])
+		}
 	})
 
 	t.Run("no evidence anywhere is still refused", func(t *testing.T) {
