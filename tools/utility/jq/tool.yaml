@@ -2,7 +2,14 @@
 name: jq
 description: command-line JSON processor
 category: utility
-tested: false
+# Both layers passed on the platform named below: aes installed this from
+# nothing in a fresh container, and `aes verify` reported StatusOK with a
+# parsed version on that same machine afterwards (bead gj9). `tested_on`
+# is load-bearing rather than decorative — require_tested reads it, so the
+# resolver skips this on a host it was never proven on.
+tested: true
+tested_on:
+  - linux/arm64
 tags:
   - utility
 verify:
