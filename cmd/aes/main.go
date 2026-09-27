@@ -19,8 +19,8 @@ import (
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/cli"
 	"github.com/quangdang46/agents_environment_setup/internal/installer"
-	"github.com/quangdang46/agents_environment_setup/internal/plan"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
+	"github.com/quangdang46/agents_environment_setup/internal/selection"
 	"github.com/quangdang46/agents_environment_setup/internal/tui"
 )
 
@@ -95,7 +95,7 @@ func runTUI(ctx context.Context, app *cli.App, catalogRoot, profileDir string) e
 	}
 
 	m := tui.New(cat, host)
-	m.OnInstall = func(sel plan.Selection) {
+	m.OnInstall = func(sel selection.Selection) {
 		// A fresh screen first: the setup summary is longer than a TUI
 		// frame, and interleaving it with the list is unreadable.
 		fmt.Print("\x1b[H\x1b[2J")

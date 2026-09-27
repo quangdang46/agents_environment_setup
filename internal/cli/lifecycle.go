@@ -12,7 +12,7 @@ import (
 
 	"github.com/quangdang46/agents_environment_setup/internal/installer"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
-	"github.com/quangdang46/agents_environment_setup/internal/plan"
+	"github.com/quangdang46/agents_environment_setup/internal/selection"
 	"github.com/quangdang46/agents_environment_setup/internal/verifier"
 )
 
@@ -231,7 +231,7 @@ func (a *App) registry() *installer.Registry {
 // its three hard constraints — so it calls in here and gets exactly the
 // pipeline `aes setup --only <selection>` runs, by construction rather than
 // by agreement.
-func (a *App) SetupSelection(ctx context.Context, sel plan.Selection, f *Flags) error {
+func (a *App) SetupSelection(ctx context.Context, sel selection.Selection, f *Flags) error {
 	flags := &Flags{}
 	if f != nil {
 		*flags = *f

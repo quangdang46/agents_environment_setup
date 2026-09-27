@@ -1,4 +1,4 @@
-// Package plan is the single path from "what the user selected" to "what
+// Package selection is the single path from "what the user selected" to "what
 // will happen".
 //
 // It exists so that invariant I13 — the TUI and the CLI must produce the
@@ -8,7 +8,7 @@
 //
 // This is the same discipline as ssh not configuring its own port forwarding:
 // the selection UI collects intent, the core decides.
-package plan
+package selection
 
 import (
 	"fmt"

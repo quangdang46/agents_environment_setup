@@ -13,9 +13,9 @@ import (
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
-	"github.com/quangdang46/agents_environment_setup/internal/plan"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
 	"github.com/quangdang46/agents_environment_setup/internal/resolver"
+	"github.com/quangdang46/agents_environment_setup/internal/selection"
 )
 
 // fixtureCatalog writes a small catalog with a dependency edge, so the
@@ -59,14 +59,20 @@ func testHost() *platform.Host {
 	return &platform.Host{OS: platform.OSDarwin, Arch: platform.ArchARM64}
 }
 
-// TestTUIPlanMatchesCLI is invariant I13, and the reason plan exists.
+// TestTUISelectionAgreesWithTheCLI is invariant I13.
 //
-// A TUI selection of {rust} and `aes setup --only rust` must produce the
-// same Actions. They are compared through the same function both frontends
-// call, so this test is really asserting that the TUI has not grown a
-// private path — which is the failure that would otherwise only show up as
-// the two frontends quietly disagreeing.
-func TestTUIPlanMatchesCLI(t *testing.T) {
+// What this actually checks, stated honestly: that the TUI's selection resolves
+// to the same tool names the CLI produces for the same words. It is NOT two
+// independent implementations agreeing — m.Resolve is selection.Resolve reduced
+// to names, so on the happy path this compares a function with itself.
+//
+// What it does still catch is the failure worth catching: a TUI that grows a
+// private resolution path, or a Selection built in a different order, shows up
+// here as a difference. What it cannot catch is a private path that happens to
+// be right, and no test at this level can. The structural guard against that is
+// TestNoInstallerImport, which parses the TUI's imports; between them the
+// property is covered once, not twice, and this file says which is which.
+func TestTUISelectionAgreesWithTheCLI(t *testing.T) {
 	t.Parallel()
 
 	c := fixtureCatalog(t)
@@ -74,13 +80,13 @@ func TestTUIPlanMatchesCLI(t *testing.T) {
 	m := New(c, h)
 
 	m.Toggle("rust")
-	fromTUI, err := m.Plan()
+	fromTUI, err := m.Resolve()
 	if err != nil {
 		t.Fatalf("TUI plan: %v", err)
 	}
 
 	// What the CLI does with the same words on the command line.
-	fromCLI, err := plan.Resolve(c, h, plan.Selection{Only: []string{"rust"}})
+	fromCLI, err := selection.Resolve(c, h, selection.Selection{Only: []string{"rust"}})
 	if err != nil {
 		t.Fatalf("CLI plan: %v", err)
 	}
@@ -115,9 +121,9 @@ func TestTUIDependencyClosure(t *testing.T) {
 	m := New(fixtureCatalog(t), testHost())
 	m.Toggle("rust")
 
-	got, err := m.Plan()
+	got, err := m.Resolve()
 	if err != nil {
-		t.Fatalf("Plan: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
 	var sawRust, sawCargo bool
 	for _, n := range got {
@@ -145,7 +151,7 @@ func TestEmptySelectionIsANoOp(t *testing.T) {
 	if !m.Selection().Empty() {
 		t.Fatal("a fresh model should have an empty selection")
 	}
-	got, err := m.Plan()
+	got, err := m.Resolve()
 	if err != nil {
 		t.Errorf("empty selection errored: %v", err)
 	}
@@ -430,7 +436,7 @@ func TestNoInstallerImport(t *testing.T) {
 		"github.com/quangdang46/agents_environment_setup/internal/exec",
 		"github.com/quangdang46/agents_environment_setup/internal/state",
 		"github.com/quangdang46/agents_environment_setup/internal/envgen",
-		// Constraint 2: the resolver is reached only through plan. Calling
+		// Constraint 2: the resolver is reached only through selection. Calling
 		// it directly would produce identical output for identical input,
 		// so no behavioural test could catch it — the divergence would
 		// appear later, when the two paths start to differ. This check is

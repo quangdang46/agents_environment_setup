@@ -1,4 +1,4 @@
-package plan
+package selection
 
 import (
 	"os"

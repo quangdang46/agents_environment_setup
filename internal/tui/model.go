@@ -10,7 +10,7 @@
 //     string, because a manifest is data and never a program (I3). The
 //     catalog is the only vocabulary.
 //  2. No fast path that bypasses the resolver. Selection becomes
-//     plan.Selection and goes through plan.Resolve — the same call the CLI
+//     selection.Selection and goes through selection.Resolve — the same call the CLI
 //     makes. Invariant I13 is therefore structural: there is no second
 //     resolver to compare against.
 //  3. No install business logic. The package does not import
@@ -32,8 +32,8 @@ import (
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
-	"github.com/quangdang46/agents_environment_setup/internal/plan"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
+	"github.com/quangdang46/agents_environment_setup/internal/selection"
 )
 
 // Screen is which view is showing.
@@ -102,7 +102,7 @@ type Model struct {
 	// anything itself — it cannot, because it must not import the installer
 	// — so the host wires this to the same pipeline `aes setup` runs. Nil
 	// means Enter on the Tools screen does nothing.
-	OnInstall func(plan.Selection)
+	OnInstall func(selection.Selection)
 
 	catalog *catalog.Catalog
 	host    *platform.Host
@@ -163,26 +163,32 @@ func (m *Model) ClearSelection() { m.Selected = map[string]bool{} }
 //
 // This is the boundary where the TUI stops being a UI. Everything after this
 // point is core code the CLI also runs.
-func (m *Model) Selection() plan.Selection {
+func (m *Model) Selection() selection.Selection {
 	names := make([]string, 0, len(m.Selected))
 	for name := range m.Selected {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	return plan.Selection{Only: names}
+	return selection.Selection{Only: names}
 }
 
-// Plan is the resolved plan for the current selection.
+// Resolve reports which tools the current selection resolves to, in the
+// order the resolver produced them.
 //
-// It goes through plan.Resolve — the same function the CLI uses — so a TUI
+// It is a thin projection of selection.Resolve down to names, and it exists
+// because the TUI displays intent rather than re-deciding it. Named for what it
+// does: "Plan" would reintroduce a word AGENTS.md reserves for a feature that
+// was cut, and this returns names, not a plan.
+//
+// It goes through selection.Resolve — the same function the CLI uses — so a TUI
 // selection and `aes setup --only <selection>` are the same plan by
 // construction rather than by agreement.
 //
 // The return type deliberately does not name resolver.Action. Combined with
 // the import guard below, that means the TUI cannot reach the resolver at
 // all: not directly, and not by accident through a convenient type.
-func (m *Model) Plan() ([]string, error) {
-	actions, err := plan.Resolve(m.catalog, m.host, m.Selection())
+func (m *Model) Resolve() ([]string, error) {
+	actions, err := selection.Resolve(m.catalog, m.host, m.Selection())
 	if err != nil {
 		return nil, err
 	}
