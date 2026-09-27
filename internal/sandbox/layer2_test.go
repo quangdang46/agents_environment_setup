@@ -272,7 +272,7 @@ func TestLayer2RepairsACorruptedBinary(t *testing.T) {
 	env := sandboxEnv(home)
 
 	// A real install, so there is a genuine predecessor to lose.
-	out, _, err := run(ctxFor(t), Config{Binary: bin}, env, home,
+	out, _, err := run(ctxFor(t), Host{}, Config{Binary: bin}, env, home,
 		"setup", "--only", "starship", "--non-interactive")
 	if err != nil {
 		t.Fatalf("install starship: %v (%s)", err, firstLine(out))
@@ -290,7 +290,7 @@ func TestLayer2RepairsACorruptedBinary(t *testing.T) {
 	}
 
 	// Drive the repair path.
-	out, _, err = run(ctxFor(t), Config{Binary: bin}, env, home,
+	out, _, err = run(ctxFor(t), Host{}, Config{Binary: bin}, env, home,
 		"setup", "--only", "starship", "--non-interactive", "--force")
 	t.Logf("repair output: %s", firstLine(out))
 

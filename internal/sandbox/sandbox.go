@@ -31,7 +31,6 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -40,7 +39,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -121,23 +119,33 @@ func (r Result) String() string {
 // doctor that cannot see drift. Steps 1 to 3 mostly catch a manifest that
 // points at the wrong artefact, which is worth catching but is the easy half.
 func Run(ctx context.Context, tool *manifest.Tool, cfg Config) (Result, error) {
+	return runIn(ctx, Host{}, tool, cfg)
+}
+
+// RunIn is Run against a named environment.
+//
+// It exists because the steps a Layer 2 proof is made of cannot all be run on
+// a developer machine: Layer 1 needs a tool present and Layer 2 needs it
+// absent, so on one host a package-strategy tool is provable exactly once and
+// an apt tool not at all. Passing the environment in rather than duplicating
+// the steps is the point — a second copy of this function would prove that the
+// copy works, not that aes does.
+func RunIn(ctx context.Context, env Environment, tool *manifest.Tool, cfg Config) (Result, error) {
+	return runIn(ctx, env, tool, cfg)
+}
+
+func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cfg Config) (Result, error) {
 	if cfg.Binary == "" {
 		return Result{}, fmt.Errorf("sandbox: Binary is required")
 	}
 	if !cfg.DryRun {
-		if err := requireAbsent(tool); err != nil {
+		if err := requireAbsent(ctx, environment, tool); err != nil {
 			return Result{}, err
 		}
 	}
-	home, err := os.MkdirTemp("", "aes-sandbox-")
+	home, err := environment.MkdirTemp(ctx)
 	if err != nil {
 		return Result{}, fmt.Errorf("sandbox: create home: %w", err)
-	}
-	// The installer writes to $AES_HOME/bin, and a 0700 temp parent is what
-	// keeps a stray world-readable artefact out of a shared /tmp.
-	if err := os.Chmod(home, 0o700); err != nil {
-		os.RemoveAll(home)
-		return Result{}, fmt.Errorf("sandbox: secure home: %w", err)
 	}
 
 	res := Result{Tool: tool.Name, Home: home}
@@ -146,14 +154,14 @@ func Run(ctx context.Context, tool *manifest.Tool, cfg Config) (Result, error) {
 	// PATH state is not testing what a fresh machine would do, so the tool is
 	// hidden from PATH for the duration and only the sandbox's own bin
 	// directory is visible.
-	env := sandboxEnv(home)
+	env := environment.Env(home)
 
 	if !cfg.Keep {
-		defer os.RemoveAll(home)
+		defer environment.RemoveAll(ctx, home)
 	}
 
 	// 1. install
-	out, code, err := run(ctx, cfg, env, home, "setup", "--only", tool.Name)
+	out, code, err := run(ctx, environment, cfg, env, home, "setup", "--only", tool.Name)
 	res.record("install", err == nil && code == 0, detail(out, code, err))
 	if err != nil || code != 0 {
 		return res, nil
@@ -175,49 +183,53 @@ func Run(ctx context.Context, tool *manifest.Tool, cfg Config) (Result, error) {
 
 	// Verify against the sandbox's own view, and take the reported path from
 	// it. A package strategy installs wherever the package manager puts its
-	// binaries — /opt/homebrew/bin, /usr/bin — so assuming $AES_HOME/bin
-	// reports "not installed" for a tool that installed correctly.
-	verifyRes := verifyIn(ctx, cfg, env, home, tool.Name)
-	_, statErr := os.Stat(firstExisting(verifyRes.Path, filepath.Join(home, "bin", binName)))
-	res.record("binary present", statErr == nil, pathDetail(verifyRes.Path, statErr))
+	// binaries — /opt/homebrew/bin, /usr/bin, npm's global prefix — so
+	// assuming $AES_HOME/bin reports "not installed" for a tool that
+	// installed correctly.
+	verifyRes := verifyIn(ctx, environment, cfg, env, home, tool.Name)
 	binPath := verifyRes.Path
 	if binPath == "" {
 		binPath = filepath.Join(home, "bin", binName)
 	}
+	binDigest, digestErr := environment.FileDigest(ctx, binPath)
+	present := digestErr == nil && exists(binDigest)
+	res.record("binary present", present, digestDetail(binPath, binDigest, digestErr))
 	res.record("verify ok", verifyRes.Status == verifier.StatusOK,
 		fmt.Sprintf("status=%s version=%q path=%s", verifyRes.Status, verifyRes.Version, binPath))
 
 	// 3. state.json on disk, re-read from the file rather than trusted from
 	// the process that wrote it
-	res.record("state entry", stateHas(home, tool.Name), "state.json")
+	res.record("state entry", stateHasIn(ctx, environment, home, tool.Name), "state.json")
 
 	// 4. idempotence: nothing about the sandbox may change
-	snapA := home + "-before"
-	if err := copyTree(home, snapA); err != nil {
-		return res, fmt.Errorf("sandbox: snapshot before re-run: %w", err)
-	}
-	beforeHome, err := treeFingerprint(home)
+	//
+	// The per-file diff is a host-only diagnostic. Copying a tree means
+	// reaching into the environment's filesystem, and for a container that
+	// means shipping the whole tree out over docker exec to explain a
+	// failure. The digests are the assertion; the diff is only a courtesy to
+	// whoever reads the failure.
+	beforeHome, err := environment.TreeDigest(ctx, home)
 	if err != nil {
 		return res, fmt.Errorf("sandbox: fingerprint before re-run: %w", err)
 	}
-	beforeBin := fingerprint(binPath)
-	out, code, err = run(ctx, cfg, env, home, "setup", "--only", tool.Name)
-	afterHome, err := treeFingerprint(home)
+	beforeBin, _ := environment.FileDigest(ctx, binPath)
+
+	out, code, err = run(ctx, environment, cfg, env, home, "setup", "--only", tool.Name)
+
+	afterHome, err := environment.TreeDigest(ctx, home)
 	if err != nil {
 		return res, fmt.Errorf("sandbox: fingerprint after re-run: %w", err)
 	}
-	afterBin := fingerprint(binPath)
+	afterBin, _ := environment.FileDigest(ctx, binPath)
 	idempotent := err == nil && code == 0 && beforeHome == afterHome && beforeBin == afterBin
 	res.record("idempotent", idempotent,
-		idempotentDetail(beforeHome, afterHome, beforeBin, afterBin, snapA, home, code, err))
-
-	os.RemoveAll(snapA)
+		idempotentDetail(beforeHome, afterHome, beforeBin, afterBin, code, err))
 
 	// 5. drift: remove the binary, doctor must notice
-	if rmErr := os.Remove(binPath); rmErr != nil {
+	if _, _, rmErr := environment.Sh(ctx, "rm -f "+shellQuote(binPath), env); rmErr != nil {
 		res.record("drift detected", false, fmt.Sprintf("could not remove %s: %v", binPath, rmErr))
 	} else {
-		out, code, err := run(ctx, cfg, env, home, "doctor")
+		out, code, err := run(ctx, environment, cfg, env, home, "doctor")
 		// Exit code deliberately ignored, same reasoning as verifyIn: doctor
 		// exits non-zero precisely when it HAS found something, so requiring
 		// err == nil here would make the check incapable of ever passing. What
@@ -228,14 +240,20 @@ func Run(ctx context.Context, tool *manifest.Tool, cfg Config) (Result, error) {
 	}
 
 	// 6. --force reinstalls
-	out, code, err = run(ctx, cfg, env, home, "setup", "--only", tool.Name, "--force")
-	_, statErr = os.Stat(binPath)
-	res.record("force reinstall", err == nil && code == 0 && statErr == nil,
+	out, code, err = run(ctx, environment, cfg, env, home, "setup", "--only", tool.Name, "--force")
+	finalDigest, digestErr := environment.FileDigest(ctx, binPath)
+	res.record("force reinstall",
+		err == nil && code == 0 && digestErr == nil && exists(finalDigest),
 		detail(out, code, err))
 
 	res.Passed = allOK(res.Steps)
 	return res, nil
 }
+
+// exists reports whether a digest describes a file that is there. Both the host
+// and the container spell absence differently — "" and "absent" — so the check
+// is written once here rather than in each caller.
+func exists(digest string) bool { return digest != "" && digest != "absent" }
 
 func (r *Result) record(name string, ok bool, detail string) {
 	r.Steps = append(r.Steps, Step{Name: name, OK: ok, Detail: detail})
@@ -299,16 +317,22 @@ var ErrToolPresent = errors.New("tool is already on the host PATH; the sandbox c
 
 // requireAbsent checks the starting condition the whole sequence depends on.
 //
-// If the developer already has the tool, a run that reports success proves
-// nothing: the binary was there before setup touched it. Asserting the
-// precondition is better than hiding the tool from PATH, which would also hide
-// the system tools a real installer needs.
-func requireAbsent(tool *manifest.Tool) error {
+// The question is asked of the environment the install will happen in, not of
+// the host. On the host that is a question about the developer's machine; in a
+// container it is a question about a machine where the tool has never been
+// installed. Getting this wrong is the specific failure the container exists
+// to prevent — a "fresh install" that was fresh only because PATH was
+// arranged to hide something that was really already there.
+func requireAbsent(ctx context.Context, env Environment, tool *manifest.Tool) error {
 	bin := primaryBinary(tool)
 	if bin == "" {
 		return nil
 	}
-	if _, err := exec.LookPath(bin); err == nil {
+	present, err := env.HasBinary(ctx, bin)
+	if err != nil {
+		return fmt.Errorf("sandbox: checking whether %s is present: %w", bin, err)
+	}
+	if present {
 		return fmt.Errorf("%w: %s", ErrToolPresent, bin)
 	}
 	return nil
@@ -318,7 +342,7 @@ func requireAbsent(tool *manifest.Tool) error {
 //
 // Every step is a separate process on purpose: it is the only way to observe
 // that something reached disk rather than merely being set in memory.
-func run(ctx context.Context, cfg Config, env []string, home string, args ...string) (string, int, error) {
+func run(ctx context.Context, env Environment, cfg Config, environ []string, home string, args ...string) (string, int, error) {
 	full := append([]string{}, args...)
 	if cfg.DryRun {
 		full = append(full, "--dry-run")
@@ -331,28 +355,13 @@ func run(ctx context.Context, cfg Config, env []string, home string, args ...str
 	// automated run. See the package comment.
 	full = append(full, "--non-interactive")
 
-	stepCtx, cancel := context.WithTimeout(ctx, StepTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(stepCtx, cfg.Binary, full...)
-	cmd.Env = env
 	// Run from the sandbox so a checkout in the working directory cannot
 	// supply the catalog instead of the one under test.
-	cmd.Dir = home
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-
-	err := cmd.Run()
-	code := 0
-	if cmd.ProcessState != nil {
-		code = cmd.ProcessState.ExitCode()
+	res, err := env.Run(ctx, append([]string{cfg.Binary}, full...), environ, home)
+	if err != nil {
+		return res.Combined(), res.ExitCode, err
 	}
-	if stepCtx.Err() == context.DeadlineExceeded {
-		return out.String(), code, fmt.Errorf("aes %s timed out after %s", strings.Join(args, " "), StepTimeout)
-	}
-	return out.String(), code, err
+	return res.Combined(), res.ExitCode, nil
 }
 
 // verifyIn checks the tool the way a user would: by running `aes verify`
@@ -367,20 +376,15 @@ func run(ctx context.Context, cfg Config, env []string, home string, args ...str
 // Subprocess also makes the assertion match the contract. The bead asks that
 // "Verify returns StatusOK", and in a real run that means what `aes verify`
 // reports, not what the library returns in isolation.
-func verifyIn(ctx context.Context, cfg Config, env []string, home, tool string) verifier.Result {
-	ctx, cancel := context.WithTimeout(ctx, StepTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, cfg.Binary, "verify", "--json", "--non-interactive")
-	cmd.Env = env
-	cmd.Dir = home
-	// stdout and stderr must be kept apart. CombinedOutput interleaves them,
-	// and a single warning line on stderr turns the JSON document into
-	// something that will not parse — which reads as "the tool is missing"
-	// rather than as "we merged the streams".
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+func verifyIn(ctx context.Context, env Environment, cfg Config, environ []string, home, tool string) verifier.Result {
+	res, _ := env.Run(ctx,
+		[]string{cfg.Binary, "verify", "--json", "--non-interactive"}, environ, home)
+	// Only stdout is parsed. The streams are kept apart by the environment,
+	// and combining them is the documented trap in this repo: one warning
+	// line on stderr turns a valid JSON document into something that will not
+	// parse, and the parse failure reads as "the tool is missing" rather than
+	// as "we merged the streams".
+	//
 	// The exit code is deliberately ignored. `aes verify` exits non-zero when
 	// ANY tool is missing, and in a sandbox most of the catalog is missing by
 	// design — so treating a non-zero exit as "could not determine" reported
@@ -389,8 +393,7 @@ func verifyIn(ctx context.Context, cfg Config, env []string, home, tool string) 
 	// The contract is "what does verify say about THIS tool", not "did the
 	// whole run succeed". A tool that was just installed is present whatever
 	// the other fifty say.
-	_ = cmd.Run()
-	out := stdout.Bytes()
+	out := []byte(res.Stdout)
 	if len(out) == 0 {
 		return verifier.Result{Tool: tool, Status: verifier.StatusMissing,
 			Path: "no output from aes verify"}
@@ -422,11 +425,16 @@ func verifyIn(ctx context.Context, cfg Config, env []string, home, tool string) 
 	return verifier.Result{Tool: tool, Status: verifier.StatusMissing}
 }
 
-// stateHas reports whether state.json names the tool. It parses the file
-// rather than asking the process that wrote it, so a writer that populates
-// state and forgets to save cannot pass this.
+// stateHas reports whether state.json on the host names the tool.
 func stateHas(home, tool string) bool {
-	data, err := os.ReadFile(filepath.Join(home, "state.json"))
+	return stateHasIn(context.Background(), Host{}, home, tool)
+}
+
+// stateHasIn reads state.json from the environment the install happened in. It
+// parses the file rather than asking the process that wrote it, so a writer
+// that populates state and forgets to save cannot pass this.
+func stateHasIn(ctx context.Context, env Environment, home, tool string) bool {
+	data, err := env.ReadFile(ctx, filepath.Join(home, "state.json"))
 	if err != nil {
 		return false
 	}
@@ -520,12 +528,17 @@ func detail(out string, code int, err error) string {
 // things the verdict does — an earlier version compared only the home and
 // printed "nothing changed" while failing on the binary, which sends the reader
 // looking for a difference that is not in the place it names.
-func idempotentDetail(beforeHome, afterHome, beforeBin, afterBin, snapA, home string, code int, err error) string {
+//
+// It names which of the two digests moved rather than which files moved. A
+// per-file diff needs a copy of the tree, and a container's tree cannot be
+// copied cheaply — the digests are the assertion, and a reader who needs the
+// file list can re-run with the sandbox kept.
+func idempotentDetail(beforeHome, afterHome, beforeBin, afterBin string, code int, err error) string {
 	switch {
 	case err != nil || code != 0:
 		return "re-run did not succeed: " + detail("", code, err)
 	case beforeHome != afterHome:
-		return fmt.Sprintf("sandbox home changed on re-run: %s", changedFiles(snapA, home))
+		return fmt.Sprintf("sandbox home changed on re-run (%s -> %s)", short(beforeHome), short(afterHome))
 	case beforeBin != afterBin:
 		return fmt.Sprintf("binary was rewritten on re-run (before=%s after=%s)", beforeBin, afterBin)
 	default:
@@ -533,93 +546,25 @@ func idempotentDetail(beforeHome, afterHome, beforeBin, afterBin, snapA, home st
 	}
 }
 
-func pathDetail(p string, err error) string {
+// digestDetail explains a presence check. The digest is reported rather than
+// just "exists", because a digest of "absent" and a digest of a zero-byte file
+// are both evidence and they are not the same evidence.
+func digestDetail(path, digest string, err error) string {
 	if err != nil {
-		return fmt.Sprintf("%s: %v", p, err)
+		return fmt.Sprintf("%s: %v", path, err)
 	}
-	return p + " exists"
+	if !exists(digest) {
+		return path + " is absent"
+	}
+	return fmt.Sprintf("%s exists (%s)", path, digest)
 }
 
-// changedFiles names the paths whose content differs between two snapshots of
-// the same tree, so a failing idempotence step points at a file rather than
-// reporting only that something moved.
-func changedFiles(beforeDir, afterDir string) string {
-	before := snapshotFiles(beforeDir)
-	after := snapshotFiles(afterDir)
-	var diffs []string
-	for name, sum := range after {
-		if prev, ok := before[name]; !ok {
-			diffs = append(diffs, "added "+name)
-		} else if prev != sum {
-			diffs = append(diffs, "changed "+name)
-		}
+// short trims a digest for a message.
+func short(d string) string {
+	if len(d) > 12 {
+		return d[:12]
 	}
-	for name := range before {
-		if _, ok := after[name]; !ok {
-			diffs = append(diffs, "removed "+name)
-		}
-	}
-	sort.Strings(diffs)
-	if len(diffs) == 0 {
-		return "content digests differ but no per-file difference was found"
-	}
-	return strings.Join(diffs, ", ")
-}
-
-func snapshotFiles(root string) map[string]string {
-	out := map[string]string{}
-	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		data, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return nil
-		}
-		rel, _ := filepath.Rel(root, p)
-		sum := sha256.Sum256(data)
-		out[rel] = hex.EncodeToString(sum[:])
-		return nil
-	})
-	return out
-}
-
-// firstExisting returns the first non-empty path that exists on disk, falling
-// back to the last candidate so the error message names somewhere meaningful.
-func firstExisting(candidates ...string) string {
-	last := ""
-	for _, c := range candidates {
-		if c == "" {
-			continue
-		}
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-		last = c
-	}
-	return last
-}
-
-// copyTree snapshots a directory for a before/after comparison.
-func copyTree(src, dst string) error {
-	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, rerr := filepath.Rel(src, p)
-		if rerr != nil {
-			return rerr
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o700)
-		}
-		data, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return rerr
-		}
-		return os.WriteFile(target, data, 0o600)
-	})
+	return d
 }
 
 // firstLine is the first non-empty line of s, for diagnostics.
