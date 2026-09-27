@@ -576,3 +576,73 @@ func TestBinaryNameIsPerArch(t *testing.T) {
 		t.Errorf("binaryName() = %q, want jq", got)
 	}
 }
+
+// Install and Uninstall must agree on the binary's name, and for a while they
+// did not.
+//
+// Install writes `installName()`, which prefers the Action's Name — and the CLI
+// sets that from the manifest's own verify.command. Uninstall looked for
+// `binaryName()`, the name INSIDE the archive, and the CLI did not set Name on
+// the uninstall path at all.
+//
+// For most tools the two agree and nothing shows. For a tool whose archive
+// member is named per platform — yq ships yq_darwin_arm64 while the command a
+// user types is `yq` — `aes uninstall yq` looked for a file that was never
+// created, reported "not present", and returned success. The binary stayed, the
+// state entry stayed, and the exit code was 0: a command that does nothing and
+// says it did nothing.
+func TestUninstallRemovesWhatInstallWrote(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		tool     string
+		binary   map[string]string
+		actionNm string
+		want     string
+	}{
+		{
+			name:   "per-arch archive member, renamed on install",
+			tool:   "yq",
+			binary: map[string]string{platform.ArchARM64: "yq_darwin_arm64", platform.ArchAMD64: "yq_darwin_amd64"},
+			// What setup.go sets: the manifest's verify.command.
+			actionNm: "yq",
+			want:     "yq",
+		},
+		{
+			name:   "no Name given: falls back to the archive member",
+			tool:   "tool",
+			binary: map[string]string{platform.ArchARM64: "tool"},
+			want:   "tool",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := t.TempDir()
+			// Install wrote the file under the name the action resolves to.
+			a := Action{
+				Tool:   tc.tool,
+				Name:   tc.actionNm,
+				Target: manifest.Target{Binary: tc.binary},
+				Host:   &platform.Host{OS: platform.OSDarwin, Arch: platform.ArchARM64},
+			}
+			written := filepath.Join(dest, a.installName())
+			if err := os.WriteFile(written, []byte("binary"), 0o755); err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+
+			g := &GithubRelease{Dest: dest}
+			out, err := g.Uninstall(context.Background(), a)
+			if err != nil {
+				t.Fatalf("Uninstall: %v", err)
+			}
+			if !out.Removed {
+				t.Fatalf("Removed = false (%s): uninstall looked for a name install never used. "+
+					"install wrote %q, so this reports success over a binary still on disk",
+					out.Reason, a.installName())
+			}
+			if _, err := os.Stat(written); !os.IsNotExist(err) {
+				t.Error("the binary is still on disk after a reported removal")
+			}
+		})
+	}
+}

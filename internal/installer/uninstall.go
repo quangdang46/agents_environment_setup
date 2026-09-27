@@ -66,10 +66,20 @@ func (r *Registry) Uninstall(ctx context.Context, a Action) (Outcome, error) {
 // It refuses if the binary is not where it expects, rather than reporting a
 // removal that did not happen.
 func (g *GithubRelease) Uninstall(ctx context.Context, a Action) (Outcome, error) {
-	path := filepath.Join(g.Dest, a.binaryName())
+	// installName, NOT binaryName. Install writes installName() — preferring
+	// the Action's Name, which the CLI sets from the manifest's own
+	// verify.command — so asking for anything else here looks for a file that
+	// was never created.
+	//
+	// For a tool whose archive member is named per platform the two differ:
+	// yq ships yq_darwin_arm64 and is installed as `yq`. Uninstalling used to
+	// hunt for yq_darwin_arm64, not find it, report "not present", and return
+	// success — a command that removes nothing and exits 0.
+	name := a.installName()
+	path := filepath.Join(g.Dest, name)
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return NotRemoved(fmt.Sprintf("%s is not present at %s", a.binaryName(), path)), nil
+			return NotRemoved(fmt.Sprintf("%s is not present at %s", name, path)), nil
 		}
 		return Outcome{}, fmt.Errorf("stat %s: %w", path, err)
 	}

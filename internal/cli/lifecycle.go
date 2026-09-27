@@ -124,7 +124,16 @@ func runUninstall(ctx context.Context, app *App, f *Flags, extra any, args []str
 	}
 
 	outcome, err := app.registry().Uninstall(ctx, installer.Action{
-		Tool: name, Target: target, Host: rc.Host, Reason: "uninstall",
+		// Name comes from the same place setup reads it: the manifest's own
+		// verify.command. Without it, uninstall resolves the binary to the name
+		// INSIDE the archive, which for a tool like yq (yq_darwin_arm64) is not
+		// the file that was installed — so `aes uninstall yq` reported success
+		// and left the binary on disk. One declaration, two call sites.
+		Name:   installNameOf(tool),
+		Tool:   name,
+		Target: target,
+		Host:   rc.Host,
+		Reason: "uninstall",
 	})
 	if err != nil {
 		// A privilege error keeps its own exit code: the user must act.

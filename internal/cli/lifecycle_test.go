@@ -169,6 +169,13 @@ func lieRegistry(t *testing.T, rem installer.Remover) *installer.Registry {
 	return r
 }
 
+// removerFunc adapts a func to installer.Remover.
+type removerFunc func(ctx context.Context, a installer.Action) (installer.Outcome, error)
+
+func (f removerFunc) Uninstall(ctx context.Context, a installer.Action) (installer.Outcome, error) {
+	return f(ctx, a)
+}
+
 // removerInstaller delegates installation to a real installer and removal to
 // the injected stand-in.
 type removerInstaller struct {
@@ -333,5 +340,50 @@ func TestUninstallListsDependents(t *testing.T) {
 	}
 	if !strings.Contains(h.stderr.String(), "not be removed automatically") {
 		t.Errorf("did not say dependents are left alone:\n%s", h.stderr.String())
+	}
+}
+
+// setup and uninstall must resolve the binary to the SAME name, or uninstall
+// hunts for a file install never wrote.
+//
+// The two read it from different places and only one of them said so: setup
+// sets Action.Name from the manifest's verify.command, uninstall left it empty
+// and fell back to the name INSIDE the archive. For most tools those are the
+// same string. For yq they are not — the archive ships yq_darwin_arm64 and the
+// command a user types is `yq` — so `aes uninstall yq` looked for a file that
+// did not exist, reported nothing removed, and exited 0.
+//
+// This asserts the CLI half: the Action uninstall builds carries the same Name
+// setup would have used.
+func TestUninstallResolvesTheSameBinaryNameAsSetup(t *testing.T) {
+	h := newLifeHarness(t, toolSpec{name: "yq", category: "utility", provides: "yq"})
+	h.track(t, "yq", manifest.StrategyGo)
+
+	var seen installer.Action
+	rec := removerFunc(func(_ context.Context, a installer.Action) (installer.Outcome, error) {
+		seen = a
+		return installer.Removed(), nil
+	})
+	r := installer.NewRegistry(t.TempDir())
+	r.Register(manifest.StrategyGo, removerInstaller{inner: installer.NewGoInstaller(), rem: rec})
+	h.app.Registry = r
+
+	if code := h.run(t, "uninstall", "yq", "--confirm"); code != ExitOK {
+		t.Fatalf("exit = %d, want 0\n%s", code, h.stderr.String())
+	}
+
+	if seen.Name != "yq" {
+		t.Errorf("uninstall resolved the binary to %q, want %q (the manifest's verify.command); "+
+			"the two paths must not derive the name independently", seen.Name, "yq")
+	}
+	// And the fallback that hides this bug: with Name empty, binaryName() is
+	// used instead, which for yq is yq_darwin_arm64 — a file install never wrote.
+	if seen.Name == "" && seen.Target.Binary != nil {
+		t.Error("uninstall left Name empty, so it will resolve through the archive " +
+			"member name rather than the installed one")
+	}
+	if seen.Name == "" {
+		t.Error("uninstall built an Action with no Name; it will fall back to the " +
+			"archive member name, which is not what was installed")
 	}
 }
