@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
@@ -32,24 +34,41 @@ import (
 // assertion below calls it directly rather than trusting the precondition
 // check inside the sequence to have done it.
 
-// containerTools spans the strategies a run can prove on a fresh Linux box.
+// containerTools are the tools a fresh Linux box proves, and they are exactly
+// the seven the default profile names.
 //
-// Three, per the bead, and they are the three that differ in kind rather than
-// in spelling: an archive that is downloaded and checksum-verified, a package
-// manager that needs root, and an ecosystem installer that needs its own
-// toolchain. A fourth strategy would be the same argument again.
+// The bead asked for three spanning three strategies. Three is where the
+// strategy argument is made — an archive that is downloaded and
+// checksum-verified, a package manager that needs root, an ecosystem installer
+// with its own toolchain — and those three are still here. But a green proof
+// over three tools leaves `aes setup` with no flags resolving to an environment
+// nobody would want, because the default profile names seven and a profile with
+// require_tested refuses to resolve unless every tool in it is verified. Testing
+// the three and calling the North Star done would be proving the mechanism and
+// not the product.
+//
+// So the list is the default profile's, and the strategies fall out of it:
+// git/jq/tmux are package+apt, ripgrep/fzf/gh are github-release, and claude
+// is npm. The profile and the test agreeing by construction is deliberate —
+// checkDefaultProfileIsCovered below fails if they ever drift apart, because a
+// test that silently stops covering the profile is worse than no test.
 var containerTools = []struct {
 	name     string
 	strategy string
 }{
-	// github-release: a real archive, downloaded, checksum-verified, extracted.
-	{"zoxide", manifest.StrategyGithubRelease},
 	// package + apt: the privilege path, and the reason a container exists —
-	// brew cannot run here and on a macOS host this strategy is unreachable.
+	// brew cannot run here, and on a macOS host this strategy is unreachable.
+	{"git", manifest.StrategyPackage},
 	{"jq", manifest.StrategyPackage},
+	{"tmux", manifest.StrategyPackage},
+	// github-release: a real archive, downloaded, checksum-verified, extracted.
+	{"ripgrep", manifest.StrategyGithubRelease},
+	{"fzf", manifest.StrategyGithubRelease},
+	{"gh", manifest.StrategyGithubRelease},
 	// npm: an ecosystem installer, which writes to its own global prefix
-	// rather than to $AES_HOME/bin.
-	{"codex", manifest.StrategyNPM},
+	// rather than to $AES_HOME/bin, and which drags in the `node` dependency
+	// whose version floor is what made this fail the first time.
+	{"claude", manifest.StrategyNPM},
 }
 
 // containerPrep are the packages the fixture needs before any strategy can run.
@@ -57,9 +76,14 @@ var containerTools = []struct {
 // ca-certificates is not optional and its absence is a lie the harness tells: a
 // bare ubuntu:24.04 has no CA bundle, so every https request fails with
 // "certificate signed by unknown authority" and the error names the network
-// rather than the missing package. nodejs/npm are the npm strategy's
-// toolchain, which the Ecosystem installer refuses to go hunting for.
-var containerPrep = []string{"ca-certificates", "git", "nodejs", "npm"}
+// rather than the missing package. nodejs/npm are the npm strategy's toolchain,
+// which the Ecosystem installer refuses to go hunting for.
+//
+// git is deliberately NOT here even though the go toolchain wanted it. It is in
+// the list above, and installing it as fixture setup would make requireAbsent
+// refuse the git test for a reason that has nothing to do with aes — the harness
+// would be breaking its own starting condition.
+var containerPrep = []string{"ca-certificates", "nodejs", "npm"}
 
 func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	layer2Enabled(t)
@@ -219,6 +243,49 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 		t.Errorf("only %d of 3 strategies proven: %v", len(strategiesProven), strategiesProven)
 	}
 	t.Logf("strategies proven inside a fresh container: %v", strategiesProven)
+
+	checkDefaultProfileIsCovered(t, cat)
+}
+
+// checkDefaultProfileIsCovered fails when the default profile names a tool this
+// test no longer proves.
+//
+// The two lists are written out separately on purpose — a test that read the
+// profile would silently shrink to whatever the profile happens to contain and
+// keep passing. This is the assertion that stops that: it compares the list
+// that was actually exercised against the profile that has to resolve, and
+// names anything added to one and not the other.
+func checkDefaultProfileIsCovered(t *testing.T, cat *catalog.Catalog) {
+	t.Helper()
+
+	const profilePath = "../../profiles/default.yaml"
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatalf("read %s: %v", profilePath, err)
+	}
+	var prof struct {
+		Include []string `yaml:"include"`
+	}
+	if err := yaml.Unmarshal(data, &prof); err != nil {
+		t.Fatalf("parse %s: %v", profilePath, err)
+	}
+	if len(prof.Include) == 0 {
+		t.Fatalf("%s includes nothing; this assertion would be vacuous", profilePath)
+	}
+
+	covered := make(map[string]bool, len(containerTools))
+	for _, tc := range containerTools {
+		covered[tc.name] = true
+	}
+	for _, name := range prof.Include {
+		if !covered[name] {
+			t.Errorf("the default profile includes %q but this container run does not prove it; "+
+				"the profile will not resolve with require_tested until it does", name)
+		}
+		if _, ok := cat.ByName(name); !ok {
+			t.Errorf("the default profile includes %q, which is not in the catalog", name)
+		}
+	}
 }
 
 // buildAesFor compiles the binary under test for a specific platform, so the
