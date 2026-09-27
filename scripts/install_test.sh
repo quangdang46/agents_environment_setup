@@ -166,6 +166,42 @@ else
     bad "no aes-install.* temp directories remain" "found leftovers in ${TMPDIR:-/tmp}"
 fi
 
+echo
+echo "7. the installed binary finds its own catalog (not just --version)"
+# `aes --version` never touches the catalog, so it is structurally blind to a
+# binary that cannot find its own data. That is not hypothetical: it is
+# exactly how a released binary once shipped without a way to locate
+# tools/, and `aes --version` passed the whole time.
+#
+# Run from OUTSIDE the checkout with a clean HOME, so the answer cannot come
+# from the working tree. This is the assertion the earlier tests lacked.
+LOOP_HOME="$WORK/loop"
+mkdir -p "$LOOP_HOME"
+# Same fixture and flags as run_install, but with a clean HOME and the
+# working directory outside the checkout, so nothing can be answered from the
+# working tree. env -i is deliberate: a fixture that inherits the caller's
+# environment is not testing a clean machine.
+(
+  cd "$TMPDIR" || exit 1
+  env -i PATH="/usr/bin:/bin" HOME="$LOOP_HOME" \
+    sh "$INSTALL_SH" --base-url "file://$SERVE" --version test \
+    --prefix "$LOOP_HOME/.aes" >/dev/null 2>&1
+) || true
+if [ -x "$LOOP_HOME/.aes/bin/aes" ]; then
+  # From a directory that is not the checkout, with a clean environment.
+  LIST=$(cd "$TMPDIR" && env -i PATH="$LOOP_HOME/.aes/bin:/usr/bin:/bin" HOME="$LOOP_HOME" \
+    "$LOOP_HOME/.aes/bin/aes" list --json 2>/dev/null)
+  COUNT=$(printf '%s' "$LIST" | grep -o '"name"' | wc -l | tr -d ' ')
+  if [ "$COUNT" -gt 0 ]; then
+    ok "installed binary listed $COUNT tools with no checkout in reach"
+  else
+    bad "installed binary listed $COUNT tools with no checkout in reach" \
+        "the catalog did not travel with the binary"
+  fi
+else
+  bad "installed binary finds its own catalog" "no binary at $LOOP_HOME/.aes/bin/aes"
+fi
+
 # --------------------------------------------------------------- summary
 
 echo
