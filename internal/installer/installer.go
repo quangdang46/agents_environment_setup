@@ -70,6 +70,16 @@ type Action struct {
 	// Reason records why the tool is present ("default", "dependency:git",
 	// "only:claude"). Diagnostic only, never parsed.
 	Reason string
+	// Force marks a corrective action: the caller saw state disagree with
+	// reality and asked for a repair rather than a first install.
+	//
+	// It reaches the installer because a package manager's first install and
+	// its repair are different commands. dpkg records "installed" from its own
+	// database rather than the filesystem, so after a binary is deleted
+	// out from under it, `apt-get install -y` reports the package as already
+	// the newest and restores nothing. Only --reinstall re-extracts the files.
+	// Without this field a forced run succeeds while repairing nothing.
+	Force bool
 }
 
 // Installer installs one tool according to one strategy.

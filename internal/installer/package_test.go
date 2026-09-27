@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -261,6 +262,135 @@ func TestAptAsRootNeedsNoSudo(t *testing.T) {
 	if strings.Contains(rec.privileged[0], "sudo") {
 		t.Errorf("command %q escalates despite already being root", rec.privileged[0])
 	}
+}
+
+// A forced install is a repair, and apt cannot be asked to repair with the
+// command a first install uses.
+//
+// dpkg records "jq installed" from its own database, not from the filesystem.
+// Deleting /usr/bin/jq without telling dpkg leaves the two disagreeing, and
+// `apt-get install -y jq` then answers "jq is already the newest version",
+// exits 0, and restores nothing. `--force` promises to correct exactly that
+// disagreement, so with the first-install command it is a promise the strategy
+// cannot keep: the run succeeds, the binary is still missing, and the tool is
+// still broken.
+//
+// Measured in a fresh ubuntu:24.04 container, which is where this was found:
+//
+//	rm -f /usr/bin/jq
+//	apt-get install -y jq             -> "already the newest version", still gone
+//	apt-get install -y --reinstall jq -> /usr/bin/jq restored, 67512 bytes
+func TestAptForceReinstallsRatherThanTrustingDpkg(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv, priv := rec.installers()
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		RunPrivileged:   priv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	action := pkgAction(manifest.ManagerApt, "jq")
+	action.Force = true
+	if err := p.Install(context.Background(), action); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	if len(rec.privileged) != 1 {
+		t.Fatalf("privileged calls = %v, want exactly one", rec.privileged)
+	}
+	if !strings.Contains(rec.privileged[0], "--reinstall") {
+		t.Errorf("forced apt command = %q, want --reinstall.\n"+
+			"Without it apt trusts dpkg's database, reports the package as already "+
+			"newest, and leaves a deleted binary deleted -- so --force repairs nothing",
+			rec.privileged[0])
+	}
+}
+
+// The negative control: the ordinary first install must NOT carry --reinstall.
+// Adding it unconditionally would re-unpack every package on every setup run,
+// which is slower and rewrites files that were fine.
+func TestAptWithoutForceDoesNotReinstall(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv, priv := rec.installers()
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		RunPrivileged:   priv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	if err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "jq")); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if strings.Contains(rec.privileged[0], "--reinstall") {
+		t.Errorf("a first install ran %q; --reinstall is for a repair only", rec.privileged[0])
+	}
+}
+
+// The privilege model has to survive the new flag. A forced apt install on a
+// non-root machine must still go through the printed-and-confirmed path, and
+// must still use `sudo -n` when nobody can answer.
+func TestAptForceRespectsThePrivilegeModel(t *testing.T) {
+	t.Parallel()
+
+	t.Run("interactive is confirmed before anything runs", func(t *testing.T) {
+		rec := &recorder{}
+		unpriv, priv := rec.installers()
+		var out bytes.Buffer
+		p := &PackageInstaller{
+			RunUnprivileged: unpriv,
+			RunPrivileged:   priv,
+			IsRoot:          func() bool { return false },
+			In:              strings.NewReader("y\n"),
+			Out:             &out,
+		}
+		action := pkgAction(manifest.ManagerApt, "jq")
+		action.Force = true
+		if err := p.Install(context.Background(), action); err != nil {
+			t.Fatalf("Install: %v", err)
+		}
+		if len(rec.privileged) != 1 || !strings.Contains(rec.privileged[0], "sudo apt-get install") {
+			t.Fatalf("privileged = %v, want a confirmed sudo apt-get", rec.privileged)
+		}
+		if !strings.Contains(rec.privileged[0], "--reinstall") {
+			t.Errorf("forced command %q lost --reinstall on the escalated path", rec.privileged[0])
+		}
+		// The command is printed before the question, so what is about to run
+		// is visible before anyone types anything.
+		if !strings.Contains(out.String(), "--reinstall") {
+			t.Errorf("the printed command does not mention --reinstall:\n%s", out.String())
+		}
+	})
+
+	t.Run("non-interactive still uses sudo -n", func(t *testing.T) {
+		rec := &recorder{}
+		unpriv, priv := rec.installers()
+		p := &PackageInstaller{
+			RunUnprivileged: unpriv,
+			RunPrivileged:   priv,
+			IsRoot:          func() bool { return false },
+			NonInteractive:  true,
+			Out:             io.Discard,
+		}
+		action := pkgAction(manifest.ManagerApt, "jq")
+		action.Force = true
+		if err := p.Install(context.Background(), action); err != nil {
+			t.Fatalf("Install: %v", err)
+		}
+		if !strings.HasPrefix(rec.privileged[0], "sudo -n apt-get install") {
+			t.Errorf("non-interactive command = %q, want it to start with `sudo -n`", rec.privileged[0])
+		}
+		if !strings.Contains(rec.privileged[0], "--reinstall") {
+			t.Errorf("forced command %q lost --reinstall on the sudo -n path", rec.privileged[0])
+		}
+	})
 }
 
 func TestUnknownManagerIsNotDefaulted(t *testing.T) {

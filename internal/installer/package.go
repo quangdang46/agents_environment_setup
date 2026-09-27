@@ -129,10 +129,19 @@ func (p *PackageInstaller) Install(ctx context.Context, a Action) error {
 	switch a.Target.Manager {
 	case manifest.ManagerBrew:
 		// brew never needs root. No prompt, no sudo, no ceremony.
-		_, err := p.unprivileged()(ctx, "brew install "+pkg)
+		//
+		// `reinstall` rather than `install` when forcing, for the same reason
+		// apt needs --reinstall below: brew also keeps its own record of what
+		// it installed, and a binary deleted behind its back leaves that record
+		// saying everything is fine.
+		verb := "install"
+		if a.Force {
+			verb = "reinstall"
+		}
+		_, err := p.unprivileged()(ctx, "brew "+verb+" "+pkg)
 		return err
 	case manifest.ManagerApt:
-		return p.installApt(ctx, a.Tool, pkg)
+		return p.installApt(ctx, a)
 	default:
 		// manifest validation already rejects this, but the installer is
 		// reachable from anywhere and must not fall through to a default.
@@ -142,21 +151,39 @@ func (p *PackageInstaller) Install(ctx context.Context, a Action) error {
 }
 
 // installApt implements the privilege model for apt.
-func (p *PackageInstaller) installApt(ctx context.Context, tool, pkg string) error {
+func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
+	pkg := a.Target.Package
+
+	// --reinstall is what makes a forced run a repair rather than a no-op.
+	//
+	// dpkg's idea of what is installed comes from its own database, not from
+	// the filesystem. Delete /usr/bin/jq without telling dpkg and the two
+	// disagree: `apt-get install -y jq` prints "already the newest version",
+	// exits 0, and restores nothing at all. So a --force that used the
+	// first-install command would report success while leaving the tool
+	// broken — a run that repairs nothing and says it did.
+	//
+	// It is omitted otherwise. --reinstall re-unpacks every file of the
+	// package, so putting it on ordinary installs would rewrite files that
+	// were already correct on every setup run.
+	base := "apt-get install -y"
+	if a.Force {
+		base += " --reinstall"
+	}
+	base += " " + pkg
+
 	// Already root: no escalation question arises. Containers and CI images
 	// land here, and it is why `aes test` needs no password.
 	if p.root() {
-		return p.runApt(ctx, tool, "apt-get install -y "+pkg, false)
+		return p.runApt(ctx, a.Tool, base, false)
 	}
-
-	base := "apt-get install -y " + pkg
 
 	if p.NonInteractive {
 		// sudo -n fails immediately rather than prompting. Success means the
 		// install ran; failure means we stop and report. There is no retry:
 		// a second attempt is how a tool ends up waiting on a prompt that
 		// nobody is there to answer.
-		if err := p.runApt(ctx, tool, "sudo -n "+base, true); err != nil {
+		if err := p.runApt(ctx, a.Tool, "sudo -n "+base, true); err != nil {
 			return err
 		}
 		return nil
@@ -168,7 +195,7 @@ func (p *PackageInstaller) installApt(ctx context.Context, tool, pkg string) err
 	if err := p.authorize(base); err != nil {
 		return err
 	}
-	return p.runApt(ctx, tool, "sudo "+base, false)
+	return p.runApt(ctx, a.Tool, "sudo "+base, false)
 }
 
 // runApt executes an apt command, translating failure into a PrivilegeError
