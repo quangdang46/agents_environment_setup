@@ -18,7 +18,7 @@ aes setup
 ```
 
 > **Status: pre-1.0, and honest about it.** No release is published yet, so the
-> install line above does not work today. 75 tool definitions exist; **0 are
+> install line above does not work today. 61 tool definitions exist; **0 are
 > marked `tested: true` yet**, which by design means `aes setup` with no flags
 > currently resolves to nothing and exits non-zero. See
 > [Status and limitations](#status-and-limitations) — this is the intended
@@ -266,12 +266,22 @@ This is an active, pre-1.0 project. Stated plainly:
   to download from yet. Build from source for now.
 - **Zero tools are `tested: true`.** Verification requires both Layer 1
   (fixtures on a real machine) and Layer 2 (a real install). Layer 2 is built
-  and green — `internal/sandbox`, opt-in behind `AES_LAYER2=1` — but the two
-  layers have contradictory preconditions: Layer 1 needs a tool **present**,
-  Layer 2 needs it **absent**. On one machine no tool can satisfy both, so the
-  flag cannot honestly be set yet. `aes setup` with **no flags resolves to
-  nothing and exits non-zero** — which is I15 working as designed. Use `--only`
-  or a profile until the container lands.
+  and green — `internal/sandbox`, opt-in behind `AES_LAYER2=1`.
+  `aes setup` with **no flags resolves to nothing and exits non-zero**, which
+  is I15 working as designed. Use `--only` or a profile until the container
+  lands.
+
+  An earlier version of this file said the two layers have *contradictory
+  preconditions* and that no tool on one machine could pass both. That was
+  overstated, and it was mine: the conflict applies to a tool in one of the two
+  states — already present, so Layer 2 refuses it, or already absent, so Layer 1
+  skips it. A tool in **neither** state passes both in sequence, because Layer 2
+  installs it and Layer 1 then detects it. The real constraint is narrower: the
+  Layer-1 fixture list is a fixed set of eight tools that are all pre-installed
+  here, so every one of them is refused by Layer 2. The container still matters,
+  but for isolation and reproducibility rather than impossibility — a
+  container-sourced flag means "works on a clean machine, everywhere", which is
+  the claim the North Star actually makes.
 - **The TUI is new and lightly exercised.** It exists and its selection
   logic is well tested, but it has never been run on a machine other than
   the one that wrote it, and raw mode goes through `stty`. Expect rough edges
