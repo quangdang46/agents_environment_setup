@@ -1,21 +1,21 @@
-# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
 name: pi
 description: pi agent runtime
 category: agent
 tested: false
 tags:
   - agent
-dependencies:
-  - go
 verify:
   command: pi
   version:
     command: pi --version
-    min: "0.6"
+    min: "0.6.0"
 install:
   darwin:
-    strategy: go
-    go_package: github.com/dicklesworthstone/pi_agent_rust@v0.6.1
+    strategy: package
+    manager: brew
+    package: pi
   linux:
-    strategy: go
-    go_package: github.com/dicklesworthstone/pi_agent_rust@v0.6.1
+    strategy: package
+    manager: apt
+    package: pi

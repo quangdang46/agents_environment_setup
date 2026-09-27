@@ -1,21 +1,21 @@
-# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
 name: ee
 description: eidetic engine command line
 category: agent
 tested: false
 tags:
   - agent
-dependencies:
-  - go
 verify:
   command: ee
   version:
     command: ee --version
-    min: "0.15"
+    min: "0.15.0"
 install:
   darwin:
-    strategy: go
-    go_package: github.com/dicklesworthstone/eidetic_engine_cli@v0.15.2
+    strategy: package
+    manager: brew
+    package: ee
   linux:
-    strategy: go
-    go_package: github.com/dicklesworthstone/eidetic_engine_cli@v0.15.2
+    strategy: package
+    manager: apt
+    package: ee

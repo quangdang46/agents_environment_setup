@@ -1,4 +1,4 @@
-# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
 name: fsfs
 description: full-disk search for agent work
 category: agent
@@ -6,17 +6,17 @@ tested: false
 tags:
   - agent
   - search
-dependencies:
-  - go
 verify:
   command: fsfs
   version:
     command: fsfs --version
-    min: "1.10"
+    min: "1.10.0"
 install:
   darwin:
-    strategy: go
-    go_package: github.com/dicklesworthstone/frankensearch@v1.10.0
+    strategy: package
+    manager: brew
+    package: fsfs
   linux:
-    strategy: go
-    go_package: github.com/dicklesworthstone/frankensearch@v1.10.0
+    strategy: package
+    manager: apt
+    package: fsfs

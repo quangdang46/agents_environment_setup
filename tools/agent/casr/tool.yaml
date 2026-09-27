@@ -1,21 +1,21 @@
-# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (module path verified via proxy.golang.org). The module path is the proof: the Go proxy serves github.com/<owner>/<repo> only from that repository. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
 name: casr
 description: resumes a session under a different agent
 category: agent
 tested: false
 tags:
   - agent
-dependencies:
-  - go
 verify:
   command: casr
   version:
     command: casr --version
-    min: "0.3"
+    min: "0.3.0"
 install:
   darwin:
-    strategy: go
-    go_package: github.com/dicklesworthstone/cross_agent_session_resumer@v0.4.1
+    strategy: package
+    manager: brew
+    package: casr
   linux:
-    strategy: go
-    go_package: github.com/dicklesworthstone/cross_agent_session_resumer@v0.4.1
+    strategy: package
+    manager: apt
+    package: casr
