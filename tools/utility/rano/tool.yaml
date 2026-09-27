@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/rano release v0.2.0;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: rano
 description: random number and sampling helper
 category: utility
@@ -12,10 +17,20 @@ verify:
     min: "0.2.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: rano
+    strategy: github-release
+    repository: Dicklesworthstone/rano
+    asset:
+      amd64: rano-x86_64-apple-darwin.tar.xz
+      arm64: rano-aarch64-apple-darwin.tar.xz
+    sha256:
+      amd64: f18525db1421a381d1302af833533647c1ba0926131a2b968007685f078e1d0a
+      arm64: 673c4b2f9eed2fad556aaae2dcb4c9ade1bea3c5e6ed910009e50168b85839af
   linux:
-    strategy: package
-    manager: apt
-    package: rano
+    strategy: github-release
+    repository: Dicklesworthstone/rano
+    asset:
+      amd64: rano-x86_64-unknown-linux-gnu.tar.xz
+      arm64: rano-aarch64-unknown-linux-gnu.tar.xz
+    sha256:
+      amd64: 2157680d7c2810d5d01398295299b33dcd8b00d173828764ab5d27c8d5ca998f
+      arm64: 338d6985dd2b1acd4e19377cc6a32b282d8dd12b8d69f69685bc8e0d822214d3

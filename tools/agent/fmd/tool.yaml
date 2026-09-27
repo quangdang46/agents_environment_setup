@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/franken_markdown release v0.4.5;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: fmd
 description: markdown tooling for agent documents
 category: agent
@@ -13,10 +18,20 @@ verify:
     min: "0.4.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: fmd
+    strategy: github-release
+    repository: Dicklesworthstone/franken_markdown
+    asset:
+      amd64: fmd-v0.4.5-x86_64-apple-darwin.tar.gz
+      arm64: fmd-aarch64-apple-darwin.tar.gz
+    sha256:
+      amd64: cb26bf38bab1221e538815d752b1c75f70e91c65809a2657c54b3889f2769ad1
+      arm64: ba4ff7ab765c0ba1e507cd73013bf1c265b628e0eb91f2ca4de1893ed27589cd
   linux:
-    strategy: package
-    manager: apt
-    package: fmd
+    strategy: github-release
+    repository: Dicklesworthstone/franken_markdown
+    asset:
+      amd64: fmd-v0.4.5-x86_64-unknown-linux-gnu.tar.gz
+      arm64: fmd-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: b6d66d80b0aebb0947e4cefa7a44e36ddec254b775bed26e460b54b6c07d3182
+      arm64: 2a40adfccb735281e693c0af6354926a4863d24496d73078124141ca9547f6f3

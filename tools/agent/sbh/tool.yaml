@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/storage_ballast_helper release v0.6.12;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: sbh
 description: disk-pressure defence for agent workloads
 category: agent
@@ -13,10 +18,20 @@ verify:
     min: "0.6.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: sbh
+    strategy: github-release
+    repository: Dicklesworthstone/storage_ballast_helper
+    asset:
+      amd64: sbh-v0.6.12-x86_64-apple-darwin.tar.xz
+      arm64: sbh-aarch64-apple-darwin.tar.xz
+    sha256:
+      amd64: c0a68599f8352277ddd3fd06b2b5a93fbae2dc9fb467e460257b64aed15e2fd0
+      arm64: ec300d49e37426010f13838fff16da36da073cc4ad3cb419ea31b83b1ef77fb5
   linux:
-    strategy: package
-    manager: apt
-    package: sbh
+    strategy: github-release
+    repository: Dicklesworthstone/storage_ballast_helper
+    asset:
+      amd64: sbh-v0.6.12-x86_64-unknown-linux-gnu.tar.xz
+      arm64: sbh-aarch64-unknown-linux-gnu.tar.xz
+    sha256:
+      amd64: 5ea4f724711a029c5c65d158fbf8e0b9c028b14780ed2617f27f90b8e2df2ab9
+      arm64: fbc18eda22bb5451a8f26995ba8ebe8808f1298021fd2258f0c461e6b2407083

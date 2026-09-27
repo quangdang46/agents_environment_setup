@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/frankensearch release v1.10.0;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: fsfs
 description: full-disk search for agent work
 category: agent
@@ -13,10 +18,20 @@ verify:
     min: "1.10.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: fsfs
+    strategy: github-release
+    repository: Dicklesworthstone/frankensearch
+    asset:
+      amd64: fsfs-lite-1.10.0-x86_64-apple-darwin.tar.xz
+      arm64: fsfs-1.10.0-aarch64-apple-darwin.tar.xz
+    sha256:
+      amd64: 98805f3fa04aaeec25a70e276fd068de45e74191519e79def07c11bbc3246610
+      arm64: fd86d12e5ab8794d930715e5dd59b3445d1789717d31f902cf95135f4bf2f18f
   linux:
-    strategy: package
-    manager: apt
-    package: fsfs
+    strategy: github-release
+    repository: Dicklesworthstone/frankensearch
+    asset:
+      amd64: fsfs-1.10.0-x86_64-unknown-linux-gnu.tar.xz
+      arm64: fsfs-lite-1.10.0-aarch64-unknown-linux-musl.tar.xz
+    sha256:
+      amd64: e13198a46821867301b1c62a263e342f16e4d9733ee7b20530a9be035d66107f
+      arm64: a014c589293006deb8fbd21f8ed962a86f8aa8afe0ca422378d4a345260ec8fb

@@ -1,10 +1,14 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. Package names verified against the Debian package index.
+#
+# Debian ships the Kubernetes client as `kubernetes-client`, not `kubectl`.
+# The obvious name does not exist there, so an install keyed on it fails.
 name: kubectl
 description: Kubernetes command-line client
 category: infra
 tested: false
 tags:
   - infra
+  - kubernetes
 verify:
   command: kubectl
   version:
@@ -18,4 +22,4 @@ install:
   linux:
     strategy: package
     manager: apt
-    package: kubectl
+    package: kubernetes-client

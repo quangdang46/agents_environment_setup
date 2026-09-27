@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/mcp_agent_mail_rust release v0.3.36;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: agent-mail
 description: "MCP agent mail: coordination between coding agents"
 category: agent
@@ -13,10 +18,20 @@ verify:
     min: "0.3.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: agent-mail
+    strategy: github-release
+    repository: Dicklesworthstone/mcp_agent_mail_rust
+    asset:
+      amd64: mcp-agent-mail-x86_64-apple-darwin.tar.xz
+      arm64: mcp-agent-mail-aarch64-apple-darwin.tar.xz
+    sha256:
+      amd64: abe5208d808fc111fe534a6a64c727476f21f82fbe0d296564a616aa1820f65a
+      arm64: 2b90585878dd3c8509c21b177450f9f975caebb27a2f6a8601efed0ffb016523
   linux:
-    strategy: package
-    manager: apt
-    package: am
+    strategy: github-release
+    repository: Dicklesworthstone/mcp_agent_mail_rust
+    asset:
+      amd64: mcp-agent-mail-x86_64-unknown-linux-gnu.tar.xz
+      arm64: mcp-agent-mail-aarch64-unknown-linux-gnu.tar.xz
+    sha256:
+      amd64: c80943427f434a4b98f8c6a7e5a16440271ed9f3fa9f0825f150c9013c64325e
+      arm64: 977d76f2e5e12f4cd4afd4b205d5b74d6b69401dd5db91cf08880bf88dade068

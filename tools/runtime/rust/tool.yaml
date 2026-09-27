@@ -1,25 +1,28 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. Package names verified against the Debian package index.
+#
+# apt has `rustc` and `cargo`; it has no `rustup`, which is why this tool does
+# not use the obvious name. The first version of this file asked for `rustup`
+# and the install would have failed on every Debian-family machine.
 name: rust
-description: Rust toolchain via rustup
+description: Rust toolchain via rustc and cargo
 category: runtime
 tested: false
 tags:
   - runtime
 provides:
-  - rustup
-  - cargo
   - rustc
+  - cargo
 verify:
-  command: rustup
+  command: rustc
   version:
-    command: rustup --version
+    command: rustc --version
     min: "1.20"
 install:
   darwin:
     strategy: package
     manager: brew
-    package: rustup
+    package: rust
   linux:
     strategy: package
     manager: apt
-    package: rustup
+    package: rustc

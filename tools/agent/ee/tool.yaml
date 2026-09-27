@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/eidetic_engine_cli release v0.15.2;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: ee
 description: eidetic engine command line
 category: agent
@@ -12,10 +17,20 @@ verify:
     min: "0.15.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: ee
+    strategy: github-release
+    repository: Dicklesworthstone/eidetic_engine_cli
+    asset:
+      amd64: ee-x86_64-apple-darwin.tar.xz
+      arm64: ee-aarch64-apple-darwin.tar.xz
+    sha256:
+      amd64: 0477bc9dee4e538fd84bc7329cd4130861b743b99aed49862c72454773364858
+      arm64: 2da34611107f8c62de8c51a3c8a1490dcb6d1d6eda8d17b79c860cb38eff44e9
   linux:
-    strategy: package
-    manager: apt
-    package: ee
+    strategy: github-release
+    repository: Dicklesworthstone/eidetic_engine_cli
+    asset:
+      amd64: ee-x86_64-unknown-linux-gnu.tar.xz
+      arm64: ee-aarch64-unknown-linux-gnu.tar.xz
+    sha256:
+      amd64: b70c2deaed56b3154e204de6d16c473c50e82fd2d1aa636ecf92d22da0bde46c
+      arm64: 1fe3a04277de5ebd832056a5905ac87f432e8f41c6b1a3cf1cd037c1c53e5c09

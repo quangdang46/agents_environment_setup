@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/beads_viewer release v0.25.0;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: beads-viewer
 description: TUI for the beads task graph
 category: agent
@@ -13,10 +18,20 @@ verify:
     min: "0.16.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: beads-viewer
+    strategy: github-release
+    repository: Dicklesworthstone/beads_viewer
+    asset:
+      amd64: bv_0.25.0_darwin_amd64.tar.gz
+      arm64: bv_0.25.0_darwin_arm64.tar.gz
+    sha256:
+      amd64: a77fb4fe65b916419d38e168e7a71a427c601cb31e35c5dc6f2f07afae0b7f85
+      arm64: bcd132c6636feb21af7e9b8d091063358989b34144faceac3b3d7cdb819745f1
   linux:
-    strategy: package
-    manager: apt
-    package: bv
+    strategy: github-release
+    repository: Dicklesworthstone/beads_viewer
+    asset:
+      amd64: bv_0.25.0_linux_amd64.tar.gz
+      arm64: bv_0.25.0_linux_arm64.tar.gz
+    sha256:
+      amd64: ea756bfadd165b66368b512cf3d7e036e5757df5d7c8f8e2b43a12e0a51b6429
+      arm64: 886b4db5dbdfba4718a7a918ed559c780e953842f88d0eb5cff06d1c4676e781

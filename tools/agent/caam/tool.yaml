@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/coding_agent_account_manager release v0.1.18;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: caam
 description: manages coding agent accounts
 category: agent
@@ -12,10 +17,20 @@ verify:
     min: "0.1.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: caam
+    strategy: github-release
+    repository: Dicklesworthstone/coding_agent_account_manager
+    asset:
+      amd64: caam_0.1.18_darwin_amd64.tar.gz
+      arm64: caam_0.1.18_darwin_arm64.tar.gz
+    sha256:
+      amd64: 860138d80159689cccc98513e0a0f246ad98441a3f45caed756f209514bea972
+      arm64: f10acd6591aa808e4d486783e07695414b4ee92a28da697f33a86a83626f9106
   linux:
-    strategy: package
-    manager: apt
-    package: caam
+    strategy: github-release
+    repository: Dicklesworthstone/coding_agent_account_manager
+    asset:
+      amd64: caam_0.1.18_linux_amd64.tar.gz
+      arm64: caam_0.1.18_linux_arm64.tar.gz
+    sha256:
+      amd64: 65aaccb12ca344dd64df8d378f2d79d9e305a5d7345cd47fe4ac8f361c3dc43c
+      arm64: 2ec69ee05a6e37b12b2c03d0e53a4f107d0627c218e5388d89be71d11e34cca7

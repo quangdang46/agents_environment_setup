@@ -1,4 +1,9 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/cross_agent_session_resumer release v0.4.1;
+# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+#
+# This was `package`/apt until an audit found the package name does not exist in
+# Debian. The first check that said it did was reading an HTTP 200 from a page
+# whose body said 'No such package' - a check that could not fail.
 name: casr
 description: resumes a session under a different agent
 category: agent
@@ -12,10 +17,20 @@ verify:
     min: "0.3.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: casr
+    strategy: github-release
+    repository: Dicklesworthstone/cross_agent_session_resumer
+    asset:
+      amd64: casr-x86_64-apple-darwin.tar.xz
+      arm64: casr-aarch64-apple-darwin.tar.xz
+    sha256:
+      amd64: fa6e4169e1d92d2ef4109e6e4aa65510668fb2628de18c8e7e1d84cc51bdb9bf
+      arm64: 88ed7cd5c575a9eb78e33b5fcee6dd5d8103797aef0fc8477e18fea1168493d0
   linux:
-    strategy: package
-    manager: apt
-    package: casr
+    strategy: github-release
+    repository: Dicklesworthstone/cross_agent_session_resumer
+    asset:
+      amd64: casr-x86_64-unknown-linux-musl.tar.xz
+      arm64: casr-aarch64-unknown-linux-musl.tar.xz
+    sha256:
+      amd64: 616c619f2efacbcc18729ab3d5fbc94135c2cc2844249e4a63164c21ea28972f
+      arm64: 20ca73784179628d3b7e90af3f3fe3f0454a83837614e6707364a2744ab45bea
