@@ -325,13 +325,22 @@ without executing. The only privileged path requires that the command was
 printed and confirmed, or `sudo -n` in automation.
 
 **Why is nothing marked `tested: true` yet?**
-Because the flag means a real install was verified end to end, and that needs
-both layers. Layer 1 and Layer 2 have contradictory preconditions — one needs
-the tool present, the other absent — so they cannot both pass on a single
-machine. The resolution is a fresh container for Layer 2 while the host carries
-the Layer 1 fixtures. Marking tools on detection evidence alone would make the
-tool's central claim — a *verified* environment — a lie, which is the one thing
-the flag exists to prevent.
+Because the flag means a real install was verified end to end, which needs both
+layers, and Layer 2 is only proven on the host so far. Marking tools on
+detection evidence alone would make the tool's central claim — a *verified*
+environment — a lie, which is the one thing the flag exists to prevent.
+
+Worth being precise about why, because an earlier version of this file got it
+wrong. The two layers do NOT have contradictory preconditions in general: a
+tool that is neither installed nor proven passes both in sequence, since Layer 2
+installs it and Layer 1 then detects it. The real constraint is narrower — the
+Layer-1 fixture list is a fixed set of eight tools that are all pre-installed on
+the machine that ran the tests, so every one of them is refused by Layer 2's
+"must start absent" rule.
+
+The container is still worth building, for a better reason than impossibility:
+a container-sourced flag means "this works on a clean machine, everywhere",
+which is the claim the North Star actually makes.
 
 **Can a malicious `tool.yaml` run an arbitrary command?**
 No. The strategy set is closed to six values — `github-release`, `package`,
