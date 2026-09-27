@@ -6,8 +6,6 @@ tested: false
 tags:
   - infra
   - kubernetes
-dependencies:
-  - kubectl
 verify:
   command: k9s
   version:
