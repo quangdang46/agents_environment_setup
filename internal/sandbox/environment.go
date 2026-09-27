@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	osexec "os/exec"
+	"path/filepath"
 )
 
 // Environment is where a sandbox sequence runs.
@@ -188,3 +189,18 @@ func (Host) RemoveAll(_ context.Context, path string) error { return os.RemoveAl
 // path is what every existing Layer 2 assertion was written against, so the
 // container must not quietly become the definition of correct.
 func (Host) Env(home string) []string { return sandboxEnv(home) }
+
+// aesHomeOf is the install directory inside a sandbox root.
+//
+// A run gets a HOME and an AES_HOME that are DIFFERENT directories, because
+// that is what a real machine looks like and the distinction is load-bearing.
+// aes writes under AES_HOME; the tools it installs keep their own caches under
+// $HOME — npm writes a timestamped debug log per invocation, cargo and go keep
+// registries there too. Pointing both at one directory puts all of that inside
+// the tree this package digests to decide whether a re-run changed anything,
+// and the answer is always yes.
+//
+// So the sandbox root is HOME, ~/.aes beneath it is AES_HOME, and the digest
+// covers only the latter: the question is what aes did, not what npm felt like
+// logging about it.
+func aesHomeOf(root string) string { return filepath.Join(root, ".aes") }

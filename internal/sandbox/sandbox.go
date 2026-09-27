@@ -168,6 +168,9 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 	}
 
 	binName := primaryBinary(tool)
+	// Everything aes is responsible for lives under AES_HOME. Tool caches
+	// land beside it, under the sandbox root, and are not aes's to account for.
+	aesHome := aesHomeOf(home)
 
 	// 2. the binary is there and verifies
 	if cfg.DryRun {
@@ -189,7 +192,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 	verifyRes := verifyIn(ctx, environment, cfg, env, home, tool.Name)
 	binPath := verifyRes.Path
 	if binPath == "" {
-		binPath = filepath.Join(home, "bin", binName)
+		binPath = filepath.Join(aesHome, "bin", binName)
 	}
 	binDigest, digestErr := environment.FileDigest(ctx, binPath)
 	present := digestErr == nil && exists(binDigest)
@@ -199,7 +202,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 
 	// 3. state.json on disk, re-read from the file rather than trusted from
 	// the process that wrote it
-	res.record("state entry", stateHasIn(ctx, environment, home, tool.Name), "state.json")
+	res.record("state entry", stateHasIn(ctx, environment, aesHome, tool.Name), "state.json")
 
 	// 4. idempotence: nothing about the sandbox may change
 	//
@@ -208,7 +211,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 	// means shipping the whole tree out over docker exec to explain a
 	// failure. The digests are the assertion; the diff is only a courtesy to
 	// whoever reads the failure.
-	beforeHome, err := environment.TreeDigest(ctx, home)
+	beforeHome, err := environment.TreeDigest(ctx, aesHome)
 	if err != nil {
 		return res, fmt.Errorf("sandbox: fingerprint before re-run: %w", err)
 	}
@@ -216,7 +219,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 
 	out, code, err = run(ctx, environment, cfg, env, home, "setup", "--only", tool.Name)
 
-	afterHome, err := environment.TreeDigest(ctx, home)
+	afterHome, err := environment.TreeDigest(ctx, aesHome)
 	if err != nil {
 		return res, fmt.Errorf("sandbox: fingerprint after re-run: %w", err)
 	}
@@ -289,15 +292,21 @@ func allOK(steps []Step) bool {
 // absent - see requireAbsent, which asserts that precondition rather than
 // assuming it.
 func sandboxEnv(home string) []string {
-	bin := filepath.Join(home, "bin")
+	bin := filepath.Join(aesHomeOf(home), "bin")
 	path := bin
 	if host := os.Getenv("PATH"); host != "" {
 		path = bin + string(os.PathListSeparator) + host
 	}
 	env := []string{
 		"PATH=" + path,
+		// HOME is the sandbox root and AES_HOME is the conventional child of
+		// it, which is what a real machine looks like. Collapsing the two
+		// puts every cache a tool keeps in $HOME inside the directory this
+		// package digests, and npm alone writes a timestamped debug log per
+		// invocation — so "re-running changes nothing" was false for reasons
+		// that had nothing to do with aes.
 		"HOME=" + home,
-		"AES_HOME=" + home,
+		"AES_HOME=" + aesHomeOf(home),
 		"SHELL=/bin/sh",
 		// Package managers refuse to run as root in a container or CI image
 		// without this, and their non-interactive output is what a test wants

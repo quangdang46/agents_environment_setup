@@ -316,9 +316,24 @@ func ContainerAvailable(ctx context.Context) error {
 // non-nil error with EMPTY output, because that is what isNotFound tests for;
 // anything else arriving as an error with output is read as a broken container
 // and is correctly escalated rather than laundered into an absence.
-func (c *Container) runner() ContainerRunner {
+func (c *Container) runner() ContainerRunner { return c.runnerWithEnv(nil) }
+
+// runnerWithEnv is the same probe with an environment applied.
+//
+// It exists because "is the tool installed" has no single honest answer until
+// you say where you are looking. A github-release tool lands in $AES_HOME/bin,
+// which is on the PATH the run used and NOT on the container's default PATH —
+// so probing with the default PATH reports a successful install as absent. The
+// first version of the container test did exactly that and produced a failure
+// message that was confidently wrong about a working install.
+//
+// The correct question after a run is therefore asked with the run's own
+// environment, and the one before it is asked with the container's — before
+// there is no sandbox to look in, and the strongest claim available is the
+// container default.
+func (c *Container) runnerWithEnv(env []string) ContainerRunner {
 	return func(ctx context.Context, argv ...string) (string, error) {
-		res, err := c.Run(ctx, argv, nil, "")
+		res, err := c.Run(ctx, argv, env, "")
 		if err == nil && res.ExitCode != 0 {
 			err = fmt.Errorf("exit status %d", res.ExitCode)
 		}
@@ -471,9 +486,11 @@ func (c *Container) MkdirTemp(ctx context.Context) (string, error) {
 // macOS paths inside a Linux process.
 func (c *Container) Env(home string) []string {
 	return []string{
-		"PATH=" + home + "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"PATH=" + aesHomeOf(home) + "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		// See sandboxEnv: HOME is the sandbox root, AES_HOME its child, so a
+		// tool's own caches stay out of the directory this package digests.
 		"HOME=" + home,
-		"AES_HOME=" + home,
+		"AES_HOME=" + aesHomeOf(home),
 		"SHELL=/bin/sh",
 		"DEBIAN_FRONTEND=noninteractive",
 		"LC_ALL=C",

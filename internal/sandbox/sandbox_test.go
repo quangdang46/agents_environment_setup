@@ -331,14 +331,30 @@ func TestSandboxEnvHidesTheHostPath(t *testing.T) {
 	if host := os.Getenv("PATH"); host != "" {
 		head, _, _ = strings.Cut(path, sep)
 	}
-	if !strings.HasPrefix(path, filepath.Join("/tmp/aes-x", "bin")) {
+	if !strings.HasPrefix(path, filepath.Join("/tmp/aes-x", ".aes", "bin")) {
 		t.Errorf("sandbox bin is not first on PATH: %q", path)
 	}
 	if head == "" {
 		t.Error("sandbox PATH has no leading entry")
 	}
-	if home != "/tmp/aes-x" || aesHome != "/tmp/aes-x" {
-		t.Errorf("HOME=%q AES_HOME=%q, want both inside the sandbox", home, aesHome)
+	// Both must sit inside the sandbox, and they must NOT be the same
+	// directory.
+	//
+	// The distinctness is the load-bearing half. HOME is where the tools aes
+	// installs keep their own state — npm writes a timestamped debug log per
+	// invocation, cargo and go keep registries — and AES_HOME is where aes
+	// writes. Collapsing them puts all of that inside the tree this package
+	// digests to decide whether a re-run changed anything, and the answer is
+	// then always yes for reasons that have nothing to do with aes.
+	if home != "/tmp/aes-x" {
+		t.Errorf("HOME=%q, want the sandbox root /tmp/aes-x", home)
+	}
+	if aesHome != filepath.Join("/tmp/aes-x", ".aes") {
+		t.Errorf("AES_HOME=%q, want %q", aesHome, filepath.Join("/tmp/aes-x", ".aes"))
+	}
+	if home == aesHome {
+		t.Errorf("HOME and AES_HOME are both %q; a tool's $HOME caches would land "+
+			"inside the tree the idempotence check digests", home)
 	}
 }
 
