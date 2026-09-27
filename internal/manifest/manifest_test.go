@@ -608,3 +608,65 @@ func TestLoadNamesTheFile(t *testing.T) {
 		t.Errorf("error %q does not name the file", err)
 	}
 }
+
+// Some upstreams name the binary inside the archive per platform and arch. yq
+// ships yq_linux_amd64 and yq_darwin_arm64, so a single filename cannot
+// describe the artefact and the installer would look for a file that has never
+// existed. binary is a map for the same reason asset and sha256 are.
+const zeros = "0000000000000000000000000000000000000000000000000000000000000000"
+
+func TestBinaryMapCoversExactlyTheAssetArches(t *testing.T) {
+	base := "name: yqlike\ndescription: per-arch binary name\ncategory: utility\n" +
+		"install:\n  linux:\n    strategy: github-release\n    repository: e/x\n"
+
+	for _, tc := range []struct {
+		name    string
+		extra   string
+		wantErr string
+	}{
+		{
+			name: "binary covering both arches",
+			extra: "    asset:\n      amd64: a.tgz\n      arm64: b.tgz\n" +
+				"    sha256:\n      amd64: " + zeros + "\n      arm64: " + zeros + "\n" +
+				"    binary:\n      amd64: bin_amd64\n      arm64: bin_arm64\n",
+		},
+		{
+			name: "binary covering fewer arches than asset",
+			extra: "    asset:\n      amd64: a.tgz\n      arm64: b.tgz\n" +
+				"    sha256:\n      amd64: " + zeros + "\n      arm64: " + zeros + "\n" +
+				"    binary:\n      amd64: bin_amd64\n",
+			wantErr: "binary covers 1 arches but asset covers 2",
+		},
+		{
+			name: "binary with an arch asset does not have",
+			extra: "    asset:\n      amd64: a.tgz\n" +
+				"    sha256:\n      amd64: " + zeros + "\n" +
+				"    binary:\n      amd64: bin_amd64\n      arm64: bin_arm64\n",
+			wantErr: "binary covers 2 arches but asset covers 1",
+		},
+		{
+			name: "binary empty for an arch asset has",
+			extra: "    asset:\n      amd64: a.tgz\n      arm64: b.tgz\n" +
+				"    sha256:\n      amd64: " + zeros + "\n      arm64: " + zeros + "\n" +
+				"    binary:\n      amd64: bin_amd64\n      arm64: \"\"\n",
+			wantErr: "binary is empty for arch",
+		},
+		{
+			name: "no binary at all - the tool name is used, which is most tools",
+			extra: "    asset:\n      amd64: a.tgz\n" +
+				"    sha256:\n      amd64: " + zeros + "\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(base + tc.extra + "verify:\n  command: yqlike\n"))
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("Parse: %v", err)
+			case tc.wantErr != "" && err == nil:
+				t.Errorf("Parse accepted it; want an error containing %q", tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(err.Error(), tc.wantErr):
+				t.Errorf("error = %q, want it to contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}

@@ -242,7 +242,12 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 		return res
 	}
 	installErr := inst.Install(ctx, installer.Action{
-		Tool:   a.Tool,
+		Tool: a.Tool,
+		// The installed filename comes from the manifest's own verify.command,
+		// so the installer and the verifier are reading the same declaration
+		// rather than each deriving a name independently. Deriving it twice is
+		// how yq ended up installed as yq_darwin_arm64 and unrunnable.
+		Name:   installNameOf(tool),
 		Target: target,
 		Host:   rc.Host,
 		Reason: a.Reason,
@@ -424,4 +429,18 @@ func withBinOnPath(dir string) func() {
 		}
 		os.Unsetenv("PATH")
 	}
+}
+
+// installNameOf is the filename a tool is installed as, read from the one place
+// the manifest states it. verify.command is that place: it is what the verifier
+// resolves on PATH, so installing under the same string makes it impossible for
+// the two to disagree.
+func installNameOf(tool *manifest.Tool) string {
+	if tool.Verify != nil && tool.Verify.Command != "" {
+		return tool.Verify.Command
+	}
+	if len(tool.Provides) > 0 {
+		return tool.Provides[0]
+	}
+	return tool.Name
 }

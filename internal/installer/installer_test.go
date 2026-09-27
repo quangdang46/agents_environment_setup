@@ -521,3 +521,58 @@ func assertNoStaging(t *testing.T, dest, want string) {
 		}
 	}
 }
+
+// Three names are in play for some tools, and conflating any two produces an
+// install that lands a file nobody can run:
+//
+//	tool name       ripgrep
+//	archive member  yq_darwin_arm64
+//	installed name  rg
+//
+// The installed name is the verifier's, taken from verify.command, so the two
+// cannot disagree. This test exists because I got it wrong first: placing the
+// binary under the tool name fixed yq and broke bottom, and both passed review.
+func TestInstallNameIsTheVerifiersName(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		act  Action
+		want string
+	}{
+		{"no Name and no binary falls back to the tool", Action{Tool: "jq"}, "jq"},
+		{"Name wins", Action{Tool: "ripgrep", Name: "rg"}, "rg"},
+		{"Name beats the archive member, which is the yq case",
+			Action{Tool: "yq", Name: "yq", Target: manifest.Target{Binary: map[string]string{"arm64": "yq_darwin_arm64"}}},
+			"yq"},
+	} {
+		if got := tc.act.installName(); got != tc.want {
+			t.Errorf("%s: installName() = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// binaryName reads the ARCH-SPECIFIC archive member, because some upstreams
+// name the binary per platform and arch. yq ships yq_linux_amd64 and
+// yq_darwin_arm64, and there is no plain yq in either.
+func TestBinaryNameIsPerArch(t *testing.T) {
+	target := manifest.Target{
+		Binary: map[string]string{"amd64": "yq_linux_amd64", "arm64": "yq_darwin_arm64"},
+	}
+	for _, tc := range []struct {
+		arch, want string
+	}{
+		{"amd64", "yq_linux_amd64"},
+		{"arm64", "yq_darwin_arm64"},
+		{"riscv64", "yqlike"}, // unknown arch falls back to the tool name
+	} {
+		a := Action{Tool: "yqlike", Target: target, Host: &platform.Host{Arch: tc.arch}}
+		if got := a.binaryName(); got != tc.want {
+			t.Errorf("arch %s: binaryName() = %q, want %q", tc.arch, got, tc.want)
+		}
+	}
+
+	// No binary map at all: the tool name, which is most tools.
+	a := Action{Tool: "jq", Host: &platform.Host{Arch: "amd64"}}
+	if got := a.binaryName(); got != "jq" {
+		t.Errorf("binaryName() = %q, want jq", got)
+	}
+}

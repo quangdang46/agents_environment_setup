@@ -129,7 +129,7 @@ func (g *GithubRelease) Install(ctx context.Context, a Action) error {
 		return err
 	}
 
-	final := filepath.Join(g.Dest, a.Tool)
+	final := filepath.Join(g.Dest, a.installName())
 	if err := os.Rename(binary, final); err != nil {
 		return fmt.Errorf("install %s: %w", final, err)
 	}

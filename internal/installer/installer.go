@@ -60,6 +60,22 @@ var (
 type Action struct {
 	// Tool is the manifest tool name.
 	Tool string
+
+	// Name is the filename this tool is INSTALLED as, which is not always the
+	// tool name and is not the same as the filename inside the archive.
+	//
+	// Three genuinely different names are in play for a tool like yq:
+	//
+	//   tool name     ripgrep          - how the catalog refers to it
+	//   archive member yq_darwin_arm64 - what the upstream tarball contains
+	//   installed name yq               - what the user types
+	//
+	// They differ per tool, and conflating any two of them produces an
+	// install that lands a file nobody can run. Name is the installed one,
+	// taken from the manifest's verify.command so the verifier and the
+	// installer are guaranteed to be talking about the same file. Empty falls
+	// back to Tool.
+	Name string
 	// Target is the install recipe chosen for this host, already resolved
 	// out of the manifest's per-GOOS map by the caller.
 	Target manifest.Target
@@ -219,6 +235,23 @@ func RequiresPrivilege(target manifest.Target) bool {
 // string could not describe it and the lookup is by Host.Arch. Falling back to
 // the tool name when no entry matches keeps every manifest that does not need
 // the map working unchanged.
+// installName is the name the binary is placed under, and what Verify will
+// look for. It is Name when the caller supplied one, so the installer and the
+// verifier cannot disagree about which file they mean.
+//
+// The fallback is binaryName(), not Tool. For most tools the archive member
+// and the tool name are the same, but where they differ - ripgrep ships rg,
+// bottom ships btm - the archive member is what the user types, so falling
+// back to Tool would place a file nobody can run. The CLI always sets Name
+// from the manifest's verify.command; the fallback is only for callers that
+// construct an Action directly.
+func (a Action) installName() string {
+	if a.Name != "" {
+		return a.Name
+	}
+	return a.binaryName()
+}
+
 func (a Action) binaryName() string {
 	if len(a.Target.Binary) > 0 && a.Host != nil {
 		if name := a.Target.Binary[a.Host.Arch]; name != "" {
