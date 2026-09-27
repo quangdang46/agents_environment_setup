@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -34,49 +35,85 @@ import (
 // assertion below calls it directly rather than trusting the precondition
 // check inside the sequence to have done it.
 
-// containerTools is every tool the DEFAULT profile selects, and it is 18
-// rather than the 7 the profile names.
+// containerToolsFor is every tool the DEFAULT profile selects, read from the
+// profile and the catalog rather than from a list maintained here.
 //
-// A profile's `tags:` are selectors, not decoration: Resolve unions them with
-// `include`, matching by category OR tag. So `default` — which lists seven
-// tools by name and then tags itself `terminal, ai` — actually selects every
-// tool in those two groups, and its name list is redundant with its own tags.
-// `require_tested` then demands all of them be verified, so seven proofs do not
-// make the profile resolve. That is worth knowing before anyone tunes the flag
-// count to match the include list.
+// The list used to be written out by hand, and it went stale the moment a tool
+// was removed from the catalog: the test still asked for `aadc`, failed with
+// "not in the catalog", and reported that as a Layer 2 failure. A hand-kept
+// list is a second source of truth about the catalog, which is the exact shape
+// this project has been fixing all week.
 //
-// The strategies still fall out of the selection rather than being chosen:
-// aadc/git/jq/ntm/tmux package+apt, bat/bottom/btop/dust/eza/fzf/gh/ripgrep/
-// zellij github-release, claude/codex/gemini/opencode npm.
-var containerTools = []struct {
+// The strategy is read from the resolved target too, so the assertion below
+// compares aes's own answer against the manifest rather than against a constant
+// that can go out of date independently of both.
+
+func containerToolsFor(t *testing.T, cat *catalog.Catalog) []namedTool {
+	t.Helper()
+
+	data, err := os.ReadFile(defaultProfilePath)
+	if err != nil {
+		t.Fatalf("read %s: %v", defaultProfilePath, err)
+	}
+	var prof struct {
+		Include []string `yaml:"include"`
+		Tags    []string `yaml:"tags"`
+	}
+	if err := yaml.Unmarshal(data, &prof); err != nil {
+		t.Fatalf("parse %s: %v", defaultProfilePath, err)
+	}
+	if len(prof.Include) == 0 && len(prof.Tags) == 0 {
+		t.Fatalf("%s selects nothing; this test would be vacuous", defaultProfilePath)
+	}
+
+	// The same union Resolve performs: names plus category plus tag.
+	seen := map[string]bool{}
+	for _, name := range prof.Include {
+		seen[name] = true
+	}
+	for _, selector := range prof.Tags {
+		for _, tool := range cat.ByCategory(selector) {
+			seen[tool.Name] = true
+		}
+		for _, tool := range cat.ByTag(selector) {
+			seen[tool.Name] = true
+		}
+	}
+
+	out := make([]namedTool, 0, len(seen))
+	for name := range seen {
+		tool, ok := cat.ByName(name)
+		if !ok {
+			t.Errorf("the default profile selects %q, which is not in the catalog", name)
+			continue
+		}
+		out = append(out, namedTool{name: name, strategy: strategyOf(tool)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	if len(out) == 0 {
+		t.Fatal("the profile selected no installable tool; nothing would be proven")
+	}
+	return out
+}
+
+// namedTool is one tool and the strategy its manifest declares for linux.
+type namedTool struct {
 	name     string
 	strategy string
-}{
-	// package + apt: the privilege path, and the reason a container exists —
-	// brew cannot run here, and on a macOS host this strategy is unreachable.
-	{"aadc", manifest.StrategyPackage},
-	{"git", manifest.StrategyPackage},
-	{"jq", manifest.StrategyPackage},
-	{"ntm", manifest.StrategyPackage},
-	{"tmux", manifest.StrategyPackage},
-	// github-release: a real archive, downloaded, checksum-verified, extracted.
-	{"bat", manifest.StrategyGithubRelease},
-	{"bottom", manifest.StrategyGithubRelease},
-	{"btop", manifest.StrategyGithubRelease},
-	{"dust", manifest.StrategyGithubRelease},
-	{"eza", manifest.StrategyGithubRelease},
-	{"fzf", manifest.StrategyGithubRelease},
-	{"gh", manifest.StrategyGithubRelease},
-	{"ripgrep", manifest.StrategyGithubRelease},
-	{"zellij", manifest.StrategyGithubRelease},
-	// npm: an ecosystem installer that writes to its own global prefix rather
-	// than to $AES_HOME/bin, and that drags in the `node` dependency whose
-	// version floor made every one of these fail the first time.
-	{"claude", manifest.StrategyNPM},
-	{"codex", manifest.StrategyNPM},
-	{"gemini", manifest.StrategyNPM},
-	{"opencode", manifest.StrategyNPM},
 }
+
+// strategyOf reads the linux strategy out of a manifest rather than assuming
+// it, so the test's expectation comes from the same declaration the resolver
+// will use.
+func strategyOf(tool *manifest.Tool) string {
+	target, ok := (&platform.Host{OS: platform.OSLinux}).Target(tool)
+	if !ok {
+		return ""
+	}
+	return target.Strategy
+}
+
+const defaultProfilePath = "../../profiles/default.yaml"
 
 // containerPrep are the packages the fixture needs before any strategy can run.
 //
@@ -152,8 +189,13 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	// target lookup would silently miss.
 	linux := &platform.Host{OS: platform.OSLinux, Arch: c.GoArch, Manager: platform.ManagerApt}
 
+	// Read from the profile, so a tool added to or removed from the catalog
+	// changes what this proves without anyone editing the test.
+	tools := containerToolsFor(t, cat)
+	t.Logf("the default profile selects %d tools; proving each on a fresh machine", len(tools))
+
 	strategiesProven := map[string]bool{}
-	for _, tc := range containerTools {
+	for _, tc := range tools {
 		t.Run(tc.name, func(t *testing.T) {
 			tool, ok := cat.ByName(tc.name)
 			if !ok {
@@ -251,7 +293,6 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	}
 	t.Logf("strategies proven inside a fresh container: %v", strategiesProven)
 
-	checkDefaultProfileIsCovered(t, cat)
 }
 
 // checkDefaultProfileIsCovered fails when the default profile names a tool this
@@ -262,60 +303,6 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 // keep passing. This is the assertion that stops that: it compares the list
 // that was actually exercised against the profile that has to resolve, and
 // names anything added to one and not the other.
-func checkDefaultProfileIsCovered(t *testing.T, cat *catalog.Catalog) {
-	t.Helper()
-
-	const profilePath = "../../profiles/default.yaml"
-	data, err := os.ReadFile(profilePath)
-	if err != nil {
-		t.Fatalf("read %s: %v", profilePath, err)
-	}
-	var prof struct {
-		Include []string `yaml:"include"`
-		Tags    []string `yaml:"tags"`
-	}
-	if err := yaml.Unmarshal(data, &prof); err != nil {
-		t.Fatalf("parse %s: %v", profilePath, err)
-	}
-	if len(prof.Include) == 0 {
-		t.Fatalf("%s includes nothing; this assertion would be vacuous", profilePath)
-	}
-
-	covered := make(map[string]bool, len(containerTools))
-	for _, tc := range containerTools {
-		covered[tc.name] = true
-	}
-
-	// Everything the profile selects: its names AND everything its tags match.
-	// Checking only `include` would pass while the profile still refused to
-	// resolve, which is the failure this assertion exists to prevent.
-	selected := map[string]bool{}
-	for _, name := range prof.Include {
-		selected[name] = true
-	}
-	for _, selector := range prof.Tags {
-		for _, t := range cat.ByCategory(selector) {
-			selected[t.Name] = true
-		}
-		for _, t := range cat.ByTag(selector) {
-			selected[t.Name] = true
-		}
-	}
-	if len(selected) <= len(prof.Include) {
-		t.Fatalf("the profile's tags matched nothing beyond its include list; " +
-			"this assertion would not be checking what the profile actually selects")
-	}
-
-	for name := range selected {
-		if !covered[name] {
-			t.Errorf("the default profile selects %q but this container run does not prove it; "+
-				"the profile will not resolve with require_tested until it does", name)
-		}
-		if _, ok := cat.ByName(name); !ok {
-			t.Errorf("the default profile selects %q, which is not in the catalog", name)
-		}
-	}
-}
 
 // buildAesFor compiles the binary under test for a specific platform, so the
 // layer being proven is the one in this checkout rather than whatever happens
