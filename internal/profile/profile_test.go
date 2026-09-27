@@ -56,6 +56,9 @@ func fixtureCatalog(t *testing.T) *catalog.Catalog {
 	writeTool(t, root, "ripgrep", "search", true, "search", "text")
 	writeTool(t, root, "jq", "utility", true)
 	writeTool(t, root, "tmux", "terminal", true, "shell")
+	// In the ai tag, and marked tested, so excluding it by name is the only way
+	// to leave it out of a selection made through the tag.
+	writeTool(t, root, "claude", "ai", true, "ai")
 	// Never actually run: this is the tool that must be refused.
 	writeTool(t, root, "risky", "utility", false)
 
@@ -87,6 +90,52 @@ func TestResolveIncludeByName(t *testing.T) {
 	if want := []string{"git", "jq"}; !equalStrings(names(got), want) {
 		t.Errorf("resolved %v, want %v", names(got), want)
 	}
+}
+
+// Exclude removes a tool whatever selected it — include, category or tag.
+//
+// This is the shape that made it worth having: gemini sits in the ai tag, and a
+// tag can only add tools, so a category containing a tool that cannot run here
+// has no way to leave it out except by not being a category. An exclusion is
+// reviewable in the profile file itself.
+func TestResolveExcludeDropsToolsWhateverSelectedThem(t *testing.T) {
+	t.Parallel()
+
+	c := fixtureCatalog(t)
+
+	t.Run("dropped after a tag selected it", func(t *testing.T) {
+		t.Parallel()
+		p := &Profile{Name: "p", Tags: []string{"ai"}, Exclude: []string{"claude"}}
+		got, err := p.Resolve(c)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		for _, n := range names(got) {
+			if n == "claude" {
+				t.Errorf("excluded tool resolved anyway: %v", names(got))
+			}
+		}
+	})
+
+	t.Run("dropped after an include named it", func(t *testing.T) {
+		t.Parallel()
+		p := &Profile{Name: "p", Include: []string{"git", "jq"}, Exclude: []string{"jq"}}
+		got, err := p.Resolve(c)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if want := []string{"git"}; !equalStrings(names(got), want) {
+			t.Errorf("resolved %v, want %v", names(got), want)
+		}
+	})
+
+	t.Run("excluding an unknown tool is an error", func(t *testing.T) {
+		t.Parallel()
+		p := &Profile{Name: "p", Include: []string{"git"}, Exclude: []string{"not-a-tool"}}
+		if _, err := p.Resolve(c); err == nil {
+			t.Error("an exclude naming a tool that does not exist was accepted silently")
+		}
+	})
 }
 
 func TestResolveSelectorMatchesCategoryAndTag(t *testing.T) {

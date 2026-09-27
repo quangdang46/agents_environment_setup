@@ -2,7 +2,12 @@
 name: btop
 description: resource monitor that pretends to be fancy
 category: terminal
-tested: false
+tested: true
+tested_on:
+  # Proven on linux/amd64 on 2026-09-27: installed from nothing in a fresh
+  # ubuntu:24.04 container and `aes verify` reported StatusOK with a parsed
+  # version (btop 1.4.7) on that machine afterwards (bead gj9).
+  - linux/amd64
 tags:
   - terminal
 verify:

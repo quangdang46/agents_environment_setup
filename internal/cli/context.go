@@ -91,6 +91,12 @@ func (rc *runContext) request() (resolver.Request, error) {
 	for _, t := range tools {
 		req.Only = append(req.Only, t.Name)
 	}
+	// The profile's own exclusions ride along with its expansion. Dropping them
+	// here would be invisible and wrong: Resolve already removed the tools from
+	// its own list, but the dependency closure is computed from Only + Exclude
+	// downstream, and a tool excluded from the profile that another selected
+	// tool depends on must fail loudly rather than be silently pulled back in.
+	req.Exclude = append(req.Exclude, p.Exclude...)
 	return req, nil
 }
 
@@ -109,9 +115,10 @@ func (rc *runContext) actions() ([]resolver.Action, error) {
 		return nil, err
 	}
 	return selection.Resolve(rc.Catalog, rc.Host, selection.Selection{
-		Only:    req.Only,
-		Exclude: req.Exclude,
-		Profile: req.Profile,
+		Only:          req.Only,
+		Exclude:       req.Exclude,
+		Profile:       req.Profile,
+		AllowUnproven: rc.Flags != nil && rc.Flags.AllowUnproven,
 	})
 }
 

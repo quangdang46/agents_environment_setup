@@ -10,6 +10,10 @@ category: terminal
 tested: true
 tested_on:
   - linux/arm64
+  # Proven on amd64 by the same sequence, on 2026-09-27: installed from
+  # nothing in a fresh ubuntu:24.04 container, `tmux -V` reports 3.4. See the
+  # claude entry for why the proof run needs --allow-unproven.
+  - linux/amd64
 tags:
   - terminal
 verify:

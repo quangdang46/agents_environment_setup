@@ -237,6 +237,12 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 			res, err := RunIn(ctx, c, tool, Config{
 				Binary: c.BinaryPath(),
 				Keep:   true,
+				// The run that GATHERS evidence for this platform has to be
+				// willing to install a tool that is unproven here. Without it
+				// the resolver skips exactly the tools whose amd64 proof is
+				// missing, so a tool could only ever be proven on the platform
+				// it was already proven on. Every step still has to pass.
+				AllowUnproven: true,
 			})
 			if !keepHome {
 				t.Cleanup(func() {

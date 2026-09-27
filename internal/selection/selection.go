@@ -34,6 +34,15 @@ type Selection struct {
 	// profile into Only before calling here, so the resolver has no knowledge
 	// of profile files.
 	Profile string
+
+	// AllowUnproven waives the platform half of the tested gate: a tool proven
+	// on some platform but not this one is selected anyway.
+	//
+	// It lives here rather than only on the CLI flag because both frontends
+	// reach the resolver through this one function (I13). A field only the CLI
+	// could set would be a gate one frontend can open and the other cannot.
+	// See resolver.Request.AllowUnproven for what it does and does not waive.
+	AllowUnproven bool
 }
 
 // Names returns the selected tool names, sorted and deduplicated.
@@ -88,7 +97,8 @@ func Resolve(c *catalog.Catalog, h *platform.Host, sel Selection) ([]resolver.Ac
 		}
 	}
 	return resolver.Resolve(c, resolver.Request{
-		Only:    sel.Names(),
-		Exclude: sel.Exclude,
+		Only:          sel.Names(),
+		Exclude:       sel.Exclude,
+		AllowUnproven: sel.AllowUnproven,
 	}, h)
 }

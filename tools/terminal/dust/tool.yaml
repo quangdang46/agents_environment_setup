@@ -2,7 +2,12 @@
 name: dust
 description: du replacement for people who can read
 category: terminal
-tested: false
+tested: true
+tested_on:
+  # Proven on linux/amd64 on 2026-09-27: installed from nothing in a fresh
+  # ubuntu:24.04 container and `aes verify` reported StatusOK with a parsed
+  # version (dust 1.2.6) on that machine afterwards (bead gj9).
+  - linux/amd64
 tags:
   - terminal
   - disk

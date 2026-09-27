@@ -95,6 +95,22 @@ type Request struct {
 	Profile string
 	Only    []string
 	Exclude []string
+
+	// AllowUnproven waives the platform half of the tested gate: a tool that
+	// was proven on SOME platform, but not this one, is installed anyway.
+	//
+	// It is a field here rather than a decision made above because the two
+	// gates are in different packages and only this one can see both halves.
+	// profile.checkTested refuses a tool with no evidence anywhere; this skips a
+	// tool whose evidence is about another machine. Without the field the
+	// opt-in could not reach the skip at all — `--allow-unproven` promised
+	// "proceed with tools proven only on another platform" and did not, which
+	// is a gap between a flag's contract and its behaviour.
+	//
+	// It does NOT waive the evidence-free half. There is nothing to accept on
+	// behalf of a tool that has never been installed anywhere, and a flag that
+	// did would be indistinguishable from turning the check off.
+	AllowUnproven bool
 }
 
 // Resolve produces the actions for req against host h.
@@ -141,13 +157,17 @@ func Resolve(c *catalog.Catalog, req Request, h *platform.Host) ([]Action, error
 		if !ok {
 			continue // I12: this tool does not run here.
 		}
-		if tool.Tested && !h.ProvenOn(tool) {
+		if tool.Tested && !h.ProvenOn(tool) && !req.AllowUnproven {
 			// The tool claims to be verified, but not on this platform. A
 			// Layer 2 proof is per-platform - a different asset, a different
 			// package manager - so treating the flag as global would install
 			// something this host has never verified and report it as done.
 			// Skipping keeps the claim honest without blocking the run; doctor
 			// can say why the tool is absent.
+			//
+			// req.AllowUnproven is the user's explicit statement that they know
+			// and accept exactly this. The skip stays the DEFAULT because the
+			// flag's whole job is to be the thing you have to reach for.
 			continue
 		}
 		actions = append(actions, Action{

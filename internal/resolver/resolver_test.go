@@ -572,3 +572,31 @@ func TestUnprovenPlatformIsSkipped(t *testing.T) {
 		t.Error("actions is nil; callers must be able to range over it without a nil check")
 	}
 }
+
+// --allow-unproven must reach this skip.
+//
+// Without it the opt-in could not do the one thing its help text promises:
+// "proceed with tools proven only on another platform" (internal/cli/root.go).
+// The gate lived here while the flag was handled in profile.checkTested, so a
+// user who passed the flag got a silent no — the tool was simply absent from
+// the run, which reads as "already satisfied" rather than "refused".
+func TestAllowUnprovenWaivesThePlatformSkip(t *testing.T) {
+	proved := "linux/arm64"
+	c := build(t, spec{name: "was-here", isDefault: true, platforms: []string{"darwin", "linux"}})
+	tool, ok := c.ByName("was-here")
+	if !ok {
+		t.Fatal("was-here missing from the catalog")
+	}
+	tool.Tested = true
+	tool.TestedOn = []string{proved}
+
+	other := &platform.Host{OS: platform.OSDarwin, Arch: platform.ArchARM64}
+
+	actions, err := Resolve(c, Request{AllowUnproven: true}, other)
+	if err != nil {
+		t.Fatalf("Resolve with the opt-in: %v", err)
+	}
+	if toolOrder(actions) != "was-here" {
+		t.Errorf("--allow-unproven did not reach the skip; got %q, want %q", toolOrder(actions), "was-here")
+	}
+}

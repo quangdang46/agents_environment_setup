@@ -43,6 +43,16 @@ type Profile struct {
 	Include     []string `yaml:"include,omitempty"`
 	Tags        []string `yaml:"tags,omitempty"`
 
+	// Exclude removes tools from the selection, whatever selected them.
+	//
+	// It exists for the same reason the CLI has --exclude: a tag is a category,
+	// and a category can contain a tool that does not belong on this machine.
+	// gemini is in the ai tag and gemini cannot run on node 18 — stock
+	// ubuntu:24.04 — so the default profile excludes it by name rather than
+	// pretending the tag is clean. Excluding is explicit and reviewable; a tag
+	// that quietly drops inconvenient members is not a tag anymore.
+	Exclude []string `yaml:"exclude,omitempty"`
+
 	// RequireTested gates resolution on every selected tool being
 	// tested: true. It is what keeps the default profile honest.
 	RequireTested bool `yaml:"require_tested,omitempty"`
@@ -146,6 +156,19 @@ func (p *Profile) Resolve(c *catalog.Catalog) ([]*manifest.Tool, error) {
 		add(t)
 	}
 
+	// Exclusions are applied after every selector, so they win whatever picked
+	// the tool. An excluded name that is not in the catalog is an error, for the
+	// same reason an unresolvable include is: a profile that says "not this"
+	// about a tool that does not exist is a stale profile, and the user should
+	// hear about it now rather than believe the exclusion is doing something.
+	excluded := make(map[string]bool, len(p.Exclude))
+	for _, name := range p.Exclude {
+		if _, ok := c.ByName(name); !ok {
+			return nil, fmt.Errorf("profile %q: exclude names no tool %q", p.Name, name)
+		}
+		excluded[name] = true
+	}
+
 	for _, selector := range p.Tags {
 		matched := append([]*manifest.Tool{}, c.ByCategory(selector)...)
 		matched = append(matched, c.ByTag(selector)...)
@@ -161,6 +184,9 @@ func (p *Profile) Resolve(c *catalog.Catalog) ([]*manifest.Tool, error) {
 
 	tools := make([]*manifest.Tool, 0, len(seen))
 	for _, t := range seen {
+		if excluded[t.Name] {
+			continue
+		}
 		tools = append(tools, t)
 	}
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })

@@ -42,6 +42,17 @@ var layer1Fixtures = []layer1Fixture{
 	{"zoxide", "zoxide", "zoxide --version", "0.9.0"},
 	{"gh", "gh", "gh --version", "2.0"},
 	{"claude", "claude", "claude --version", "1.0"},
+	// Added with the linux/amd64 Layer 2 evidence (2026-09-27, bead gj9). Each
+	// was measured, not assumed: the version command below is the one that
+	// actually printed a version on this host, and the binary name is the one
+	// the archive really ships — `bottom` installs as `btm`, which is the kind
+	// of thing that looks like a working install until you go looking for it.
+	{"bat", "bat", "bat --version", "0.26"},
+	{"btop", "btop", "btop --version", "1.4"},
+	{"dust", "dust", "dust --version", "1.2"},
+	{"eza", "eza", "eza --version", "0.23"},
+	{"codex", "codex", "codex --version", "0.130"},
+	{"opencode", "opencode", "opencode --version", "1.10"},
 }
 
 // toolFor builds the manifest a real tool.yaml would carry for this fixture.

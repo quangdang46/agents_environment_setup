@@ -10,6 +10,13 @@ category: ai
 tested: true
 tested_on:
   - linux/arm64
+  # Proven on amd64 by the same sequence, on 2026-09-27: installed from
+  # nothing in a fresh ubuntu:24.04 container and `aes verify` reported StatusOK
+  # with a parsed version (2.1.283) on that machine. The run needed
+  # --allow-unproven, because a tool proven only on arm64 is skipped on amd64
+  # (I15) — the run that gathers a platform's evidence has to be allowed to
+  # install the tool whose evidence is missing.
+  - linux/amd64
 tags:
   - ai
 dependencies:

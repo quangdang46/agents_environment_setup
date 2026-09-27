@@ -172,6 +172,11 @@ func TestTestedToolsAreOnTheLayer1List(t *testing.T) {
 var layer1Tools = map[string]bool{
 	"ripgrep": true, "git": true, "fzf": true, "jq": true,
 	"tmux": true, "zoxide": true, "gh": true, "claude": true,
+	// Proven in both layers on linux/amd64 (2026-09-27, bead gj9). This list is
+	// the mirror of the verifier's fixture table; the test below exists to keep
+	// the two from drifting apart, so update them together.
+	"bat": true, "btop": true, "dust": true,
+	"eza": true, "codex": true, "opencode": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the

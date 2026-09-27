@@ -65,6 +65,20 @@ type Config struct {
 	// reporting but installs nothing, so it cannot prove the install path;
 	// it exists so the harness itself is testable without network access.
 	DryRun bool
+	// AllowUnproven passes --allow-unproven to the setup steps.
+	//
+	// It is false by default, and the container proof is the only caller that
+	// sets it, because of a chicken-and-egg the resolver otherwise imposes: a
+	// tool proven on linux/arm64 is SKIPPED on linux/amd64 (I15), so the very
+	// run meant to produce amd64 evidence refuses to install the tool whose
+	// evidence is missing. A tool could therefore only ever be proven on the
+	// platform it was already proven on.
+	//
+	// This does not weaken the sequence. Every step still has to pass — the
+	// binary must be present, verify must report OK, state must be written,
+	// the re-run must change nothing. The flag only stops the resolver from
+	// declining to try; it does not make a failed install look like a pass.
+	AllowUnproven bool
 }
 
 // Step is one assertion in the sequence, recorded so a failure names the step
@@ -161,7 +175,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 	}
 
 	// 1. install
-	out, code, err := run(ctx, environment, cfg, env, home, "setup", "--only", tool.Name)
+	out, code, err := run(ctx, environment, cfg, env, home, setupArgs(cfg, tool.Name)...)
 	res.record("install", err == nil && code == 0, detail(out, code, err))
 	if err != nil || code != 0 {
 		return res, nil
@@ -217,7 +231,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 	}
 	beforeBin, _ := environment.FileDigest(ctx, binPath)
 
-	out, code, err = run(ctx, environment, cfg, env, home, "setup", "--only", tool.Name)
+	out, code, err = run(ctx, environment, cfg, env, home, setupArgs(cfg, tool.Name)...)
 
 	afterHome, err := environment.TreeDigest(ctx, aesHome)
 	if err != nil {
@@ -243,7 +257,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 	}
 
 	// 6. --force reinstalls
-	out, code, err = run(ctx, environment, cfg, env, home, "setup", "--only", tool.Name, "--force")
+	out, code, err = run(ctx, environment, cfg, env, home, append(setupArgs(cfg, tool.Name), "--force")...)
 	finalDigest, digestErr := environment.FileDigest(ctx, binPath)
 	res.record("force reinstall",
 		err == nil && code == 0 && digestErr == nil && exists(finalDigest),
@@ -351,6 +365,18 @@ func requireAbsent(ctx context.Context, env Environment, tool *manifest.Tool) er
 //
 // Every step is a separate process on purpose: it is the only way to observe
 // that something reached disk rather than merely being set in memory.
+// setupArgs is the argv prefix every `aes setup` step in the sequence shares.
+// It exists so the tool selection and the opt-in are decided in one place: the
+// same three steps must ask for the same thing, and a step that forgot the flag
+// would be a step quietly running a different run than the one being proved.
+func setupArgs(cfg Config, tool string) []string {
+	args := []string{"setup", "--only", tool}
+	if cfg.AllowUnproven {
+		args = append(args, "--allow-unproven")
+	}
+	return args
+}
+
 func run(ctx context.Context, env Environment, cfg Config, environ []string, home string, args ...string) (string, int, error) {
 	full := append([]string{}, args...)
 	if cfg.DryRun {

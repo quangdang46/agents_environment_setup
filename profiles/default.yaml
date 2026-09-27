@@ -9,4 +9,19 @@ tags:
 # with include, matching by category OR tag), so naming seven tools here
 # and then tagging the profile `terminal, ai` selects the same thing twice
 # and the two lists drift apart the first time a tool is added to a tag.
+#
+# gemini is excluded because it cannot run on the platform this profile
+# targets: its npm package declares `engines: node >=20`, ubuntu:24.04 ships
+# node 18.19.1, and it installs successfully and then dies with
+# "SyntaxError: Invalid regular expression flags" (reproduced 2026-09-27, bead
+# gj9). A tag can only add tools, so without this the only way to keep an
+# unrunnable tool out of `aes setup` is to stop being tagged ai — which would
+# drop the tools that do work. Naming the exception is reviewable; a tag that
+# quietly omits members is not.
+#
+# Revisit when the schema grows per-platform version floors (bead 8tv). Then
+# this line is a floor saying "unavailable here", not a hardcoded omission, and
+# gemini returns automatically on a platform whose node satisfies it.
+exclude:
+  - gemini
 require_tested: true
