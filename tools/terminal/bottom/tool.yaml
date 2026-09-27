@@ -2,7 +2,14 @@
 name: bottom
 description: graphical process monitor
 category: terminal
-tested: false
+tested: true
+tested_on:
+  # Proven on linux/amd64 on 2026-09-28: installed from nothing in a
+  # fresh ubuntu:24.04 container (Layer 2) and verified on a machine carrying
+  # it on PATH (Layer 1). The Layer 1 half needs the AES env sourced, because
+  # these install under ~/.aes/bin — which is where aes puts everything it
+  # owns, and what `aes env --write` exists to put on PATH (bead gj9).
+  - linux/amd64
 tags:
   - terminal
 # Upstream ships the binary as `btm` on every platform. The installer's

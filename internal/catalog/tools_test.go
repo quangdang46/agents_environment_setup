@@ -177,6 +177,7 @@ var layer1Tools = map[string]bool{
 	// the two from drifting apart, so update them together.
 	"bat": true, "btop": true, "dust": true,
 	"eza": true, "codex": true, "opencode": true,
+	"bottom": true, "zellij": true, "ntm": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the

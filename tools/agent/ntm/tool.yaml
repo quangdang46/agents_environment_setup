@@ -9,25 +9,26 @@
 name: ntm
 description: agent session manager
 category: agent
-tested: false
-# NOT marked tested, and the reason is worth keeping. Layer 2 DID pass on
-# linux/amd64 on 2026-09-27: a fresh ubuntu:24.04 installed ntm 1.35.1 and
-# `aes verify` reported StatusOK with a parsed version on that machine. Layer 1
-# does not pass here, and `tested: true` requires BOTH (gj9).
-#
-# The failure is a genuine finding, not a missing fixture: the ntm already on
-# this host answers `ntm --version` with "Error: unknown flag: --version", so
-# the version probe cannot read a version from it. The pinned release (1.35.1)
-# does support the flag — proven in the container. So the tool is fine and the
-# probe is fine; this host simply has a different, older ntm, and a Layer 1
-# fixture that cannot pass here should not be added to make a number go up.
+tested: true
+tested_on:
+  # Proven on linux/amd64 on 2026-09-28. Layer 2: installed from nothing in a
+  # fresh ubuntu:24.04 container, then `aes verify` reported StatusOK with a
+  # parsed version (1.35.1) on that machine. Layer 1: verified on a machine
+  # carrying ntm 1.8.0, whose probe behaves differently — see verify below.
+  - linux/amd64
 tags:
   - agent
   - terminal
 verify:
   command: ntm
   version:
-    command: ntm --version
+    # `ntm version`, not `ntm --version`. Both work on 1.35.1, but only this one
+    # works on 1.8.0, which answers the dashed spelling with "Error: unknown
+    # flag: --version" and exits 0. An exit-0 failure is the worst kind for a
+    # probe: the command "succeeded", printed no version, and the tool reported
+    # as unknown on a machine where it works perfectly. Measured on both
+    # versions 2026-09-28 (bead gj9).
+    command: ntm version
     min: "1.0"
 install:
   darwin:

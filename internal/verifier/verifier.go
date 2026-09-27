@@ -22,7 +22,10 @@ package verifier
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -194,6 +197,66 @@ func leadingInt(s string) int {
 	return n
 }
 
+// LookPathFor finds a binary on PATH or in the AES bin directory.
+//
+// AES owns ~/.aes/bin — that is where every strategy that writes its own
+// binary puts it, and it is what `aes env --write` adds to PATH (internal/envgen
+// writes the same path into the generated env.sh). A tool that aes installed
+// minutes ago is therefore on the machine and NOT on PATH, because a shell has
+// to source env.sh first, and no shell has in a fresh process.
+//
+// Searching PATH alone made the difference between "aes installed this and it
+// works" and "aes did not install this" indistinguishable from the verifier's
+// side, which reported a working install as missing. That is not a test
+// convenience: it is the difference between a user who activated the
+// environment and one who did not, and a tool's status should not depend on
+// which of those is true.
+func LookPathFor(bin string) (string, error) {
+	if p, err := exec.LookPath(bin); err == nil {
+		return p, nil
+	}
+	if aesBin := AESBinDir(); aesBin != "" {
+		cand := filepath.Join(aesBin, bin)
+		if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+			return cand, nil
+		}
+	}
+	return "", fmt.Errorf("verifier: %q is on neither PATH nor %s", bin, AESBinDir())
+}
+
+// AESBinDir is the directory AES installs its own binaries into, or "" when it
+// cannot be determined (no home, or HOME is somewhere unreadable).
+func AESBinDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".aes", "bin")
+}
+
+// lookPath is the internal spelling used by Verify, kept separate so the
+// exported helper is the one callers outside this package reach for.
+func lookPath(bin string) (string, error) { return LookPathFor(bin) }
+
+// probeEnv is the environment a version probe runs in: the current one, with
+// the AES bin directory prepended to PATH.
+//
+// Prepending rather than replacing: the probe may need the rest of the machine
+// (a dynamic linker, a config directory, a runtime), and a stripped environment
+// would turn a working tool into a failing one for reasons that have nothing
+// to do with the tool.
+func probeEnv() []string {
+	dir := AESBinDir()
+	if dir == "" {
+		return nil
+	}
+	path := os.Getenv("PATH")
+	if path == "" {
+		return []string{"PATH=" + dir}
+	}
+	return []string{"PATH=" + dir + string(os.PathListSeparator) + path}
+}
+
 // Verify reports what is true of t on this machine right now.
 func Verify(t *manifest.Tool) Result {
 	return VerifyContext(context.Background(), t)
@@ -217,7 +280,7 @@ func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
 	}
 
 	for _, bin := range required {
-		path, err := exec.LookPath(bin)
+		path, err := lookPath(bin)
 		if err != nil {
 			return res
 		}
@@ -234,8 +297,17 @@ func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
 	// The version command can fail, hang, or print something unparseable. A
 	// declared minimum that could not be checked is reported as unknown, never
 	// resolved into a verdict the machine does not support.
+	//
+	// The probe runs with the AES bin directory on PATH. A tool resolved out of
+	// ~/.aes/bin — which is where every strategy that writes its own binary puts
+	// it — was found by absolute path above, but the probe below is a shell
+	// command that names the tool, and `sh` resolves names against PATH. Without
+	// this the tool was present and found, and then its own version command
+	// could not be run, so it reported as unknown. That is the same
+	// missing-PATH assumption as lookPath, one layer later.
 	run, err := aesexec.Run(ctx, t.Verify.Version.Command, aesexec.Options{
 		Timeout: aesexec.VerifyTimeout,
+		Env:     probeEnv(),
 	})
 	min := t.Verify.Version.Min
 	if err != nil {

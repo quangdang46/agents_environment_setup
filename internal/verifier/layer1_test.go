@@ -53,6 +53,15 @@ var layer1Fixtures = []layer1Fixture{
 	{"eza", "eza", "eza --version", "0.23"},
 	{"codex", "codex", "codex --version", "0.130"},
 	{"opencode", "opencode", "opencode --version", "1.10"},
+	// Installs as `btm`; the archive ships that name and the manifest's
+	// verify.command follows it. Looking for a file called `bottom` finds
+	// nothing, which is the shape of a catalog entry that installs and then
+	// fails to verify for a reason that has nothing to do with the installer.
+	{"bottom", "btm", "btm --version", "0.14"},
+	{"zellij", "zellij", "zellij --version", "0.45"},
+	// The probe is `ntm version`, not `ntm --version` — see the manifest. The
+	// dashed spelling is rejected by every ntm older than 1.35.
+	{"ntm", "ntm", "ntm version", "1.0"},
 }
 
 // toolFor builds the manifest a real tool.yaml would carry for this fixture.
