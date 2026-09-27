@@ -2,15 +2,11 @@
 # Both files exist so the name a user is likely to type works.
 name: default
 description: Alias for the ai profile — a verified AI coding environment
-include:
-  - git
-  - ripgrep
-  - jq
-  - tmux
-  - fzf
-  - claude
-  - gh
 tags:
   - terminal
   - ai
+# No include list on purpose. A profile's tags SELECT (Resolve unions them
+# with include, matching by category OR tag), so naming seven tools here
+# and then tagging the profile `terminal, ai` selects the same thing twice
+# and the two lists drift apart the first time a tool is added to a tag.
 require_tested: true

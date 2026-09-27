@@ -1,6 +1,13 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
+# AES catalog. github-release at dicklesworthstone/ntm v1.35.1; asset names and
+# sha256 read from the upstream release, and the archive was opened to confirm
+# the binary inside is `ntm`.
+#
+# This was `strategy: package` with `package: ntm`, and there is no package
+# called ntm in the Debian or Homebrew index — the install failed with "Unable
+# to locate package". Upstream ships release archives, so that is the strategy
+# that describes the artefact.
 name: ntm
-description: named tmux manager for agent sessions
+description: agent session manager
 category: agent
 tested: false
 tags:
@@ -9,14 +16,24 @@ tags:
 verify:
   command: ntm
   version:
-    command: ntm version
-    min: "1.18"
+    command: ntm --version
+    min: "1.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: ntm
+    strategy: github-release
+    repository: dicklesworthstone/ntm
+    asset:
+      amd64: ntm_1.35.1_darwin_amd64.tar.gz
+      arm64: ntm_1.35.1_darwin_arm64.tar.gz
+    sha256:
+      amd64: d1d7b5a7bb742e02425cf8342fdd3fd5fedca79e8f763ef06b2a57ed6bdff14a
+      arm64: 6b8e7c5fefd84338ef8e6541494b74ed3f877294839faea787ef0fc770364c59
   linux:
-    strategy: package
-    manager: apt
-    package: ntm
+    strategy: github-release
+    repository: dicklesworthstone/ntm
+    asset:
+      amd64: ntm_1.35.1_linux_amd64.tar.gz
+      arm64: ntm_1.35.1_linux_arm64.tar.gz
+    sha256:
+      amd64: 910712dff11770d2f0858e168a73d43228ec625b7f68d4ea9be61685c0c8ed44
+      arm64: 97cd564b4bde6fee6f31dc28b29efcdfe1b1c026be959adeb9470f70c91e769c
