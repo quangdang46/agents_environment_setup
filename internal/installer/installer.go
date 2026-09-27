@@ -132,6 +132,21 @@ type Registry struct {
 // github-release install died that way: Dest was never assigned anywhere in
 // production, so the primary install strategy did not work at all.
 func NewRegistry(binDir string) *Registry {
+	return NewRegistryWithPrivilege(binDir, false)
+}
+
+// NewRegistryWithPrivilege builds the default registry and tells the package
+// installer which privilege mode the caller is in.
+//
+// This exists because the interactive default was previously the only way to
+// build the registry, so PackageInstaller.NonInteractive could never be true
+// in production. The field and the code that reads it both existed, and nothing
+// ever set it — a flag parsed at the CLI, threaded to nowhere. `aes setup
+// --non-interactive` on an apt-backed tool then printed "Run it now? [y/N]"
+// and blocked on a read, which is the exact hang the flag exists to prevent.
+// Measured: a stdin that is open and silent hangs until killed; a closed stdin
+// returns EOF, which looks like it works and is why this survived review.
+func NewRegistryWithPrivilege(binDir string, nonInteractive bool) *Registry {
 	r := &Registry{installers: make(map[string]Installer)}
 	r.Register(manifest.StrategyGithubRelease, NewGithubRelease())
 	if inst, err := r.Get(manifest.StrategyGithubRelease); err == nil {
@@ -139,7 +154,7 @@ func NewRegistry(binDir string) *Registry {
 			g.Dest = binDir
 		}
 	}
-	r.Register(manifest.StrategyPackage, &PackageInstaller{})
+	r.Register(manifest.StrategyPackage, &PackageInstaller{NonInteractive: nonInteractive})
 	r.Register(manifest.StrategyGo, NewGoInstaller())
 	r.Register(manifest.StrategyNPM, NewNPMInstaller())
 	r.Register(manifest.StrategyCargo, NewCargoInstaller())

@@ -123,7 +123,7 @@ func runUninstall(ctx context.Context, app *App, f *Flags, extra any, args []str
 		return nil
 	}
 
-	outcome, err := app.registry().Uninstall(ctx, installer.Action{
+	outcome, err := app.registry(f).Uninstall(ctx, installer.Action{
 		// Name comes from the same place setup reads it: the manifest's own
 		// verify.command. Without it, uninstall resolves the binary to the name
 		// INSIDE the archive, which for a tool like yq (yq_darwin_arm64) is not
@@ -204,9 +204,23 @@ func runForget(ctx context.Context, app *App, f *Flags, extra any, args []string
 // Reading from a caller-supplied reader rather than os.Stdin keeps this
 // testable, and EOF counts as "no": a command that acts on a closed stdin
 // would remove things nobody approved.
+//
+// --non-interactive must not reach this function at all. It is the flag that
+// promises never to block on input, and a read here is a block: a closed stdin
+// returns EOF and refuses, which reads like working, but a stdin that is OPEN
+// and silent — a terminal with nobody at it, a pipe held open by a parent —
+// blocks here forever. Measured: `sleep 600 | aes uninstall --non-interactive`
+// hung until killed. The caller checks the flag first and reports instead;
+// this is the backstop for a caller that forgets.
 func lifecycleConfirmed(app *App, f *Flags, extra any, what string) bool {
 	if f.Yes {
 		return true
+	}
+	if f.NonInteractive {
+		fmt.Fprintf(app.Err,
+			"aes: --non-interactive cannot confirm %s, and will not wait for an answer.\n"+
+				"     Re-run with --yes to proceed without a prompt.\n", what)
+		return false
 	}
 	if l, ok := extra.(*lifecycleFlags); ok && l.Confirm {
 		return true
@@ -225,10 +239,21 @@ func lifecycleConfirmed(app *App, f *Flags, extra any, what string) bool {
 	}
 }
 
-// registry resolves the installer registry, tolerating an unconfigured app.
-func (a *App) registry() *installer.Registry {
+// registry resolves the installer registry, building it with the caller's
+// privilege mode if the caller has not configured one.
+//
+// The build has to know whether it may ask, because PackageInstaller's
+// default is interactive — it prints "Run it now? [y/N]" and reads stdin. With
+// --non-interactive that read is a hang: a closed stdin returns EOF and
+// refuses, which reads like it works, but a stdin that is open and silent
+// blocks until something types. Measured on an apt-backed tool.
+//
+// A pre-configured Registry (tests, and the TUI's SetupSelection, which
+// cannot reach this) is left untouched.
+func (a *App) registry(f *Flags) *installer.Registry {
 	if a.Registry == nil {
-		a.Registry = installer.NewRegistry(filepath.Join(a.Home, "bin"))
+		nonInteractive := f != nil && f.NonInteractive
+		a.Registry = installer.NewRegistryWithPrivilege(filepath.Join(a.Home, "bin"), nonInteractive)
 	}
 	return a.Registry
 }

@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
@@ -343,6 +344,17 @@ func (a *App) Run(args []string) int {
 	if err := a.validateFlags(flags); err != nil {
 		fmt.Fprintf(a.Err, "aes: %v\n", err)
 		return ExitCode(err)
+	}
+
+	// The package installer needs to know whether it may ask, and it is built
+	// here rather than in main because main cannot know: it builds the default
+	// registry before argv is parsed, and whether --non-interactive was given
+	// is a fact about this invocation. Leaving the default in place meant a
+	// flag parsed correctly and threaded nowhere, and `aes setup
+	// --non-interactive` on an apt-backed tool prompted and then blocked
+	// reading stdin — the exact hang the flag exists to prevent.
+	if flags.NonInteractive {
+		a.Registry = installer.NewRegistryWithPrivilege(filepath.Join(a.Home, "bin"), true)
 	}
 
 	counter := &countingWriter{w: a.Out}

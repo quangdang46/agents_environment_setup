@@ -257,7 +257,7 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 	// install with no way back. Retaining is a no-op on a first install, so
 	// the cost is one file copy on a reinstall and nothing otherwise.
 	prevPath := ""
-	if dest, ok := app.registry().DestinationFor(ctx, target.Strategy); ok && dest != "" {
+	if dest, ok := app.registry(f).DestinationFor(ctx, target.Strategy); ok && dest != "" {
 		binPath := filepath.Join(dest, installNameOf(tool))
 		if err := installer.Retain(binPath); err != nil {
 			// Failing to retain is worth saying out loud but is not a reason to
