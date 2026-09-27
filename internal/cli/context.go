@@ -77,7 +77,9 @@ func (rc *runContext) request() (resolver.Request, error) {
 	if err != nil {
 		return req, err
 	}
-	tools, err := p.Resolve(rc.Catalog)
+	// Bound to this host so require_tested can distinguish "never verified"
+	// from "verified elsewhere"; both otherwise report as untested.
+	tools, err := p.WithHost(rc.Host).Resolve(rc.Catalog)
 	if err != nil {
 		return req, err
 	}

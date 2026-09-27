@@ -19,6 +19,7 @@ package profile
 
 import (
 	"fmt"
+	"github.com/quangdang46/agents_environment_setup/internal/platform"
 	"os"
 	"path/filepath"
 	"sort"
@@ -45,6 +46,20 @@ type Profile struct {
 	// RequireTested gates resolution on every selected tool being
 	// tested: true. It is what keeps the default profile honest.
 	RequireTested bool `yaml:"require_tested,omitempty"`
+
+	// host is the machine this profile is being resolved for. It is not
+	// declared in YAML: the file describes an intent, and whether a tool was
+	// proven on THIS machine is a fact about the run. Nil falls back to
+	// reporting only the never-tested case, which is the safe direction -
+	// it under-claims rather than over-claims.
+	host *platform.Host `yaml:"-"`
+}
+
+// WithHost returns the profile bound to a host, so require_tested can say
+// whether a tool is unverified outright or merely unverified here.
+func (p *Profile) WithHost(h *platform.Host) *Profile {
+	p.host = h
+	return p
 }
 
 // Load reads and validates one profile file.
@@ -131,7 +146,7 @@ func (p *Profile) Resolve(c *catalog.Catalog) ([]*manifest.Tool, error) {
 	}
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
 
-	if err := p.checkTested(tools); err != nil {
+	if err := p.checkTested(tools, p.host); err != nil {
 		return nil, err
 	}
 	return tools, nil
@@ -141,22 +156,66 @@ func (p *Profile) Resolve(c *catalog.Catalog) ([]*manifest.Tool, error) {
 //
 // It reports all of them, not the first: a user fixing a profile wants the
 // whole list in one pass, not a game of whack-a-mole.
-func (p *Profile) checkTested(tools []*manifest.Tool) error {
+// host, when non-nil, lets the two reasons a tool is excluded be told apart:
+// it was never verified, or it was verified somewhere else. Reporting both as
+// "not tested" is false for the second, and a user on macOS reading it would
+// conclude seven tools had no evidence at all, when they had a container run's
+// worth on linux/arm64.
+func (p *Profile) checkTested(tools []*manifest.Tool, host *platform.Host) error {
 	if !p.RequireTested {
 		return nil
 	}
-	var untested []string
+	var untested, unprovenHere []string
 	for _, t := range tools {
-		if !t.Tested {
+		switch {
+		case !t.Tested:
 			untested = append(untested, t.Name)
+		case host != nil && !host.ProvenOn(t):
+			unprovenHere = append(unprovenHere, t.Name)
 		}
 	}
-	if len(untested) == 0 {
+	var parts []string
+	if len(untested) > 0 {
+		sort.Strings(untested)
+		parts = append(parts, fmt.Sprintf("no install has been proven for: %s",
+			strings.Join(untested, ", ")))
+	}
+	if len(unprovenHere) > 0 {
+		sort.Strings(unprovenHere)
+		parts = append(parts, fmt.Sprintf(
+			"proven only on %s, not on this host (%s/%s): %s",
+			strings.Join(provenOn(tools, unprovenHere), ", "),
+			host.Key(), host.Arch, strings.Join(unprovenHere, ", ")))
+	}
+	if len(parts) == 0 {
 		return nil
 	}
-	sort.Strings(untested)
-	return fmt.Errorf("profile %q requires tested tools, but these are not tested: %s",
-		p.Name, strings.Join(untested, ", "))
+	return fmt.Errorf("profile %q requires tested tools — %s",
+		p.Name, strings.Join(parts, "; "))
+}
+
+// provenOn reports the platforms the named tools were verified on, so the
+// message says where the evidence IS rather than only what is missing here.
+func provenOn(tools []*manifest.Tool, names []string) []string {
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range tools {
+		if !want[t.Name] {
+			continue
+		}
+		for _, where := range t.TestedOn {
+			if !seen[where] {
+				seen[where] = true
+				out = append(out, where)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Set is a directory of profiles, indexed by name.

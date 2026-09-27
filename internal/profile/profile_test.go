@@ -8,6 +8,7 @@ import (
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
+	"github.com/quangdang46/agents_environment_setup/internal/platform"
 )
 
 // writeTool lays down a minimal valid tool.yaml. tested controls the field
@@ -427,5 +428,64 @@ func TestShippedProfilesHaveNoDanglingReferences(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// "Not tested" and "tested, but not here" are different facts and reporting
+// both as the first is false for the second. A macOS user reading "these are
+// not tested: claude, tmux" would conclude they had no evidence at all, when
+// they had a container run's worth on linux/arm64.
+func TestRequireTestedDistinguishesUntestedFromUnprovenHere(t *testing.T) {
+	mac := &platform.Host{OS: platform.OSDarwin, Arch: platform.ArchARM64}
+
+	neverProven := &manifest.Tool{
+		Name: "never-proven", Tested: false,
+		Verify: &manifest.Verify{Command: "never-proven"},
+	}
+	provenElsewhere := &manifest.Tool{
+		Name: "proven-elsewhere", Tested: true,
+		TestedOn: []string{"linux/arm64"},
+		Verify:   &manifest.Verify{Command: "proven-elsewhere"},
+	}
+
+	p := &Profile{Name: "default", RequireTested: true}
+	err := p.WithHost(mac).checkTested(
+		[]*manifest.Tool{neverProven, provenElsewhere}, mac)
+	if err == nil {
+		t.Fatal("checkTested accepted two tools that are not usable here")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "never-proven") && strings.Contains(msg, "proven-elsewhere") {
+		// both named, which is the useful part
+	} else {
+		t.Fatalf("error omits one of the tools: %q", msg)
+	}
+	if !strings.Contains(msg, "no install has been proven") {
+		t.Errorf("error does not report the never-proven tool: %q", msg)
+	}
+	if !strings.Contains(msg, "proven only on linux/arm64") {
+		t.Errorf("error does not say WHERE the other was proven: %q", msg)
+	}
+	if !strings.Contains(msg, "darwin/arm64") {
+		t.Errorf("error does not name the host it is failing for: %q", msg)
+	}
+	// The false claim is the specific thing to prevent: the tested tool must
+	// not be described as untested.
+	if strings.Contains(msg, "not tested: proven-elsewhere") {
+		t.Errorf("a tool proven on another platform is still called untested: %q", msg)
+	}
+}
+
+// With no host bound the gate under-claims rather than over-claims: a tool
+// proven elsewhere is not reported as a failure, because we cannot know.
+func TestRequireTestedWithoutHostDoesNotOverClaim(t *testing.T) {
+	provenElsewhere := &manifest.Tool{
+		Name: "proven-elsewhere", Tested: true,
+		TestedOn: []string{"linux/arm64"},
+		Verify:   &manifest.Verify{Command: "proven-elsewhere"},
+	}
+	p := &Profile{Name: "default", RequireTested: true}
+	if err := p.checkTested([]*manifest.Tool{provenElsewhere}, nil); err != nil {
+		t.Errorf("with no host, a tool proven elsewhere should not block: %v", err)
 	}
 }
