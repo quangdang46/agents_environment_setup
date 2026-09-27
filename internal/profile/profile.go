@@ -53,6 +53,25 @@ type Profile struct {
 	// reporting only the never-tested case, which is the safe direction -
 	// it under-claims rather than over-claims.
 	host *platform.Host `yaml:"-"`
+	// allowUnproven waives the platform half of the gate, not the evidence
+	// half. A tool with no install ever proven still blocks.
+	allowUnproven bool
+	// warnings collects what the run accepted rather than refused, so the
+	// caller can print it. A warning that has to be returned as an error is
+	// not a warning.
+	warnings []string
+}
+
+// Warnings returns what resolution accepted, to be printed before the run.
+func (p *Profile) Warnings() []string { return p.warnings }
+
+// WithAllowUnproven returns the profile set to accept tools proven only on
+// another platform. It does not weaken the flag's purpose: AES's claim is
+// that the environment is VERIFIED, and this records that the user has
+// accepted a tool that is verified somewhere other than here.
+func (p *Profile) WithAllowUnproven(v bool) *Profile {
+	p.allowUnproven = v
+	return p
 }
 
 // WithHost returns the profile bound to a host, so require_tested can say
@@ -165,12 +184,24 @@ func (p *Profile) checkTested(tools []*manifest.Tool, host *platform.Host) error
 	if !p.RequireTested {
 		return nil
 	}
+	// A profile can select the same tool by name and by tag, so the selection
+	// is deduplicated before it is reported. Saying "claude, claude" reads as
+	// two problems when there is one.
 	var untested, unprovenHere []string
+	seen := make(map[string]bool, len(tools))
+	tools = dedupe(tools, seen)
 	for _, t := range tools {
 		switch {
 		case !t.Tested:
+			// Never proven anywhere. The opt-in does not cover this: there is
+			// no evidence at all, and saying otherwise would make the flag
+			// mean "ignore the requirement".
 			untested = append(untested, t.Name)
 		case host != nil && !host.ProvenOn(t):
+			// Collected either way. When the caller opted in this is not a
+			// refusal but a warning, and the names have to be known before
+			// deciding which it is.
+			unprovenHere = append(unprovenHere, t.Name)
 			unprovenHere = append(unprovenHere, t.Name)
 		}
 	}
@@ -178,20 +209,81 @@ func (p *Profile) checkTested(tools []*manifest.Tool, host *platform.Host) error
 	if len(untested) > 0 {
 		sort.Strings(untested)
 		parts = append(parts, fmt.Sprintf("no install has been proven for: %s",
-			strings.Join(untested, ", ")))
+			strings.Join(uniq(untested), ", ")))
 	}
 	if len(unprovenHere) > 0 {
 		sort.Strings(unprovenHere)
 		parts = append(parts, fmt.Sprintf(
 			"proven only on %s, not on this host (%s/%s): %s",
 			strings.Join(provenOn(tools, unprovenHere), ", "),
-			host.Key(), host.Arch, strings.Join(unprovenHere, ", ")))
+			host.Key(), host.Arch, strings.Join(uniq(unprovenHere), ", ")))
+	}
+	if len(untested) > 0 {
+		// Evidence-free tools block even under the opt-in: there is nothing to
+		// accept on their behalf. Reported together with the unproven-here set
+		// rather than instead of it, so one run tells the user everything.
+		parts := []string{fmt.Sprintf("no install has been proven anywhere for: %s",
+			strings.Join(uniq(untested), ", "))}
+		if !p.allowUnproven && len(unprovenHere) > 0 {
+			sort.Strings(unprovenHere)
+			parts = append(parts, fmt.Sprintf(
+				"proven only on %s, not on this host (%s/%s): %s",
+				strings.Join(provenOn(tools, unprovenHere), ", "),
+				host.Key(), host.Arch, strings.Join(uniq(unprovenHere), ", ")))
+		}
+		if p.allowUnproven {
+			parts = append(parts, "(--allow-unproven does not cover these: "+
+				"there is no evidence to accept)")
+		}
+		sort.Strings(untested)
+		return fmt.Errorf("profile %q requires tested tools — %s",
+			p.Name, strings.Join(parts, "; "))
+	}
+	if p.allowUnproven && len(unprovenHere) > 0 {
+		// Accepted, not ignored: the run proceeds and the caller is told
+		// exactly which tools are unverified here. Returning an error here
+		// would make the opt-in identical to refusing.
+		sort.Strings(unprovenHere)
+		p.warnings = append(p.warnings, fmt.Sprintf(
+			"installing %d tool(s) proven only on %s, NOT on this host (%s/%s): %s — "+
+				"their install path is unverified here and aes cannot confirm the result",
+			len(unprovenHere), strings.Join(provenOn(tools, unprovenHere), ", "),
+			host.Key(), host.Arch, strings.Join(uniq(unprovenHere), ", ")))
+		return nil
 	}
 	if len(parts) == 0 {
 		return nil
 	}
 	return fmt.Errorf("profile %q requires tested tools — %s",
 		p.Name, strings.Join(parts, "; "))
+}
+
+// dedupe drops repeat selections while preserving order.
+// uniq sorts and removes adjacent repeats. Applied where the names are
+// REPORTED rather than where they are selected, because the caller may reach
+// this with a list assembled by routes that overlap; saying "claude, claude"
+// reads as two problems when there is one.
+func uniq(names []string) []string {
+	sort.Strings(names)
+	out := names[:0]
+	for i, n := range names {
+		if i == 0 || n != names[i-1] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func dedupe(tools []*manifest.Tool, seen map[string]bool) []*manifest.Tool {
+	out := make([]*manifest.Tool, 0, len(tools))
+	for _, t := range tools {
+		if seen[t.Name] {
+			continue
+		}
+		seen[t.Name] = true
+		out = append(out, t)
+	}
+	return out
 }
 
 // provenOn reports the platforms the named tools were verified on, so the

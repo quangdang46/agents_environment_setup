@@ -489,3 +489,56 @@ func TestRequireTestedWithoutHostDoesNotOverClaim(t *testing.T) {
 		t.Errorf("with no host, a tool proven elsewhere should not block: %v", err)
 	}
 }
+
+// --allow-unproven waives the PLATFORM half of the gate, not the evidence
+// half. A tool with no install proven anywhere still blocks, because there is
+// nothing to accept on its behalf.
+func TestAllowUnprovenWaivesPlatformButNotEvidence(t *testing.T) {
+	mac := &platform.Host{OS: platform.OSDarwin, Arch: platform.ArchARM64}
+	elsewhere := &manifest.Tool{
+		Name: "proven-elsewhere", Tested: true,
+		TestedOn: []string{"linux/arm64"},
+		Verify:   &manifest.Verify{Command: "proven-elsewhere"},
+	}
+	nowhere := &manifest.Tool{
+		Name: "never-proven", Tested: false,
+		Verify: &manifest.Verify{Command: "never-proven"},
+	}
+
+	t.Run("platform-only block is waived, and stated", func(t *testing.T) {
+		p := (&Profile{Name: "d", RequireTested: true}).WithHost(mac).WithAllowUnproven(true)
+		err := p.checkTested([]*manifest.Tool{elsewhere}, mac)
+		if err != nil {
+			t.Fatalf("opt-in still refused a tool proven elsewhere: %v", err)
+		}
+		w := p.Warnings()
+		if len(w) != 1 {
+			t.Fatalf("want exactly one warning, got %d: %v", len(w), w)
+		}
+		// The warning must name the host and say the result is unconfirmed,
+		// or the opt-in is just turning the check off.
+		for _, want := range []string{"linux/arm64", "darwin/arm64", "proven-elsewhere", "unverified"} {
+			if !strings.Contains(w[0], want) {
+				t.Errorf("warning does not mention %q: %q", want, w[0])
+			}
+		}
+	})
+
+	t.Run("no evidence anywhere is still refused", func(t *testing.T) {
+		p := (&Profile{Name: "d", RequireTested: true}).WithHost(mac).WithAllowUnproven(true)
+		err := p.checkTested([]*manifest.Tool{nowhere}, mac)
+		if err == nil {
+			t.Fatal("opt-in accepted a tool with no proven install anywhere")
+		}
+		if !strings.Contains(err.Error(), "no install has been proven") {
+			t.Errorf("error should name the missing evidence: %v", err)
+		}
+	})
+
+	t.Run("opt-in does not change the default", func(t *testing.T) {
+		p := (&Profile{Name: "d", RequireTested: true}).WithHost(mac)
+		if err := p.checkTested([]*manifest.Tool{elsewhere}, mac); err == nil {
+			t.Fatal("without the opt-in a tool proven elsewhere should still be refused")
+		}
+	})
+}

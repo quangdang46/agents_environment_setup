@@ -213,6 +213,11 @@ type Flags struct {
 	// Force permits corrective action on a tool whose state disagrees with
 	// reality. It never widens the resolved set.
 	Force bool
+
+	// AllowUnproven proceeds with tools whose `tested` evidence was gathered on
+	// a different platform. The refusal is the default and stays the default;
+	// this is the explicit opt-in for a user who has read what it costs.
+	AllowUnproven bool
 	// Verbose raises log detail.
 	Verbose bool
 
@@ -386,6 +391,7 @@ func parseFlags(cmd *Command, args []string, errOut io.Writer) (*Flags, any, []s
 	fs.BoolVar(&f.Yes, "yes", false, "suppress privilege confirmation; requires a TTY")
 	fs.BoolVar(&f.NonInteractive, "non-interactive", false, "never prompt; resolve privilege with sudo -n")
 	fs.BoolVar(&f.DryRun, "dry-run", false, "resolve and print, change nothing")
+	fs.BoolVar(&f.AllowUnproven, "allow-unproven", false, "proceed with tools proven only on another platform")
 	fs.BoolVar(&f.JSON, "json", false, "machine-parseable output")
 	fs.BoolVar(&f.Force, "force", false, "repair tools whose state disagrees with reality")
 	fs.BoolVar(&f.Verbose, "verbose", false, "more detail")
@@ -460,6 +466,7 @@ func (a *App) writeHelp(w io.Writer) {
 	fmt.Fprintf(w, "  --profile <name>   profile to resolve\n")
 	fmt.Fprintf(w, "  --only <tool>      resolve only this tool (repeatable)\n")
 	fmt.Fprintf(w, "  --exclude <tool>   skip this tool (repeatable)\n")
+	fmt.Fprintf(w, "  --allow-unproven  proceed with tools proven only on another platform\n")
 	fmt.Fprintf(w, "  --verbose          more detail\n")
 	fmt.Fprintf(w, "\nEXIT CODES\n")
 	fmt.Fprintf(w, "  0 ok   1 failure   2 usage   3 invalid catalog   4 unsupported platform\n")

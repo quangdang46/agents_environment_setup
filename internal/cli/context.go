@@ -79,9 +79,14 @@ func (rc *runContext) request() (resolver.Request, error) {
 	}
 	// Bound to this host so require_tested can distinguish "never verified"
 	// from "verified elsewhere"; both otherwise report as untested.
-	tools, err := p.WithHost(rc.Host).Resolve(rc.Catalog)
+	tools, err := p.WithHost(rc.Host).WithAllowUnproven(rc.Flags != nil && rc.Flags.AllowUnproven).Resolve(rc.Catalog)
 	if err != nil {
 		return req, err
+	}
+	// Printed before the run, never swallowed: --allow-unproven is an
+	// informed choice and the information is what makes it one.
+	for _, w := range p.Warnings() {
+		fmt.Fprintf(rc.App.Err, "aes: %s\n", w)
 	}
 	for _, t := range tools {
 		req.Only = append(req.Only, t.Name)
