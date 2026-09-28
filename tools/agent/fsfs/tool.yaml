@@ -34,8 +34,14 @@ install:
     strategy: github-release
     repository: Dicklesworthstone/frankensearch
     asset:
-      amd64: fsfs-1.10.0-x86_64-unknown-linux-gnu.tar.xz
+      # musl, not gnu. The gnu build links against GLIBC 2.43 and dies on
+      # ubuntu 24.04, which ships 2.39: "/lib/x86_64-linux-gnu/libm.so.6:
+      # version `GLIBC_2.43' not found". Measured in a fresh container during
+      # the full-catalog run — the binary installs cleanly and then will not
+      # start, which is the worst shape for a tool. The musl build is static
+      # and ships the same `fsfs` binary inside the archive.
+      amd64: fsfs-lite-1.10.0-x86_64-unknown-linux-musl.tar.xz
       arm64: fsfs-lite-1.10.0-aarch64-unknown-linux-musl.tar.xz
     sha256:
-      amd64: e13198a46821867301b1c62a263e342f16e4d9733ee7b20530a9be035d66107f
+      amd64: fa1b1adc3f830eb99bff54c5c887fd3ce056fc5af9ac893bb3f0b8c87bb263f2
       arm64: a014c589293006deb8fbd21f8ed962a86f8aa8afe0ca422378d4a345260ec8fb

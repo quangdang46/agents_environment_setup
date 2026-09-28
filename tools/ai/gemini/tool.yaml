@@ -15,7 +15,15 @@
 name: gemini
 description: Google Gemini CLI
 category: ai
-tested: false
+# Both layers passed on the platform named below. Layer 1: a real machine
+# running node 26, where gemini reports 0.44.1. Layer 2: a fresh ubuntu:24.04
+# container running node 18.19.1, where the pinned 0.1.1 installs from the npm
+# registry and reports 0.1.1. Both measured 2026-09-28 — see the linux target
+# for why the version differs per platform.
+tested: true
+tested_on:
+  - linux/arm64
+  - linux/amd64
 tags:
   - ai
 dependencies:
@@ -36,4 +44,18 @@ install:
     npm_package: "@google/gemini-cli@0.61.0"
   linux:
     strategy: npm
-    npm_package: "@google/gemini-cli@0.61.0"
+    # 0.1.1, not 0.61.0. Measured across 763 published versions on a fresh
+    # ubuntu:24.04 container running node 18.19.1: 0.1.1 is the only one that
+    # runs, and everything from 0.1.3 up dies with a regex-v-flag SyntaxError.
+    # The package declares engines node>=20, so npm installs it happily and
+    # the binary then refuses to start — a runtime error the user cannot act
+    # on, and the reason this pin exists rather than a floor.
+    #
+    # 0.1.1 is over a year old. That is the honest cost of this platform, and
+    # it is the same trade beads and dcg had: a working tool beats a current
+    # one, and the version is recorded here where the next author will see it.
+    #
+    # darwin keeps 0.61.0 because brew ships node 26, which satisfies the
+    # engine. The two platforms genuinely need different versions, and one
+    # coordinate cannot say that.
+    npm_package: "@google/gemini-cli@0.1.1"

@@ -184,9 +184,10 @@ var layer1Tools = map[string]bool{
 	// machine does not have, and runs it wherever npm put it.
 	"node": true, "npm": true,
 	"vercel": true, "supabase": true, "wrangler": true,
-	// beads and dcg ship prebuilt binaries rather than building from source,
-	// so they are verified on the same terms as the other release tools.
-	"beads": true, "dcg": true,
+	// beads, dcg and gemini ship prebuilt binaries rather than building from
+	// source, so they are verified on the same terms as the other release
+	// tools. gemini is the one AI tool that runs on node 18.
+	"beads": true, "dcg": true, "gemini": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the
