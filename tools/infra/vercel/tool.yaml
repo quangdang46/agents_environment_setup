@@ -1,0 +1,29 @@
+# AES catalog. npm package vercel, version read from the live npm registry.
+name: vercel
+description: Vercel CLI
+category: infra
+# Both layers passed on the platform named below: the tool installed from
+# nothing in a fresh ubuntu:24.04 container with nodejs and npm present, and
+# `aes verify` reported StatusOK with a parsed version on that machine
+# afterwards. Both measured 2026-09-28.
+tested: true
+tested_on:
+  - linux/arm64
+  - linux/amd64
+tags:
+  - infra
+dependencies:
+  - node
+  - npm
+verify:
+  command: vercel
+  version:
+    command: vercel --version
+    min: "30.0"
+install:
+  darwin:
+    strategy: npm
+    npm_package: vercel@60.1.3
+  linux:
+    strategy: npm
+    npm_package: vercel@60.1.3

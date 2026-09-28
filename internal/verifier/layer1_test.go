@@ -72,6 +72,27 @@ var layer1Fixtures = []layer1Fixture{
 	// 24.04 `apt install nodejs` does not bring it — so it is verified on the
 	// same terms. The floor is the lower of the two platforms' offerings.
 	{"npm", "npm", "npm --version", "9.0"},
+	// Cloud CLIs. These have no binary on most developer machines, so the
+	// fixture skips here and runs for real wherever npm put them — which is
+	// exactly what Layer 1 is for: it asserts a tool that IS on the machine
+	// verifies, and says nothing about one that is not. Their Layer 2 evidence
+	// is a fresh container, recorded in each manifest.
+	{"vercel", "vercel", "vercel --version", "30.0"},
+	{"supabase", "supabase", "supabase --version", "1.0"},
+	{"wrangler", "wrangler", "wrangler --version", "3.0"},
+}
+
+// presentOnThisMachine reports whether every binary a tool declares resolves
+// here. LookPath, not a shell: `command -v tmux` in zsh reports an alias for
+// a plugin wrapper, and the assertion would pass against something that is not
+// the binary.
+func presentOnThisMachine(tool *manifest.Tool) bool {
+	for _, bin := range binaries(tool) {
+		if _, err := LookPathFor(bin); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // toolFor builds the manifest a real tool.yaml would carry for this fixture.
@@ -162,6 +183,18 @@ func TestTestedToolsPassLayer1(t *testing.T) {
 	}
 	for _, tool := range c.Tested() {
 		t.Run(tool.Name, func(t *testing.T) {
+			// A tool the machine does not have says nothing about whether the
+			// tool works, and `tested: true` records where it WAS proven, not
+			// that every machine carries it. A tool AES installs on demand —
+			// supabase, wrangler — is absent on a machine that never asked for
+			// it, and failing here would mean the flag could never be set for
+			// anything the developer had not already installed by hand.
+			//
+			// So the same rule as TestLayer1VerifyFixtures applies: absent is
+			// skipped, and a tool that IS here must genuinely verify.
+			if !presentOnThisMachine(tool) {
+				t.Skipf("%s is not installed on this machine", tool.Name)
+			}
 			got := Verify(tool)
 			// Unknown is the honest failure here: a tested:true tool whose
 			// version cannot be read has not had its minimum verified, which is

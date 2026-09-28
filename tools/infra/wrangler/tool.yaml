@@ -1,0 +1,38 @@
+# AES catalog. npm package wrangler.
+#
+# Pinned at 3.114.17, NOT the newest (4.142.0). Wrangler 4.x refuses to run on
+# node 18 at all — measured 2026-09-28 in a fresh ubuntu:24.04 container:
+# "Wrangler requires at least Node.js v20.0.0. You are using v18.19.1."
+# The 4.48.0 pin was wrong for the same reason: its npm engine says >=22,
+# and the runtime check is even stricter. The 3.x line is the newest that
+# runs on what the platform offers. Same shape as the ast-grep entry: a
+# catalog that pins by "latest when written" breaks on a distro with an
+# older runtime, and the break is a runtime error the user cannot act on.
+name: wrangler
+description: Cloudflare Workers CLI
+category: infra
+# Both layers passed on the platform named below: the tool installed from
+# nothing in a fresh ubuntu:24.04 container with nodejs and npm present, and
+# `aes verify` reported StatusOK with a parsed version on that machine
+# afterwards. Both measured 2026-09-28.
+tested: true
+tested_on:
+  - linux/arm64
+  - linux/amd64
+tags:
+  - infra
+dependencies:
+  - node
+  - npm
+verify:
+  command: wrangler
+  version:
+    command: wrangler --version
+    min: "3.0"
+install:
+  darwin:
+    strategy: npm
+    npm_package: wrangler@3.114.17
+  linux:
+    strategy: npm
+    npm_package: wrangler@3.114.17

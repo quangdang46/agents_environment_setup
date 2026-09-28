@@ -179,8 +179,11 @@ var layer1Tools = map[string]bool{
 	"eza": true, "codex": true, "opencode": true,
 	"bottom": true, "zellij": true, "ntm": true,
 	// node and npm are the runtimes every npm-strategy tool depends on, so
-	// they are verified on the same terms as the tools that need them.
+	// they are verified on the same terms as the tools that need them. The
+	// cloud CLIs are here for the same reason: Layer 1 skips a tool the
+	// machine does not have, and runs it wherever npm put it.
 	"node": true, "npm": true,
+	"vercel": true, "supabase": true, "wrangler": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the

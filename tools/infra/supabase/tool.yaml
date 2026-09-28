@@ -1,0 +1,29 @@
+# AES catalog. npm package supabase, version read from the live npm registry.
+name: supabase
+description: Supabase CLI
+category: infra
+# Both layers passed on the platform named below: the tool installed from
+# nothing in a fresh ubuntu:24.04 container with nodejs and npm present, and
+# `aes verify` reported StatusOK with a parsed version on that machine
+# afterwards. Both measured 2026-09-28.
+tested: true
+tested_on:
+  - linux/arm64
+  - linux/amd64
+tags:
+  - infra
+dependencies:
+  - node
+  - npm
+verify:
+  command: supabase
+  version:
+    command: supabase --version
+    min: "1.0"
+install:
+  darwin:
+    strategy: npm
+    npm_package: supabase@2.118.0
+  linux:
+    strategy: npm
+    npm_package: supabase@2.118.0
