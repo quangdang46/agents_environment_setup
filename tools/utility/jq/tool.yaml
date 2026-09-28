@@ -10,6 +10,11 @@ category: utility
 tested: true
 tested_on:
   - linux/arm64
+  # Layer 2: a fresh ubuntu:24.04 container with only ca-certificates, curl and
+  # git present; `aes setup` installed this from nothing and `aes verify`
+  # reported StatusOK with a parsed version on that machine. Measured
+  # 2026-09-28 during the full-catalog run.
+  - linux/amd64
 tags:
   - utility
 verify:
