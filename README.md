@@ -18,11 +18,12 @@ aes setup
 ```
 
 > **Status: pre-1.0, and honest about it.** No release is published yet, so the
-> install line above does not work today. 61 tool definitions exist; **7 are
-> marked `tested: true`**, each carrying `tested_on: [linux/arm64]` so the flag
-> says where it was proven rather than implying everywhere. `aes setup` with no
-> flags still resolves to nothing and exits non-zero, because the default
-> profile selects 18 tools and only some of them are proven. See
+> install line above does not work today — build from source. 62 tool
+> definitions exist; **24 are marked `tested: true`**, each carrying a
+> `tested_on` list so the flag says where it was proven rather than implying
+> everywhere. `aes setup` with no flags installs and verifies the default
+> profile end to end and exits 0; `aes setup --profile full` does the same for
+> the whole catalog, measured on a clean `ubuntu:24.04` container. See
 > [Status and limitations](#status-and-limitations).
 
 ---
@@ -265,11 +266,14 @@ This is an active, pre-1.0 project. Stated plainly:
 - **No published release.** `install.sh` and the checksum verification are
   complete and tested against a local fixture, but there is no GitHub release
   to download from yet. Build from source for now.
-- **7 of 61 tools are `tested: true`, and `aes setup` with no flags still
-  exits non-zero.** Verification requires both layers — a real install, then
-  `aes verify` confirming the result on that same machine. Both now run in a
-  fresh `ubuntu:24.04` container (`internal/sandbox`, opt-in behind
-  `AES_LAYER2=1`), which is the only place a tool can start absent.
+- **24 of 62 tools are `tested: true`, and the rest are not — deliberately.**
+  Verification requires both layers: a real install, then `aes verify`
+  confirming the result on that same machine. Both run in a fresh
+  `ubuntu:24.04` container (`internal/sandbox`, opt-in behind
+  `AES_LAYER2=1`), which is the only place a tool can start absent. Every
+  version floor, asset name and checksum in the catalog was read from upstream
+  during a full-catalog run on a clean container, not assumed; a dozen were
+  wrong and are now right.
 
   The default profile selects **18** tools and 11 of them are unproven, so
   `require_tested` refuses the whole thing. That is I15 working, not a bug —
@@ -329,9 +333,11 @@ printed and confirmed, or `sudo -n` in automation.
 
 **Why aren't more tools marked `tested: true`?**
 Because the flag means a real install was verified end to end, in a fresh
-container, and only 7 tools have been through that. Marking tools on detection
-evidence alone would make the tool's central claim — a *verified* environment —
-a lie, which is the one thing the flag exists to prevent.
+container, and 24 tools have been through that. The rest install — they run
+under `--profile full`, where a floor that only holds on the platform it was
+measured on still refuses to over-claim. Marking a tool on detection evidence
+alone would make the tool's central claim — a *verified* environment — a lie,
+which is the one thing the flag exists to prevent.
 
 The flag also carries `tested_on`, so "verified" is a claim about a named
 platform rather than about the world. `aes` on darwin will skip a tool proven
