@@ -1,10 +1,21 @@
-# Every verified tool in the catalog, expressed by category rather than by a
+# Every tool in the catalog, expressed by category rather than by a
 # hand-maintained name list that would rot the day a tool is added.
 #
-# require_tested still applies, so a tool that is not verified cannot sneak
-# in by being listed in a category.
+# require_tested is OFF, and that is the whole point of this profile rather than
+# an oversight. It selects by CATEGORY, so it necessarily picks up every
+# untested tool in the catalog; require_tested then refused all of them. The
+# profile was unrunnable — not on one machine, on any, and no flag rescued it:
+# --allow-unproven waives the platform half only, and a tool with no evidence
+# anywhere has nothing to waive. Measured 2026-09-28: `aes setup --profile
+# full` and `aes setup --profile full --allow-unproven` both exit 1 listing
+# the same 29 untested tools.
+#
+# So `full` means what its name says — everything — and the verified subset is
+# `--profile ai` or `--profile developer`, which keep require_tested on. A user
+# who wants everything is opting into unverified installs, and the flag is the
+# honest way to say that.
 name: full
-description: Every verified tool in the catalog
+description: Every tool in the catalog, verified or not
 tags:
   - shell
   - search
@@ -14,4 +25,5 @@ tags:
   - ai
   - infra
   - utility
-require_tested: true
+  - agent
+require_tested: false

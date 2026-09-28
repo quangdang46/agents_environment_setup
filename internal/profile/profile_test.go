@@ -597,3 +597,45 @@ func TestAllowUnprovenWaivesPlatformButNotEvidence(t *testing.T) {
 		}
 	})
 }
+
+// A profile that selects by CATEGORY must be able to resolve. `full` selects
+// every category, so it necessarily picks up every untested tool in the
+// catalog — and with require_tested on, it refused all of them. The profile
+// was unrunnable on any machine, and no flag rescued it: --allow-unproven
+// waives the platform half only, and a tool with no evidence anywhere has
+// nothing to waive.
+//
+// The test asserts the property rather than the flag value, because the flag
+// is the mechanism and the property is the contract: a profile whose
+// selection is entirely refused is a profile that does not exist.
+func TestFullProfileResolvesToSomething(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join("..", "..")
+	cat, err := catalog.Load(filepath.Join(root, "tools"))
+	if err != nil {
+		t.Fatalf("catalog.Load: %v", err)
+	}
+	set, err := LoadDir(filepath.Join(root, "profiles"))
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+
+	p, err := set.Get("full")
+	if err != nil {
+		t.Fatalf("Get(full): %v", err)
+	}
+	tools, err := p.Resolve(cat)
+	if err != nil {
+		t.Fatalf("the full profile does not resolve: %v", err)
+	}
+	if len(tools) == 0 {
+		t.Error("the full profile resolves to nothing; a profile that selects " +
+			"every category and returns zero tools is not a profile")
+	}
+	// And it must actually be the whole catalog, or the name is a lie.
+	if len(tools) != cat.Len() {
+		t.Errorf("the full profile resolves %d tools, want all %d in the catalog",
+			len(tools), cat.Len())
+	}
+}
