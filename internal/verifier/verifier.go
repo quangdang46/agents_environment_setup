@@ -119,7 +119,26 @@ var gitHashRe = regexp.MustCompile(`(?i)\bcommit=[0-9a-f]{7,40}\b`)
 // `commit=<hash>, build date=2026-09-13T05:42:30Z, ..., version=0.65.1, ...`:
 // after the hash is removed, versionRe takes "2026" from the build date, which
 // is a year, not a version, and the tool is reported as version 2026.
-var namedVersionRe = regexp.MustCompile(`(?i)\bversion\s*[=:]\s*(\d+(?:\.\d+)*(?:[a-z]+)?)`)
+//
+// The separator class allows one or more quotes, and the label is anchored
+// to the start of the line or a boundary that cannot be part of another
+// word — a comma, a space, or the line start. Debian-built lazygit prints:
+//
+//	commit=, build date=, build source='debian', version='0.57.0+ds1-1', ..., git version=2.53.0
+//
+// Both words are "version" and both are followed by `=`. Without the quote in
+// the separator class the first is skipped (the quote follows the `=`), and
+// without the anchor the second matches instead — so the tool is reported at
+// version 2.53.0, which is GIT's version, while its own 0.57.0 is on the same
+// line. That is the failure this pattern is shaped around: not a wrong number
+// on a hard line, but the right pattern applied to a tool's neighbour.
+//
+// The anchor must exclude `git version=` and its kin (`gog version=`,
+// `ngit version=` — any longer word ending in "version"). RE2 has no
+// lookbehind, so the exclusion is done in code: the match is taken, then
+// rejected if the character before the label is a letter. That is the same
+// rule a lookbehind would express, and it is cheaper than a second pass.
+var namedVersionRe = regexp.MustCompile(`(?i)(?:^|[, ])([A-Za-z]*)version\s*[=:]\s*['"]?(\d+(?:\.\d+)*(?:[a-z0-9.+-]*[a-z0-9])?)`)
 
 // ansiRe matches the escape sequences a tool may embed in its version output.
 //
@@ -189,7 +208,12 @@ func ExtractVersion(output string) string {
 	// dropping the hash alone still leaves `build date=2026-...` to be read as
 	// the version.
 	if m := namedVersionRe.FindStringSubmatch(first); m != nil {
-		return m[1]
+		// m[1] is the word immediately before "version", if any. A bare
+		// `version=` has an empty prefix; `git version=` has "git". The
+		// latter is a different tool's version and must not win.
+		if m[1] == "" {
+			return m[2]
+		}
 	}
 	if hash := gitHashRe.FindString(first); hash != "" {
 		if v := versionRe.FindString(strings.Replace(first, hash, " ", 1)); v != "" {
