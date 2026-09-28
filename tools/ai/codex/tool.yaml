@@ -8,6 +8,11 @@ tested_on:
   # ubuntu:24.04 container and `aes verify` reported StatusOK with a parsed
   # version (codex 0.157.1) on that machine afterwards (bead gj9).
   - linux/amd64
+# Same contract as claude: the whole command here, verified in
+# `codex --help`, and the dangerous flag is the user's explicit choice,
+# recorded rather than hidden.
+aliases:
+  cod: codex --dangerously-bypass-approvals-and-sandbox
 tags:
   - ai
 dependencies:

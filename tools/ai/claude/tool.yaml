@@ -17,6 +17,18 @@ tested_on:
   # (I15) — the run that gathers a platform's evidence has to be allowed to
   # install the tool whose evidence is missing.
   - linux/amd64
+# cc is the shortcut a fresh shell gets for Claude Code. The value is the
+# whole command, declared here rather than in a hand-written zshrc, because a
+# generated file cannot disagree with what declared it.
+#
+# --dangerously-skip-permissions is present on purpose, and it is not a default
+# an environment manager should take silently: it bypasses every permission
+# check in the agent. The user asked for the ACFS behaviour, it is verified to
+# exist in `claude --help` on this host, and it is recorded here rather than
+# hidden in a shell file nobody opens. Opt out by removing the line, or run
+# `cc` as plain `claude`.
+aliases:
+  cc: claude --dangerously-skip-permissions
 tags:
   - ai
 dependencies:

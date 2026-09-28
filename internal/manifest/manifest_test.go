@@ -66,6 +66,96 @@ func TestParseValid(t *testing.T) {
 // TestParseRejects covers every way a manifest can be wrong. Each case
 // asserts on the error text: the contract is that the message names the
 // offending field, not merely that parsing failed.
+// aliases: declares the shell shortcuts a tool installs alongside its
+// binary. The VALUE is the whole command, deliberately: ACFS declares only
+// the name in its manifest and keeps the body in a hand-written zshrc, which
+// is two sources of truth and already drifted once there.
+func TestAliasesParseIntoTheTool(t *testing.T) {
+	t.Parallel()
+
+	tool, err := Parse([]byte(validTool + "\naliases:\n  cc: 'claude --dangerously-skip-permissions'\n"))
+	if err != nil {
+		t.Fatalf("aliases: rejected on a well-formed value: %v", err)
+	}
+	if got := tool.Aliases["cc"]; got != "claude --dangerously-skip-permissions" {
+		t.Errorf("Aliases[cc] = %q, want the full command", got)
+	}
+}
+
+// TestAliasesReject covers every way an alias can be a hole rather than a
+// shortcut. Each lands in a sourced shell file, so the constraint is the same
+// one that governs the rest of the schema: no arbitrary text in, no way to
+// smuggle a second statement.
+func TestAliasesReject(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			// An alias name goes into `alias NAME=...` and the shell
+			// re-evaluates it, so it must be a name, not a command.
+			name: "a name with a space is not a command",
+			yaml: "aliases:\n  'my tool': claude\n",
+			want: "aliases",
+		},
+		{
+			// A newline is a second statement in a sourced file. That is
+			// the same shape as the I3 no-run rule.
+			name: "a newline in the value is a second statement",
+			// Real newlines for YAML structure, and the double-quoted value
+			// keeps its escape so YAML interprets it into a real newline in
+			// the value. A single-quoted YAML scalar would pass \n through
+			// as two literal characters, and the test would look right
+			// while proving nothing.
+			yaml: "aliases:\n  cc: \"claude\\necho pwned\"\n",
+			want: "aliases",
+		},
+		{
+			name: "an empty value declares nothing",
+			yaml: "aliases:\n  cc: ''\n",
+			want: "aliases",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Parse([]byte(validTool + tc.yaml))
+			if err == nil {
+				t.Fatalf("aliases accepted %q without complaint", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not name %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// An alias must not silently collide with another tool's name, or one catalog
+// entry becomes unreachable.
+func TestAliasesMustNotShadowCatalogNames(t *testing.T) {
+	t.Parallel()
+
+	// Self-shadow is the case Parse can see: only the tool's own manifest
+	// is in scope. Cross-tool collisions (an alias naming another tool) are
+	// checked where the whole catalog is visible, in internal/catalog.
+	for _, tc := range []struct{ alias, tool string }{
+		{"ripgrep", "ripgrep"},
+	} {
+		t.Run(tc.alias+" must not equal "+tc.tool, func(t *testing.T) {
+			t.Parallel()
+			src := validTool + "aliases:\n  " + tc.alias + ": 'claude'\n"
+			_, err := Parse([]byte(src))
+			if err == nil {
+				t.Fatalf("alias %q was accepted even though it shadows tool %q", tc.alias, tc.tool)
+			}
+		})
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	t.Parallel()
 

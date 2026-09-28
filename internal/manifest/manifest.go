@@ -84,12 +84,26 @@ type Tool struct {
 	// from carrying ceremony. Non-empty is what a multi-platform proof needs,
 	// and it is checked against the host before the tool is resolved, so an
 	// unproven host skips rather than silently installing.
-	TestedOn     []string          `yaml:"tested_on,omitempty"`
-	Tags         []string          `yaml:"tags,omitempty"`
-	Provides     []string          `yaml:"provides,omitempty"`
-	Dependencies []string          `yaml:"dependencies,omitempty"`
-	Verify       *Verify           `yaml:"verify,omitempty"`
-	Install      map[string]Target `yaml:"install"`
+	TestedOn     []string `yaml:"tested_on,omitempty"`
+	Tags         []string `yaml:"tags,omitempty"`
+	Provides     []string `yaml:"provides,omitempty"`
+	Dependencies []string `yaml:"dependencies,omitempty"`
+	// Aliases are the shell shortcuts this tool installs alongside its
+	// binary, declared as the FULL command — never a name alone.
+	//
+	// ACFS declares only the name (`agent.aliases: [cc]`) and keeps the body
+	// in a hand-written 27KB zshrc. That is two sources of truth, and they
+	// have already drifted: an old ACFS shipped `alias br='bun run dev'`,
+	// shadowing the real `br` binary, and the current zshrc carries a
+	// defensive `unalias br` guard for a mistake a generated manifest cannot
+	// make. Declaring the whole command means generation cannot disagree
+	// with declaration.
+	//
+	// An alias lands in a sourced shell file, so it gets the same treatment
+	// as the rest of the schema: validation, not trust.
+	Aliases map[string]string `yaml:"aliases,omitempty"`
+	Verify  *Verify           `yaml:"verify,omitempty"`
+	Install map[string]Target `yaml:"install"`
 }
 
 // Target is the install recipe for one platform, keyed by GOOS. Exactly one
@@ -211,6 +225,11 @@ var nameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // else is a catalog-load error rather than a runtime surprise.
 var minRe = regexp.MustCompile(`^v?\d+(\.\d+)*$`)
 
+// aliasNameRe is the alias naming contract: a bare shell word. It is emitted
+// as `alias NAME=...` and the shell re-evaluates it, so the rule is the
+// shell's, not ours: no spaces, no metacharacters, no empty names.
+var aliasNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+
 // testedOnRe matches a GOOS/GOARCH pair. It uses the same vocabulary as the
 // `install:` map, so a value here means what the same word means there.
 var testedOnRe = regexp.MustCompile(`^(darwin|linux)/(amd64|arm64)$`)
@@ -272,6 +291,9 @@ func (t *Tool) Validate() error {
 	if t.Description == "" {
 		return fmt.Errorf("description is required")
 	}
+	if err := t.validateAliases(); err != nil {
+		return err
+	}
 	if err := t.validateDependencies(); err != nil {
 		return err
 	}
@@ -289,6 +311,42 @@ func (t *Tool) Validate() error {
 		}
 	}
 	return t.validateVerify()
+}
+
+// validateAliases enforces that an alias is a shortcut rather than a hole.
+//
+// Everything here lands in a file the shell sources, so the rules are the
+// shell's own constraints and nothing looser:
+//
+//   - the name must be a bare command name. It is emitted as `alias NAME=...`
+//     and the shell re-evaluates it, so a name with a space or a metacharacter
+//     is not a name at all.
+//   - the value may not contain a newline. In a sourced file a newline is a
+//     second statement, which is exactly the hole I3 closed for `run:` — a
+//     manifest that cannot express "run this" still must not become a program.
+//   - the value may not be empty. `alias cc=”` runs nothing and reports a
+//     working shortcut.
+//   - the name may not equal a tool's own name. `claude: {claude: ...}` would
+//     shadow the very binary this manifest installs, which is the failure
+//     aes doctor exists to report and which no manifest should introduce.
+func (t *Tool) validateAliases() error {
+	// Sorted so the reported failure does not depend on map iteration order.
+	for _, name := range sortedKeys(t.Aliases) {
+		value := t.Aliases[name]
+		if !aliasNameRe.MatchString(name) {
+			return fmt.Errorf("aliases: %q is not a valid alias name (letters, digits, dash, underscore, dot)", name)
+		}
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("aliases: %q is empty; an alias that runs nothing reports a working shortcut", name)
+		}
+		if strings.ContainsAny(value, "\n\r") {
+			return fmt.Errorf("aliases: %q contains a newline, which is a second statement in a sourced file", name)
+		}
+		if name == t.Name {
+			return fmt.Errorf("aliases: %q would shadow the binary this tool installs", name)
+		}
+	}
+	return nil
 }
 
 func (t *Tool) validateDependencies() error {
