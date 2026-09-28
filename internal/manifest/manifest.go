@@ -116,9 +116,33 @@ type Tool struct {
 	// improves a default installation, which is real: tmux ships a perfectly
 	// usable default, and a multiplexer config that fights the user's muscle
 	// memory is worse than none.
-	Config  []string          `yaml:"config,omitempty"`
-	Verify  *Verify           `yaml:"verify,omitempty"`
-	Install map[string]Target `yaml:"install"`
+	Config []string `yaml:"config,omitempty"`
+	// Settings are key/value pairs MERGED into a tool's own config file.
+	// This is the one place AES writes outside ~/.aes, and it exists because
+	// the alternative is worse: an alias carrying --dangerously-skip-permissions
+	// prompts on every launch until the user finds a setting in a JSON file,
+	// and the one-command promise is "it works", not "it installs".
+	//
+	// Merged, never copied. A user's settings.json holds a proxy URL, a token,
+	// a model choice, hooks and a permission mode; overwriting it is silent
+	// and the failure surfaces days later as "the agent stopped working". A
+	// key is written only when absent, so a value the user set deliberately
+	// survives. The path is resolved through any symlink first, because a
+	// dotfiles-managed symlink must be edited in place.
+	Settings []Setting         `yaml:"settings,omitempty"`
+	Verify   *Verify           `yaml:"verify,omitempty"`
+	Install  map[string]Target `yaml:"install"`
+}
+
+// Setting is one merge rule: a path relative to the user's home, and the
+// keys to set in the JSON object there.
+type Setting struct {
+	// Path is relative to the user's home directory. A leading /, or any ..
+	// component, is rejected: the catalog does not get to choose an absolute
+	// destination for a file outside ~/.aes.
+	Path string `yaml:"path"`
+	// Merge keys are set only when absent, never overwritten.
+	Merge map[string]any `yaml:"merge"`
 }
 
 // Target is the install recipe for one platform, keyed by GOOS. Exactly one
@@ -312,6 +336,9 @@ func (t *Tool) Validate() error {
 	if err := t.validateConfig(); err != nil {
 		return err
 	}
+	if err := t.validateSettings(); err != nil {
+		return err
+	}
 	if err := t.validateDependencies(); err != nil {
 		return err
 	}
@@ -387,6 +414,44 @@ func (t *Tool) validateConfig() error {
 			return fmt.Errorf("config: %q is listed more than once", name)
 		}
 		seen[name] = true
+	}
+	return nil
+}
+
+// validateSettings enforces that a merge rule names a path inside the user's
+// home and carries at least one key.
+//
+// The path rule is the same one `config:` applies, and for the same reason:
+// a manifest that can name an absolute path can write anywhere, which is a
+// destination the catalog must never get to pick. The difference is that
+// `config:` ships a file AES owns, while `settings:` edits a file the tool
+// owns — so the path is checked here and the merge itself is checked at
+// write time, where the file's actual contents are known.
+func (t *Tool) validateSettings() error {
+	seen := make(map[string]bool, len(t.Settings))
+	for _, s := range t.Settings {
+		if s.Path == "" {
+			return fmt.Errorf("settings: a rule with no path names no file to merge into")
+		}
+		if filepath.IsAbs(s.Path) {
+			return fmt.Errorf("settings: %q must be relative to the user's home; "+
+				"a manifest cannot choose an absolute destination", s.Path)
+		}
+		// `..` is the whole check: it is the only way a relative path escapes
+		// home. Subdirectories are expected — .claude/settings.json is two
+		// levels down — so the path is checked by containment, not by shape.
+		for _, part := range strings.Split(filepath.ToSlash(s.Path), "/") {
+			if part == ".." {
+				return fmt.Errorf("settings: %q climbs out of the user's home", s.Path)
+			}
+		}
+		if len(s.Merge) == 0 {
+			return fmt.Errorf("settings: %q declares no keys to merge", s.Path)
+		}
+		if seen[s.Path] {
+			return fmt.Errorf("settings: %q is listed more than once", s.Path)
+		}
+		seen[s.Path] = true
 	}
 	return nil
 }

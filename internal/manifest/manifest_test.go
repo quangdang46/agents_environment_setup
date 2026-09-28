@@ -910,3 +910,64 @@ func TestOnlyAptNeedsPrivilege(t *testing.T) {
 		}
 	}
 }
+
+// settings: is the one place AES edits a file outside ~/.aes, so its path
+// rules are the ones that keep a manifest from choosing a destination.
+func TestSettingsPathRules(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			// A relative path with subdirectories is the normal case:
+			// .claude/settings.json is two levels down.
+			name: "a relative path with subdirectories is fine",
+			yaml: "settings:\n  - path: .claude/settings.json\n    merge:\n      someKey: true\n",
+			want: "",
+		},
+		{
+			name: "an absolute path is refused",
+			yaml: "settings:\n  - path: /etc/passwd\n    merge:\n      someKey: true\n",
+			want: "relative to the user's home",
+		},
+		{
+			// `..` is the only way a relative path escapes home, so it is
+			// the only component that matters.
+			name: "a path that climbs out of home is refused",
+			yaml: "settings:\n  - path: ../escape/settings.json\n    merge:\n      someKey: true\n",
+			want: "climbs out",
+		},
+		{
+			name: "a rule with no keys declares nothing",
+			yaml: "settings:\n  - path: .claude/settings.json\n",
+			want: "no keys to merge",
+		},
+		{
+			name: "a rule with no path names no file",
+			yaml: "settings:\n  - merge:\n      someKey: true\n",
+			want: "no path",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Parse([]byte(validTool + tc.yaml))
+			if tc.want == "" {
+				if err != nil {
+					t.Errorf("rejected a well-formed settings rule: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("settings accepted %q without complaint", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not name %q", err, tc.want)
+			}
+		})
+	}
+}

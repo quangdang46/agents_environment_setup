@@ -37,6 +37,24 @@ tested_on:
 # `claude-code` as plain `claude`.
 aliases:
   claude-code: claude --dangerously-skip-permissions
+# settings.json is MERGED, never copied. The user's file is theirs: it can
+# hold a proxy URL, a token, a model choice, hooks, and a permission mode
+# that says the opposite of this key. Copying over it would silently undo
+# all of that, and the failure is invisible until the agent stops working.
+#
+# The key is `skipDangerousModePermissionPrompt`, which is what makes the
+# alias's --dangerously-skip-permissions flag usable without a prompt on
+# every launch. It is written only when absent, so a user who has set it
+# deliberately keeps their value. ACFS does the same merge with jq; the
+# contract is the one that matters, not the tool.
+#
+# The file is resolved through any symlink before writing, because a
+# dotfiles-managed symlink must be edited in place — replacing it with a
+# regular file would orphan the user's dotfiles repo.
+settings:
+  - path: .claude/settings.json
+    merge:
+      skipDangerousModePermissionPrompt: true
 tags:
   - ai
 dependencies:
