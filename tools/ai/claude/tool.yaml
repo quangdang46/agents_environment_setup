@@ -59,6 +59,11 @@ tags:
   - ai
 dependencies:
   - node
+  # npm is a separate tool, not something node provides: on Ubuntu 24.04
+  # `apt install nodejs` installs node and NOT npm. Measured 2026-09-28 in
+  # a fresh container. Without this, claude/codex/opencode fail with
+  # "strategy npm requires npm on PATH" while aes reports node as present.
+  - npm
 verify:
   command: claude
   version:

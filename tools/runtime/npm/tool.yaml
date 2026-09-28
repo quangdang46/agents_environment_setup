@@ -1,0 +1,43 @@
+# AES catalog. Package names verified against the homebrew formula index and the
+# Debian package index.
+#
+# npm is its own tool, not part of `node`, because on Ubuntu 24.04
+# `apt install nodejs` installs node and NOT npm. Measured 2026-09-28 in a
+# fresh container — node at /usr/bin/node, npm MISSING. The node manifest used
+# to claim `provides: [node, npm]` and the install delivered one, so every
+# npm-strategy tool failed with "strategy npm requires npm on PATH" while aes
+# reported node as present. Same shape as the rust/rustc entry, and the fix is
+# the same: give npm its own install rather than pretending it rides along.
+name: npm
+description: Node.js package manager
+category: runtime
+# Both layers passed on the platform named below.
+tested: true
+tested_on:
+  - linux/arm64
+  # Layer 1: a real machine carrying npm 9.2.0 alongside node. Layer 2: a
+  # fresh ubuntu:24.04 container with nodejs already present; `aes setup
+  # --only npm` installed the npm package from the distro index and
+  # `aes verify` reported StatusOK with a parsed version. Both measured
+  # 2026-09-28.
+  - linux/amd64
+tags:
+  - runtime
+dependencies:
+  - node
+verify:
+  command: npm
+  version:
+    command: npm --version
+    min:
+      darwin: "11.0"
+      linux: "9.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: npm
+  linux:
+    strategy: package
+    manager: apt
+    package: npm

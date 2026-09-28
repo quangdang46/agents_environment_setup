@@ -62,6 +62,16 @@ var layer1Fixtures = []layer1Fixture{
 	// The probe is `ntm version`, not `ntm --version` — see the manifest. The
 	// dashed spelling is rejected by every ntm older than 1.35.
 	{"ntm", "ntm", "ntm version", "1.0"},
+	// node is the runtime every npm-strategy tool depends on, so its presence
+	// is a precondition for three of the tools above. The floor is the lowest
+	// number either supported platform can supply: darwin has 26, ubuntu
+	// noble has 18.19.1 and nothing else, and a floor above what a platform
+	// can offer is the node-18 failure that started bead 8tv.
+	{"node", "node", "node --version", "18.0"},
+	// npm is its own tool rather than something node provides — on Ubuntu
+	// 24.04 `apt install nodejs` does not bring it — so it is verified on the
+	// same terms. The floor is the lower of the two platforms' offerings.
+	{"npm", "npm", "npm --version", "9.0"},
 }
 
 // toolFor builds the manifest a real tool.yaml would carry for this fixture.

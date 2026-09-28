@@ -178,6 +178,9 @@ var layer1Tools = map[string]bool{
 	"bat": true, "btop": true, "dust": true,
 	"eza": true, "codex": true, "opencode": true,
 	"bottom": true, "zellij": true, "ntm": true,
+	// node and npm are the runtimes every npm-strategy tool depends on, so
+	// they are verified on the same terms as the tools that need them.
+	"node": true, "npm": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the

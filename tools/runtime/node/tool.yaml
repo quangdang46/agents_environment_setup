@@ -14,12 +14,25 @@
 name: node
 description: Node.js JavaScript runtime
 category: runtime
-tested: false
+# Both layers passed on the platform named below.
+tested: true
+tested_on:
+  - linux/arm64
+  # Layer 1: a real machine carrying node 26.2.0, verified against the darwin
+  # floor is NOT what applies here — FloorFor(linux) reads 18.0, and 26.2.0
+  # clears it. Layer 2: a fresh ubuntu:24.04 container with nothing but
+  # ca-certificates, curl and git; `aes setup --only node` installed nodejs
+  # from the distro index and `aes verify` reported StatusOK 18.19.1 with a
+  # parsed version, npm 9.2.0 also present. Both measured 2026-09-28.
+  - linux/amd64
 tags:
   - runtime
-provides:
-  - node
-  - npm
+# npm is NOT provided by this tool. On Ubuntu 24.04 `apt install nodejs`
+# installs node and NOT npm — measured 2026-09-28 in a fresh container (node
+# at /usr/bin/node, npm MISSING). npm is its own tool now, with its own
+# install and its own verify; a tool that needs it declares the dependency.
+# The reverse — preinstalling something an unrelated tool happens to use — is
+# how a manifest accrues untestable side effects while looking convenient.
 verify:
   command: node
   version:
