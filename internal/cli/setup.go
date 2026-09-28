@@ -176,6 +176,22 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 		}
 	}
 
+	// 9: link the shell rc, so a new shell gets PATH and shortcuts with no
+	// further step.
+	//
+	// This changes the spec's invariant 5 ("no shell modification by
+	// default") — deliberately, and on the user's explicit instruction, not
+	// quietly. The old opt-in shape meant `aes setup` ended one command
+	// short of a working environment, and every extra manual step is a place
+	// a beginner fails. The link is guarded and backed up: it sources
+	// generated files, never inlines content into the rc, and a second run
+	// is a no-op.
+	if !f.DryRun && sum.EnvPath != "" {
+		if err := linkShellRC(app, sum.EnvPath); err != nil {
+			fmt.Fprintf(app.Err, "aes: warning: could not link the shell rc: %v\n", err)
+		}
+	}
+
 	sum.OK = sum.Failed == 0 && !sum.NeedsPrivilege
 	if f.JSON {
 		if !sum.OK {
@@ -493,10 +509,24 @@ func writeEnv(app *App, rc *runContext, results []toolResult) (string, error) {
 		if !ok {
 			continue
 		}
-		envTools = append(envTools, envgen.Tool{Name: r.Name, Strategy: strategyFor(rc, tool)})
+		// Aliases travel from the manifest to the generated file here. The
+		// catalog owns the declaration; envgen owns the rendering; this line
+		// is the only place the two meet.
+		envTools = append(envTools, envgen.Tool{
+			Name:     r.Name,
+			Strategy: strategyFor(rc, tool),
+			Aliases:  tool.Aliases,
+		})
 	}
 	path := filepath.Join(app.Home, "env.sh")
 	if err := envgen.Write(path, envTools, app.Home); err != nil {
+		return "", err
+	}
+	// The aliases file is written alongside env.sh, every time env.sh is
+	// written. Two generated files at the same moment, from the same tools,
+	// or the shortcut a user types lags what the environment declares.
+	aliasesPath := filepath.Join(app.Home, envgen.AliasesFileName)
+	if err := envgen.WriteAliases(aliasesPath, envTools); err != nil {
 		return "", err
 	}
 	return path, nil

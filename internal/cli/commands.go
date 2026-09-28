@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/envgen"
@@ -457,7 +458,11 @@ func runEnv(ctx context.Context, app *App, f *Flags, extra any, args []string) e
 	}
 	envTools := make([]envgen.Tool, 0, len(tools))
 	for _, t := range tools {
-		envTools = append(envTools, envgen.Tool{Name: t.Name, Strategy: strategyFor(rc, t)})
+		envTools = append(envTools, envgen.Tool{
+			Name:     t.Name,
+			Strategy: strategyFor(rc, t),
+			Aliases:  t.Aliases,
+		})
 	}
 
 	// env.sh is written into AES_HOME and describes AES_HOME. Passing the
@@ -479,6 +484,15 @@ func runEnv(ctx context.Context, app *App, f *Flags, extra any, args []string) e
 		return err
 	}
 	fmt.Fprintf(app.Err, "aes: wrote %s\n", envPath)
+
+	// aliases.sh is written with env.sh, never separately: a user who runs
+	// `aes env --write` to refresh their PATH must not be left with a
+	// shortcuts file from an older run.
+	aliasesPath := filepath.Join(app.Home, envgen.AliasesFileName)
+	if err := envgen.WriteAliases(aliasesPath, envTools); err != nil {
+		return err
+	}
+	fmt.Fprintf(app.Err, "aes: wrote %s\n", aliasesPath)
 
 	if e.LinkShell {
 		return linkShellRC(app, envPath)
@@ -541,7 +555,11 @@ func linkShellRC(app *App, envPath string) error {
 		return nil
 	}
 
-	backup := rcPath + ".aes-backup"
+	// A timestamped name, not a fixed one. A fixed backup path — which is
+	// what this used to do, and what ACFS does for a second file — overwrites
+	// the previous backup on every run, so the only copy of a user's rc that
+	// survives is the one before the most recent link.
+	backup := rcPath + ".aes-backup." + time.Now().UTC().Format("20060102T150405Z")
 	if err := os.WriteFile(backup, existing, 0o600); err != nil {
 		return fmt.Errorf("aes: back up %s: %w", rcPath, err)
 	}
@@ -553,10 +571,18 @@ func linkShellRC(app *App, envPath string) error {
 	}
 	defer f.Close()
 
-	// The guard means a deleted env.sh leaves the shell working rather than
-	// erroring on every command.
-	block := fmt.Sprintf("\n%s\n[ -f %s ] && . %s\n%s\n",
-		shellBlockStart, shellSingleQuote(envPath), shellSingleQuote(envPath), shellBlockEnd)
+	// The aliases file sits beside env.sh, so the path is derived from it
+	// rather than spelled twice: a second spelling is a second place to get
+	// the name wrong.
+	aliasesPath := filepath.Join(filepath.Dir(envPath), envgen.AliasesFileName)
+
+	// The guards mean a deleted env.sh or aliases.sh leaves the shell working
+	// rather than erroring on every command.
+	block := fmt.Sprintf("\n%s\n[ -f %s ] && . %s\n[ -f %s ] && . %s\n%s\n",
+		shellBlockStart,
+		shellSingleQuote(envPath), shellSingleQuote(envPath),
+		shellSingleQuote(aliasesPath), shellSingleQuote(aliasesPath),
+		shellBlockEnd)
 	if _, err := f.WriteString(block); err != nil {
 		return fmt.Errorf("aes: write %s: %w", rcPath, err)
 	}

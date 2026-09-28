@@ -130,6 +130,17 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 	// switch on the tool name would show up here as the wrong name.
 	h.app.Registry.Register(manifest.StrategyGo, installerFunc{fn: h.install, dest: binDir})
 
+	// Point HOME and SHELL at the temp tree. `aes setup` links the user's
+	// shell rc, and shellRCPath resolves through $HOME and $SHELL — so
+	// without this every setup test appended a block to the DEVELOPER'S real
+	// ~/.zshrc, pointing at a /tmp directory that no longer exists. It was
+	// invisible because the file keeps working: the guard means a missing
+	// env.sh is a no-op, and a broken PATH line is not an error a test looks
+	// for. Found by a test writing to the real file, not by reading this
+	// code — which is the argument for the guard above existing.
+	t.Setenv("HOME", tmp)
+	t.Setenv("SHELL", "/bin/bash")
+
 	return h
 }
 

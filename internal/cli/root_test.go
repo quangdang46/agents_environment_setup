@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
+	"github.com/quangdang46/agents_environment_setup/internal/envgen"
 	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/installer"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
@@ -76,6 +77,14 @@ func newHarness(t *testing.T, tools ...[3]string) *harness {
 		Registry:    installer.NewRegistry(filepath.Join(home, "bin")),
 		IsTTY:       func() bool { return false },
 	}
+	// Point HOME and SHELL at the temp tree. Anything that resolves the
+	// shell rc through $HOME — linkShellRC, the alias doctor — would
+	// otherwise write to or read the DEVELOPER'S real files. `aes setup`
+	// links the rc, so every setup run through this harness appends a block
+	// to the real ~/.zshrc pointing at a /tmp directory. Found because a
+	// real block appeared in a real file.
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
 	return h
 }
 
@@ -142,7 +151,6 @@ func TestPrivilegeErrorIsDistinctFromGeneric(t *testing.T) {
 // TestExitCoderCannotInventACode keeps a command from inventing an exit code,
 // which would break the promise that the numbers mean something.
 func TestExitCoderCannotInventACode(t *testing.T) {
-	t.Parallel()
 
 	if got := ExitCode(&bogusCoder{}); got != ExitFailure {
 		t.Errorf("ExitCode(bogus) = %d, want %d (an undocumented code must not escape)", got, ExitFailure)
@@ -167,7 +175,6 @@ func (*documentedCoder) ExitCode() int { return ExitVerifyFailed }
 // TestYesRequiresATTY is the anti-hang rule: `aes setup --yes` with no
 // terminal is a usage error, never a silent downgrade.
 func TestYesRequiresATTY(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t)
 	h.app.IsTTY = func() bool { return false }
@@ -181,7 +188,6 @@ func TestYesRequiresATTY(t *testing.T) {
 }
 
 func TestYesWithTTYIsAccepted(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return true }
@@ -194,7 +200,6 @@ func TestYesWithTTYIsAccepted(t *testing.T) {
 // TestNonInteractiveDoesNotRequireATTY: --non-interactive is the CI flag and
 // must never be blocked by the absence of a terminal.
 func TestNonInteractiveDoesNotRequireATTY(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return false }
@@ -207,7 +212,6 @@ func TestNonInteractiveDoesNotRequireATTY(t *testing.T) {
 // TestBothFlagsIsLegal documents that passing both is allowed and means
 // --non-interactive, because that is the stronger statement.
 func TestBothFlagsIsLegal(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return false }
@@ -218,7 +222,6 @@ func TestBothFlagsIsLegal(t *testing.T) {
 }
 
 func TestUnknownFlagIsUsage(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	if got := h.run("list", "--nonsense"); got != ExitUsage {
@@ -227,7 +230,6 @@ func TestUnknownFlagIsUsage(t *testing.T) {
 }
 
 func TestUnknownCommandIsUsage(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t)
 	if got := h.run("frobnicate"); got != ExitUsage {
@@ -241,7 +243,6 @@ func TestUnknownCommandIsUsage(t *testing.T) {
 // TestJSONStdoutHasNoProse is the machine-parseability contract: an agent
 // must be able to json.Unmarshal stdout without stripping anything first.
 func TestJSONStdoutHasNoProse(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 
@@ -264,7 +265,6 @@ func TestJSONStdoutHasNoProse(t *testing.T) {
 }
 
 func TestJSONErrorIsParseable(t *testing.T) {
-	t.Parallel()
 
 	// A missing catalog makes resolve fail before any output.
 	h := newHarness(t)
@@ -290,7 +290,6 @@ func TestJSONErrorIsParseable(t *testing.T) {
 // TestListShowsMissingEvenWhenStateClaimsInstalled is the distinction that
 // makes `list` worth having: status comes from verify, never from state.
 func TestListShowsMissingEvenWhenStateClaimsInstalled(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 
@@ -328,7 +327,6 @@ func TestListShowsMissingEvenWhenStateClaimsInstalled(t *testing.T) {
 }
 
 func TestVerifyUnknownToolIsUsage(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	if got := h.run("verify", "ripgreep"); got != ExitUsage {
@@ -342,7 +340,6 @@ func TestVerifyUnknownToolIsUsage(t *testing.T) {
 // TestDoctorDetectsDrift is invariant I5: state is a cache and doctor is what
 // compares it to reality.
 func TestDoctorDetectsDrift(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 
@@ -383,7 +380,6 @@ func TestDoctorDetectsDrift(t *testing.T) {
 // TestDoctorMakesNoChanges is a stated contract: doctor reports, it never
 // fixes. A self-fixing doctor makes changes the user cannot see.
 func TestDoctorMakesNoChanges(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	if err := os.MkdirAll(h.home, 0o755); err != nil {
@@ -418,7 +414,6 @@ func snapshot(t *testing.T, root string) string {
 }
 
 func TestDoctorReportsUntestedToolsInProfile(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 
@@ -432,7 +427,6 @@ func TestDoctorReportsUntestedToolsInProfile(t *testing.T) {
 // ------------------------------------------------------------------- env
 
 func TestEnvPrintsByDefault(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	if got := h.run("env"); got != ExitOK {
@@ -444,7 +438,6 @@ func TestEnvPrintsByDefault(t *testing.T) {
 }
 
 func TestEnvLinkShellRequiresWrite(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	if got := h.run("env", "--link-shell"); got != ExitUsage {
@@ -453,7 +446,6 @@ func TestEnvLinkShellRequiresWrite(t *testing.T) {
 }
 
 func TestEnvLinkShellRefusedWithDryRun(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	// --link-shell modifies the user's shell rc, so it must not be reachable
@@ -492,8 +484,17 @@ func TestEnvLinkShellIsIdempotent(t *testing.T) {
 	if !strings.HasPrefix(string(afterFirst), original) {
 		t.Errorf("aes rewrote content outside its block:\n%s", afterFirst)
 	}
-	// The backup must exist and hold the original.
-	backup, err := os.ReadFile(rcPath + ".aes-backup")
+	// The backup must exist and hold the original. Timestamped names, one
+	// per run: a fixed name overwrites the previous backup, so the only copy
+	// of a user's rc that survives is the one before the most recent link.
+	backups, err := filepath.Glob(rcPath + ".aes-backup.*")
+	if err != nil {
+		t.Fatalf("glob backups: %v", err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("want exactly 1 backup after the first run, got %d: %v", len(backups), backups)
+	}
+	backup, err := os.ReadFile(backups[0])
 	if err != nil {
 		t.Fatalf("no backup was taken: %v", err)
 	}
@@ -516,7 +517,6 @@ func TestEnvLinkShellIsIdempotent(t *testing.T) {
 // ------------------------------------------------------------------ misc
 
 func TestHelpAndVersion(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t)
 	if got := h.run("--help"); got != ExitOK {
@@ -546,7 +546,6 @@ func TestHelpAndVersion(t *testing.T) {
 // whatever setup did, it did not claim a completed environment without
 // having installed and verified something.
 func TestSetupNeverReportsSuccessWithoutInstalling(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	code := h.run("setup")
@@ -563,7 +562,6 @@ func TestSetupNeverReportsSuccessWithoutInstalling(t *testing.T) {
 // TestCorruptStateIsExitThree covers the reinstall-storm guard reaching the
 // CLI: corruption is an invalid input, not a generic failure.
 func TestCorruptStateIsExitThree(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	if err := os.MkdirAll(h.home, 0o755); err != nil {
@@ -582,7 +580,6 @@ func TestCorruptStateIsExitThree(t *testing.T) {
 // The goroutine plus timeout is the assertion: a hang fails the test rather
 // than the suite.
 func TestCommandsDoNotHang(t *testing.T) {
-	t.Parallel()
 
 	invocations := [][]string{
 		{"list"}, {"verify"}, {"doctor"}, {"env"},
@@ -590,8 +587,8 @@ func TestCommandsDoNotHang(t *testing.T) {
 		{"setup", "--non-interactive"},
 	}
 	for _, args := range invocations {
+		// Not parallel: newHarness calls t.Setenv, which forbids it.
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			t.Parallel()
 			h := newHarness(t, [3]string{"demo", "utility", "go"})
 
 			done := make(chan int, 1)
@@ -648,7 +645,6 @@ func TestBareAesFallsBackToHelp(t *testing.T) {
 // TestBareAesWithNoTUIWiredFallsBackToHelp covers the other half: a build
 // without the TUI compiled in still prints help rather than doing nothing.
 func TestBareAesWithNoTUIWiredFallsBackToHelp(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t)
 	h.app.RunTUI = nil
@@ -658,5 +654,161 @@ func TestBareAesWithNoTUIWiredFallsBackToHelp(t *testing.T) {
 	}
 	if !strings.Contains(h.stdout.String(), "COMMANDS") {
 		t.Errorf("no help printed with no TUI wired in:\n%s", h.stdout.String())
+	}
+}
+
+// The rc block must source BOTH generated files. env.sh sets PATH and sources
+// aliases.sh itself, so sourcing env.sh alone is sufficient — but the block
+// also sources aliases.sh directly, and that redundancy is deliberate: a user
+// who regenerates env.sh, then opens a shell whose rc was written by an
+// earlier run, must still get their shortcuts.
+//
+// Without this test, deleting the aliases line from the block leaves the suite
+// green on a machine where env.sh happens to be sourced by something else.
+func TestLinkShellBlockSourcesBothGeneratedFiles(t *testing.T) {
+	// Not parallel: t.Setenv forbids it.
+	h := newHarness(t, [3]string{"demo", "utility", "go"})
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("SHELL", "/bin/bash")
+	rcPath := filepath.Join(tmpHome, ".bashrc")
+	if err := os.WriteFile(rcPath, []byte("# my bashrc\n"), 0o644); err != nil {
+		t.Fatalf("seed rc: %v", err)
+	}
+
+	if got := h.run("env", "--write", "--link-shell"); got != ExitOK {
+		t.Fatalf("exit %d\n%s", got, h.stderr.String())
+	}
+
+	body, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatalf("read rc: %v", err)
+	}
+	for _, want := range []string{"env.sh", "aliases.sh"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the rc block does not source %s:\n%s", want, body)
+		}
+	}
+}
+
+// The alias file must be written by the same command that writes env.sh, or a
+// user who refreshes their PATH keeps a shortcuts file from an older run.
+func TestEnvWriteEmitsBothFiles(t *testing.T) {
+	// Not parallel: t.Setenv forbids it.
+	h := newHarness(t, [3]string{"demo", "utility", "go"})
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("SHELL", "/bin/bash")
+
+	if got := h.run("env", "--write"); got != ExitOK {
+		t.Fatalf("exit %d\n%s", got, h.stderr.String())
+	}
+
+	envPath := filepath.Join(h.app.Home, "env.sh")
+	aliasesPath := filepath.Join(h.app.Home, envgen.AliasesFileName)
+	for _, p := range []string{envPath, aliasesPath} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("`aes env --write` did not produce %s: %v", p, err)
+		}
+	}
+	// The aliases file is aes's own, so it must carry aes's marker.
+	raw, err := os.ReadFile(aliasesPath)
+	if err != nil {
+		t.Fatalf("read aliases: %v", err)
+	}
+	if !strings.HasPrefix(string(raw), envgen.AliasesHeader) {
+		t.Errorf("aliases.sh has no aes header:\n%s", raw)
+	}
+}
+
+// `aes setup` links the shell rc itself. This changes the spec's invariant 5,
+// so the behaviour is asserted rather than assumed — a regression here means
+// a new shell silently stops getting PATH and shortcuts, which is invisible
+// until someone opens a terminal and finds `cc` missing.
+func TestSetupLinksTheShellRC(t *testing.T) {
+	// Not parallel: t.Setenv forbids it. The setup harness writes a REAL
+	// binary, so Verify genuinely passes and exit 0 is legitimate here.
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("SHELL", "/bin/bash")
+	rcPath := filepath.Join(tmpHome, ".bashrc")
+	if err := os.WriteFile(rcPath, []byte("# my bashrc\nexport EDITOR=vim\n"), 0o644); err != nil {
+		t.Fatalf("seed rc: %v", err)
+	}
+	const original = "# my bashrc\nexport EDITOR=vim\n"
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Fatalf("setup exit %d\n%s", got, h.stderr.String())
+	}
+
+	body, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatalf("read rc: %v", err)
+	}
+	if n := strings.Count(string(body), shellBlockStart); n != 1 {
+		t.Errorf("aes block appears %d times after setup, want 1:\n%s", n, body)
+	}
+	// The user's own content must survive byte-identical.
+	if !strings.HasPrefix(string(body), original) {
+		t.Errorf("setup rewrote content outside its block:\n%s", body)
+	}
+	// A backup must exist: setup edited a file the user owns.
+	backups, err := filepath.Glob(rcPath + ".aes-backup.*")
+	if err != nil {
+		t.Fatalf("glob backups: %v", err)
+	}
+	if len(backups) == 0 {
+		t.Error("setup modified the shell rc without taking a backup")
+	}
+}
+
+// A second `aes setup` must not append a second block. The idempotence test
+// covers `aes env`; this covers the path a real user takes, which is setup.
+func TestSetupLinkingTheShellIsIdempotent(t *testing.T) {
+	// Not parallel: t.Setenv forbids it.
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("SHELL", "/bin/bash")
+	rcPath := filepath.Join(tmpHome, ".bashrc")
+	if err := os.WriteFile(rcPath, []byte("# my bashrc\n"), 0o644); err != nil {
+		t.Fatalf("seed rc: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+			t.Fatalf("run %d: exit %d\n%s", i, got, h.stderr.String())
+		}
+	}
+	body, err := os.ReadFile(rcPath)
+	if err != nil {
+		t.Fatalf("read rc: %v", err)
+	}
+	if n := strings.Count(string(body), shellBlockStart); n != 1 {
+		t.Errorf("aes block appears %d times after two setups, want 1:\n%s", n, body)
+	}
+}
+
+// A shell aes does not know how to configure is not a failure. Refusing
+// beats appending to a shell the user did not ask us to touch, and setup must
+// still exit 0 because the tools are installed either way.
+func TestSetupOnAnUnknownShellStillSucceeds(t *testing.T) {
+	// Not parallel: t.Setenv forbids it.
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SHELL", "/usr/bin/fish")
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Errorf("setup exit %d on an unsupported shell; the tools are installed "+
+			"and refusing to finish leaves the user worse off\n%s", got, h.stderr.String())
+	}
+	if !strings.Contains(h.stderr.String(), "could not link the shell rc") {
+		t.Errorf("setup did not say why the rc was not linked:\n%s", h.stderr.String())
 	}
 }

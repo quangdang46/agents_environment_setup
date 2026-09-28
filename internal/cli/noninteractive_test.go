@@ -36,9 +36,8 @@ func (b *blockingReader) Read([]byte) (int, error) {
 //
 // Measured before the fix: `sleep 600 | aes setup --only pi --non-interactive`
 // hung until killed, on an apt-backed tool needing sudo.
+// Not parallel: newHarness calls t.Setenv, which forbids it.
 func TestNonInteractiveNeverBlocksOnAnOpenSilentStdin(t *testing.T) {
-	t.Parallel()
-
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return false }
 	h.app.In = newBlockingReader()
@@ -63,7 +62,6 @@ func TestNonInteractiveNeverBlocksOnAnOpenSilentStdin(t *testing.T) {
 // The same guarantee for `forget`, which has its own call site. Two call sites
 // means two chances to forget the check, and a missing one is a hang.
 func TestNonInteractiveNeverBlocksOnForget(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return false }
@@ -85,7 +83,6 @@ func TestNonInteractiveNeverBlocksOnForget(t *testing.T) {
 // the guard needs a test of its own: a check that is only exercised on a path
 // nothing takes is a check that does not exist.
 func TestLifecycleConfirmedRefusesUnderNonInteractive(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return false }
@@ -109,7 +106,6 @@ func TestLifecycleConfirmedRefusesUnderNonInteractive(t *testing.T) {
 // refuses would pass every test above and break the interactive path, which is
 // the one that exists to get a yes.
 func TestLifecycleConfirmedStillAsksWithoutTheFlag(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return false }
@@ -132,7 +128,6 @@ func TestLifecycleConfirmedStillAsksWithoutTheFlag(t *testing.T) {
 // known: App.Run, because main builds the registry before flags are parsed and
 // therefore cannot configure it.
 func TestNonInteractiveReachesThePackageInstaller(t *testing.T) {
-	t.Parallel()
 
 	build := func(args ...string) *installer.PackageInstaller {
 		h := newHarness(t, [3]string{"demo", "utility", "go"})
@@ -163,7 +158,6 @@ func TestNonInteractiveReachesThePackageInstaller(t *testing.T) {
 // the bug in the code this file was written for. Authorize is the function
 // that reads stdin, so assert it is genuinely not called.
 func TestNonInteractiveNeverCallsAuthorize(t *testing.T) {
-	t.Parallel()
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	h.app.IsTTY = func() bool { return false }
@@ -202,7 +196,6 @@ func TestNonInteractiveNeverCallsAuthorize(t *testing.T) {
 // never wrong. The resolver's own comment claimed "doctor can say why the
 // tool is absent", which leaves the user with a refusal and no reason.
 func TestEmptySelectionIsAFailureNotAUsageError(t *testing.T) {
-	t.Parallel()
 
 	// A tool marked tested for a platform this test is definitely not on.
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
