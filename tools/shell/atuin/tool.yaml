@@ -21,14 +21,17 @@ install:
       amd64: atuin-x86_64-apple-darwin.tar.gz
       arm64: atuin-aarch64-apple-darwin.tar.gz
     sha256:
-      amd64: 06e7f211880cec688b4642719b2d901a870666f592b8d0b9580f4b3969b5cf8e
+      amd64: f87ff4bef3f818f81474713dfc964008793a77ade12f8076f9a82237695a587a
       arm64: c988be1cde19cd7295ce64bc8b955d42fb1855e5227cb640c87fc09c8408c3fc
   linux:
     strategy: github-release
     repository: atuinsh/atuin
     asset:
-      amd64: atuin-server-x86_64-unknown-linux-gnu.tar.gz
+      # `atuin-`, not `atuin-server-`. The server is a different binary; the
+      # client is what ships as `atuin`. Measured by downloading the release
+      # and listing the archive.
+      amd64: atuin-x86_64-unknown-linux-gnu.tar.gz
       arm64: atuin-aarch64-unknown-linux-gnu.tar.gz
     sha256:
-      amd64: ad42a2696e73af09c9e9c5726a268097611299162ddb5c6f1c52c885f0da674c
+      amd64: 5cf46e926b696a9b23a3c61ef3cb00f8f7c156d1d7b7967a3b51741653b48ba3
       arm64: 21869faff1fedb9f8fb27837136567b089bcd588d21252533d5b314605517ae2

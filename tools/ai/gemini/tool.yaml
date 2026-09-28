@@ -1,4 +1,17 @@
 # AES catalog.
+#
+# NOT installable on Ubuntu 24.04 through this strategy, and the reason is
+# measured rather than assumed. The npm package @google/gemini-cli declares
+# `engines: {node: ">=20"}` and every version from 0.1.4 up fails at runtime on
+# node 18.19.1 with a regex-v-flag SyntaxError — checked across 763 published
+# versions; 0.1.1 is the newest that runs, and pinning it would ship a
+# year-old CLI as if it were current.
+#
+# ACFS installs this one through bun rather than npm, which is why it works
+# there. Adding a runtime to serve one tool is a different decision from
+# listing the tool, so gemini is kept in the catalog as a declared
+# requirement that a machine with node >= 20 can satisfy, and excluded from
+# the default profile with the reason recorded there.
 name: gemini
 description: Google Gemini CLI
 category: ai

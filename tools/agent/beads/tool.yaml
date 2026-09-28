@@ -34,6 +34,9 @@ install:
   darwin:
     strategy: github-release
     repository: Dicklesworthstone/beads_rust
+    binary:
+      amd64: br
+      arm64: br
     asset:
       amd64: br-0.7.0-darwin_amd64.tar.gz
       arm64: br-0.7.0-darwin_arm64.tar.gz
@@ -43,6 +46,13 @@ install:
   linux:
     strategy: github-release
     repository: Dicklesworthstone/beads_rust
+    # The archive ships a binary called `br`, not `beads`. Without this the
+    # installer looks for `beads` inside the tarball, does not find it, and
+    # reports "archive does not contain the expected binary". Measured by
+    # downloading the release and listing its contents.
+    binary:
+      amd64: br
+      arm64: br
     asset:
       amd64: br-0.7.0-linux_amd64.tar.gz
       arm64: br-0.7.0-linux_arm64.tar.gz

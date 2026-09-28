@@ -22,6 +22,11 @@ install:
   darwin:
     strategy: github-release
     repository: Dicklesworthstone/beads_viewer
+    # The archive ships a binary called `bv`, not `beads-viewer`. Measured by
+    # downloading the release and listing its contents.
+    binary:
+      amd64: bv
+      arm64: bv
     asset:
       amd64: bv_0.25.0_darwin_amd64.tar.gz
       arm64: bv_0.25.0_darwin_arm64.tar.gz
@@ -31,6 +36,11 @@ install:
   linux:
     strategy: github-release
     repository: Dicklesworthstone/beads_viewer
+    # The archive ships a binary called `bv`, not `beads-viewer`. Measured by
+    # downloading the release and listing its contents.
+    binary:
+      amd64: bv
+      arm64: bv
     asset:
       amd64: bv_0.25.0_linux_amd64.tar.gz
       arm64: bv_0.25.0_linux_arm64.tar.gz

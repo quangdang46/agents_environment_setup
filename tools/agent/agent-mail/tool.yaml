@@ -24,6 +24,12 @@ install:
   darwin:
     strategy: github-release
     repository: Dicklesworthstone/mcp_agent_mail_rust
+    # The archive ships `am` and `mcp-agent-mail`; the binary the user types
+    # is `am`. Without this the installer looks for `agent-mail` inside the
+    # tarball and reports "archive does not contain the expected binary".
+    binary:
+      amd64: am
+      arm64: am
     asset:
       amd64: mcp-agent-mail-x86_64-apple-darwin.tar.xz
       arm64: mcp-agent-mail-aarch64-apple-darwin.tar.xz
@@ -33,6 +39,12 @@ install:
   linux:
     strategy: github-release
     repository: Dicklesworthstone/mcp_agent_mail_rust
+    # The archive ships `am` and `mcp-agent-mail`; the binary the user types
+    # is `am`. Without this the installer looks for `agent-mail` inside the
+    # tarball and reports "archive does not contain the expected binary".
+    binary:
+      amd64: am
+      arm64: am
     asset:
       amd64: mcp-agent-mail-x86_64-unknown-linux-gnu.tar.xz
       arm64: mcp-agent-mail-aarch64-unknown-linux-gnu.tar.xz
