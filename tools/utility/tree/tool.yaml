@@ -1,15 +1,17 @@
-# AES catalog. Package names verified against the homebrew formula index and the Debian package index.
 name: tree
 description: print directory structure
 category: utility
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - utility
+- utility
 verify:
   command: tree
   version:
     command: tree --version
-    min: "2.0"
+    min: '2.0'
 install:
   darwin:
     strategy: package

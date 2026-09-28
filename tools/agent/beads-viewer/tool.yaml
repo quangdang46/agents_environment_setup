@@ -1,29 +1,22 @@
-# AES catalog. github-release for darwin, linux at Dicklesworthstone/beads_viewer release v0.25.0;
-# asset names and sha256 read from the upstream release by scripts/release_probe.py.
-#
-# This was `package`/apt until an audit found the package name does not exist in
-# Debian. The first check that said it did was reading an HTTP 200 from a page
-# whose body said 'No such package' - a check that could not fail.
 name: beads-viewer
 description: TUI for the beads task graph
 category: agent
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - agent
-  - issues
+- agent
+- issues
 verify:
-  # `bv`, not `beads-viewer`. The archive ships a binary called bv; verifying a
-  # name that is not in the archive reports a working install as missing.
   command: bv
   version:
     command: bv --version
-    min: "0.16.0"
+    min: 0.16.0
 install:
   darwin:
     strategy: github-release
     repository: Dicklesworthstone/beads_viewer
-    # The archive ships a binary called `bv`, not `beads-viewer`. Measured by
-    # downloading the release and listing its contents.
     binary:
       amd64: bv
       arm64: bv
@@ -36,8 +29,6 @@ install:
   linux:
     strategy: github-release
     repository: Dicklesworthstone/beads_viewer
-    # The archive ships a binary called `bv`, not `beads-viewer`. Measured by
-    # downloading the release and listing its contents.
     binary:
       amd64: bv
       arm64: bv

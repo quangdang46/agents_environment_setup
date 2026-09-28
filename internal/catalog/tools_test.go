@@ -188,6 +188,16 @@ var layer1Tools = map[string]bool{
 	// source, so they are verified on the same terms as the other release
 	// tools. gemini is the one AI tool that runs on node 18.
 	"beads": true, "dcg": true, "gemini": true,
+	// The rest of the catalog, promoted after the full-catalog run proved both
+	// layers on each. Layer 1 skips a tool the machine does not have, so these
+	// are verified wherever they happen to be installed; their Layer 2 evidence
+	// is a fresh container, recorded in each manifest.
+	"agent-mail": true, "ast-grep": true, "atuin": true, "bash": true,
+	"beads-viewer": true, "caam": true, "direnv": true, "docker": true,
+	"fd": true, "git-lfs": true, "httpie": true, "hyperfine": true,
+	"lazydocker": true, "lazygit": true, "ncdu": true, "pi": true,
+	"python": true, "rust": true, "toon": true, "tree": true, "uv": true,
+	"zsh": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the

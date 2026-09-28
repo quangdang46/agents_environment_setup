@@ -1,32 +1,22 @@
-# AES catalog. github-release for darwin, linux at Dicklesworthstone/mcp_agent_mail_rust release v0.3.36;
-# asset names and sha256 read from the upstream release by scripts/release_probe.py.
-#
-# This was `package`/apt until an audit found the package name does not exist in
-# Debian. The first check that said it did was reading an HTTP 200 from a page
-# whose body said 'No such package' - a check that could not fail.
 name: agent-mail
-description: "MCP agent mail: coordination between coding agents"
+description: 'MCP agent mail: coordination between coding agents'
 category: agent
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - agent
-  - coordination
+- agent
+- coordination
 verify:
-  # `am`, not `agent-mail`. The archive ships both `am` and `mcp-agent-mail`,
-  # and the binary the user types is `am` — measured by downloading the
-  # release and listing its contents. Verifying a name that is not in the
-  # archive reports a working install as missing.
   command: am
   version:
     command: am --version
-    min: "0.3.0"
+    min: 0.3.0
 install:
   darwin:
     strategy: github-release
     repository: Dicklesworthstone/mcp_agent_mail_rust
-    # The archive ships `am` and `mcp-agent-mail`; the binary the user types
-    # is `am`. Without this the installer looks for `agent-mail` inside the
-    # tarball and reports "archive does not contain the expected binary".
     binary:
       amd64: am
       arm64: am
@@ -39,9 +29,6 @@ install:
   linux:
     strategy: github-release
     repository: Dicklesworthstone/mcp_agent_mail_rust
-    # The archive ships `am` and `mcp-agent-mail`; the binary the user types
-    # is `am`. Without this the installer looks for `agent-mail` inside the
-    # tarball and reports "archive does not contain the expected binary".
     binary:
       amd64: am
       arm64: am

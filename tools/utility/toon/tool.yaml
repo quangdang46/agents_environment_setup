@@ -1,21 +1,18 @@
-# AES catalog. github-release for darwin, linux at Dicklesworthstone/toon_rust release v0.2.4;
-# asset names and sha256 read from the upstream release by scripts/release_probe.py.
-#
-# This was `package`/apt until an audit found the package name does not exist in
-# Debian. The first check that said it did was reading an HTTP 200 from a page
-# whose body said 'No such package' - a check that could not fail.
 name: toon
 description: token-oriented object notation encoder
 category: utility
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - utility
-  - data
+- utility
+- data
 verify:
   command: toon
   version:
     command: toon --version
-    min: "0.2.0"
+    min: 0.2.0
 install:
   darwin:
     strategy: github-release

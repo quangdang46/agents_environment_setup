@@ -1,20 +1,17 @@
-# AES catalog. github-release for darwin, linux at Dicklesworthstone/coding_agent_account_manager release v0.1.18;
-# asset names and sha256 read from the upstream release by scripts/release_probe.py.
-#
-# This was `package`/apt until an audit found the package name does not exist in
-# Debian. The first check that said it did was reading an HTTP 200 from a page
-# whose body said 'No such package' - a check that could not fail.
 name: caam
 description: manages coding agent accounts
 category: agent
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - agent
+- agent
 verify:
   command: caam
   version:
-    command: caam --version
-    min: "0.1.0"
+    command: caam version
+    min: 0.1.0
 install:
   darwin:
     strategy: github-release

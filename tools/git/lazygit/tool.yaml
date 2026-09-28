@@ -1,19 +1,17 @@
-# AES catalog. github-release at jesseduffield/lazygit v0.65.1; asset names and
-# sha256 read from the upstream release's checksums.txt, and every checksum
-# re-verified by downloading the artifact and hashing it on this host
-# (2026-09-28). A checksum copied from another project's manifest is a
-# checksum nobody checked.
 name: lazygit
 description: terminal UI for git
 category: git
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - git
+- git
 verify:
   command: lazygit
   version:
     command: lazygit --version
-    min: "0.40"
+    min: '0.40'
 install:
   darwin:
     strategy: github-release

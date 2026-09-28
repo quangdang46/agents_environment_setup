@@ -1,19 +1,17 @@
-# AES catalog. github-release at jesseduffield/lazydocker v0.25.2; asset names
-# and sha256 read from the upstream release's checksums.txt, and every checksum
-# re-verified by downloading the artifact and hashing it on this host
-# (2026-09-28). A checksum copied from another project's manifest is a
-# checksum nobody checked.
 name: lazydocker
 description: terminal UI for docker and docker compose
 category: infra
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - infra
+- infra
 verify:
   command: lazydocker
   version:
     command: lazydocker --version
-    min: "0.20"
+    min: '0.20'
 install:
   darwin:
     strategy: github-release

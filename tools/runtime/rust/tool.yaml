@@ -1,33 +1,20 @@
-# AES catalog. Package names verified against the Debian package index.
-#
-# apt has `rustc` and `cargo`; it has no `rustup`, which is why this tool does
-# not use the obvious name. The first version of this file asked for `rustup`
-# and the install would have failed on every Debian-family machine.
-#
-# The package is `rustc`, and that is a real trap rather than a naming choice:
-# on Ubuntu 24.04 `apt install rustc` installs rustc and NOT cargo. Measured
-# 2026-09-28 in a fresh container — `dpkg -l rustc` succeeded, `/usr/bin/rustc`
-# existed, `/usr/bin/cargo` did not. So `provides` claims two binaries and the
-# install delivers one, and every cargo-strategy tool (ast-grep) then fails
-# with "cargo: not found" while `aes setup` reports rust as present.
-#
-# The fix is to name the package that actually carries both. `cargo` is the
-# package that depends on rustc, so installing it pulls rustc too; `rustc`
-# alone does not pull cargo. Verified against the Debian index, not assumed.
 name: rust
 description: Rust toolchain via rustc and cargo
 category: runtime
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - runtime
+- runtime
 provides:
-  - rustc
-  - cargo
+- rustc
+- cargo
 verify:
   command: rustc
   version:
     command: rustc --version
-    min: "1.20"
+    min: '1.20'
 install:
   darwin:
     strategy: package

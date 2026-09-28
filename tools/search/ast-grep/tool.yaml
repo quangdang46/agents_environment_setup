@@ -1,31 +1,17 @@
-# AES catalog. github-release at ast-grep/ast-grep 0.45.3. Asset names and
-# sha256 verified by downloading every artifact and hashing it on this host
-# (2026-09-28); the archive carries both `sg` and `ast-grep`.
-#
-# Two decisions in this file are deliberate:
-#
-# 1. github-release, not cargo. The crate pins nothing old enough to build on
-#    Ubuntu 24.04's rustc 1.75.0: 0.45.3 needs rustc 1.88, and every older
-#    version back through 0.20.0 needs edition2024 or a dependency that
-#    needs rustc 1.77. ACFS installs it with `cargo install --locked`,
-#    which works on a machine with a fresh rustup and fails on this one.
-#    A prebuilt binary does not care what rustc the machine has.
-#
-# 2. The binary is `ast-grep`, not `sg`. The archive ships both, but `sg`
-#    prints a deprecation warning and reports a DIFFERENT version than the
-#    release it came from (0.43.0 inside the 0.45.3 archive). Verifying `sg`
-#    would assert a number the manifest did not choose.
 name: ast-grep
 description: structural search and replace for code
 category: search
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - search
+- search
 verify:
   command: ast-grep
   version:
     command: ast-grep --version
-    min: "0.40"
+    min: '0.40'
 install:
   darwin:
     strategy: github-release

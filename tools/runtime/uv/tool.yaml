@@ -1,15 +1,17 @@
-# AES catalog. github-release for darwin, linux at astral-sh/uv release 0.12.19; asset names and sha256 read from the upstream release by scripts/release_probe.py.
 name: uv
 description: fast Python package and project manager
 category: runtime
-tested: false
+tested: true
+tested_on:
+- linux/arm64
+- linux/amd64
 tags:
-  - runtime
+- runtime
 verify:
   command: uv
   version:
     command: uv --version
-    min: "0.4"
+    min: '0.4'
 install:
   darwin:
     strategy: github-release
