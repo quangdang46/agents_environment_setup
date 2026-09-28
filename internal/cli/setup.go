@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -554,7 +555,7 @@ func writeToolConfigs(app *App, rc *runContext, results []toolResult) {
 			continue
 		}
 		tool, ok := rc.Catalog.ByName(r.Name)
-		if !ok || len(tool.Config) == 0 {
+		if !ok || (len(tool.Config) == 0 && len(tool.Settings) == 0) {
 			continue
 		}
 		// The source is beside tool.yaml: <category>/<name>/<file>.
@@ -581,7 +582,125 @@ func writeToolConfigs(app *App, rc *runContext, results []toolResult) {
 			}
 			activateConfig(app, tool.Name, name, dst)
 		}
+		// Settings are merged, never copied. The user's file is theirs.
+		for _, s := range tool.Settings {
+			mergeSetting(app, tool.Name, s)
+		}
 	}
+}
+
+// mergeSetting writes one key into a tool's own config file, only when the
+// key is absent.
+//
+// The contract is ACFS's, and it is the one that makes writing outside
+// ~/.aes safe:
+//
+//   - A symlink is resolved before writing. A dotfiles-managed symlink must
+//     be edited in place; replacing it with a regular file orphans the
+//     user's dotfiles repo.
+//   - The write is atomic: temp file beside the destination, then rename. A
+//     crash mid-write must not leave a truncated JSON file.
+//   - A key is written only when absent. A value the user set deliberately
+//     survives, which is the whole difference between a merge and a copy.
+//
+// Failures are reported and skipped, never fatal: the tool is installed,
+// and refusing to finish over a settings file leaves the user worse off.
+func mergeSetting(app *App, tool string, s manifest.Setting) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot merge %s settings: %v\n", tool, err)
+		return
+	}
+	dst := filepath.Join(home, s.Path)
+
+	// Resolve a symlink to its target, and refuse to follow one that points
+	// outside the user's home. A symlink into /etc or /tmp is not a file the
+	// user owns, and writing through it would write there.
+	if target, err := os.Readlink(dst); err == nil {
+		resolved := target
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(filepath.Dir(dst), resolved)
+		}
+		if !strings.HasPrefix(resolved, home+string(os.PathSeparator)) {
+			fmt.Fprintf(app.Err, "aes: %s is a symlink to %s, outside the home; left untouched\n", dst, target)
+			return
+		}
+		dst = resolved
+	}
+
+	existing, err := os.ReadFile(dst)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		fmt.Fprintf(app.Err, "aes: warning: cannot read %s: %v\n", dst, err)
+		return
+	}
+
+	var doc map[string]any
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &doc); err != nil {
+			// Not JSON, or not an object. Refusing beats guessing: a
+			// settings file that will not parse is a file the user should
+			// look at, and silently replacing it is not a recovery.
+			fmt.Fprintf(app.Err, "aes: %s is not a JSON object; left untouched "+
+				"(aes would merge %d key(s) into it)\n", dst, len(s.Merge))
+			return
+		}
+	} else {
+		doc = map[string]any{}
+	}
+
+	changed := false
+	for k, v := range s.Merge {
+		if _, present := doc[k]; present {
+			continue
+		}
+		doc[k] = v
+		changed = true
+	}
+	if !changed {
+		return
+	}
+
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot encode merged settings: %v\n", err)
+		return
+	}
+	out = append(out, '\n')
+
+	dir := filepath.Dir(dst)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot create %s: %v\n", dir, err)
+		return
+	}
+	tmp, err := os.CreateTemp(dir, ".settings-*.json.tmp")
+	if err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot create temp file in %s: %v\n", dir, err)
+		return
+	}
+	tmpName := tmp.Name()
+	defer func() { tmp.Close(); os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(out); err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot write %s: %v\n", tmpName, err)
+		return
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot chmod %s: %v\n", tmpName, err)
+		return
+	}
+	if err := tmp.Sync(); err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot sync %s: %v\n", tmpName, err)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot close %s: %v\n", tmpName, err)
+		return
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: cannot install %s: %v\n", dst, err)
+		return
+	}
+	fmt.Fprintf(app.Err, "aes: merged %d setting(s) into %s\n", len(s.Merge), dst)
 }
 
 // activateConfig points a tool's config at its well-known path, but ONLY when

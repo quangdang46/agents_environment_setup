@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,41 @@ func (h *setupHarness) writeToolConfig(name, category, file, body string) {
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 		panic("writeToolConfig rewrite: " + err.Error())
 	}
+}
+
+// addSettings declares a settings: merge rule in a tool's manifest, the
+// same way writeToolConfig declares a config: entry. The declaration is the
+// thing setup reads, so a helper that only wrote the JSON file would test
+// nothing.
+func (h *setupHarness) addSettings(name, category, path string, merge map[string]any) {
+	dir := filepath.Join(h.app.CatalogRoot, category, name)
+	toolpath := filepath.Join(dir, "tool.yaml")
+	raw, err := os.ReadFile(toolpath)
+	if err != nil {
+		panic("addSettings read: " + err.Error())
+	}
+	line := "settings:\n  - path: " + path + "\n    merge:\n"
+	for _, k := range sortedMergeKeys(merge) {
+		v, _ := json.Marshal(merge[k])
+		line += "      " + k + ": " + string(v) + "\n"
+	}
+	updated := strings.Replace(string(raw), "provides:",
+		line+"provides:", 1)
+	if updated == string(raw) {
+		panic("addSettings: no provides: line to anchor on")
+	}
+	if err := os.WriteFile(toolpath, []byte(updated), 0o644); err != nil {
+		panic("addSettings rewrite: " + err.Error())
+	}
+}
+
+func sortedMergeKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (h *harness) run(args ...string) int {
@@ -962,5 +998,150 @@ func TestSetupActivatesTheConfigWhenNothingIsThere(t *testing.T) {
 	}
 	if link != want {
 		t.Errorf("symlink points at %q, want %q", link, want)
+	}
+}
+
+// A settings merge must write a missing key and preserve an existing one.
+// The whole point of merge-instead-of-copy: the user's file holds things
+// aes knows nothing about, and overwriting it is silent until the agent
+// stops working days later.
+func TestSettingsMergeWritesMissingKeyAndKeepsExisting(t *testing.T) {
+	// Not parallel: t.Setenv forbids it.
+	// newSetupHarness sets HOME to its own temp dir; the test must read from
+	// that same dir, not a second t.TempDir() — mergeSetting resolves through
+	// $HOME, so a different temp dir reads a file that was never written.
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+	h.addSettings("demo", "utility", ".demo/settings.json", map[string]any{"newKey": true})
+
+	home := os.Getenv("HOME")
+	settingsPath := filepath.Join(home, ".demo", "settings.json")
+	const existing = `{
+  "existingKey": "user-value"
+}
+`
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(existing), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Fatalf("setup exit %d\n%s", got, h.stderr.String())
+	}
+
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("merged file is not JSON: %v", err)
+	}
+	if doc["existingKey"] != "user-value" {
+		t.Errorf("the user's key was changed to %v; merge must never overwrite", doc["existingKey"])
+	}
+	if doc["newKey"] != true {
+		t.Errorf("the merged key is missing: %v", doc)
+	}
+}
+
+// The same user, running twice: a key aes wrote must be left alone, and the
+// run must not report it changed anything. A merge that always writes is a
+// copy with extra steps.
+func TestSettingsMergeIsIdempotent(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+	h.addSettings("demo", "utility", ".demo/settings.json", map[string]any{"newKey": true})
+	home := os.Getenv("HOME")
+
+	for i := 0; i < 2; i++ {
+		if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+			t.Fatalf("run %d: exit %d\n%s", i, got, h.stderr.String())
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(home, ".demo", "settings.json"))
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(after, &doc); err != nil {
+		t.Fatalf("not JSON after two runs: %v", err)
+	}
+	if len(doc) != 1 || doc["newKey"] != true {
+		t.Errorf("second run changed the file: %v", doc)
+	}
+}
+
+// A settings file that will not parse is refused, not replaced. Silently
+// replacing it is not a recovery — it is deleting the user's config.
+func TestSettingsMergeRefusesNonJSON(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+	h.addSettings("demo", "utility", ".demo/settings.json", map[string]any{"newKey": true})
+	home := os.Getenv("HOME")
+
+	settingsPath := filepath.Join(home, ".demo", "settings.json")
+	const garbage = "this is not json{{{"
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(garbage), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Fatalf("setup exit %d — the merge must be best-effort, never fatal\n%s", got, h.stderr.String())
+	}
+	after, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != garbage {
+		t.Errorf("aes rewrote a file it could not parse:\n%s", after)
+	}
+}
+
+// A symlink is resolved before writing. Replacing a dotfiles-managed
+// symlink with a regular file orphans the user's dotfiles repo, and that
+// failure is invisible until they notice their dotfiles stopped syncing.
+func TestSettingsMergeFollowsTheSymlink(t *testing.T) {
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+	h.addSettings("demo", "utility", ".demo/settings.json", map[string]any{"newKey": true})
+	home := os.Getenv("HOME")
+
+	real := filepath.Join(home, "dotfiles", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(real, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	link := filepath.Join(home, ".demo", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatalf("mkdir link dir: %v", err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Fatalf("setup exit %d\n%s", got, h.stderr.String())
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("lstat link: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("the symlink was replaced with a regular file; the dotfiles repo is orphaned")
+	}
+	raw, err := os.ReadFile(real)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("target is not JSON: %v", err)
+	}
+	if doc["newKey"] != true {
+		t.Errorf("the key landed in the wrong place: %v", doc)
 	}
 }
