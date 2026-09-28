@@ -76,6 +76,15 @@ func (g *GithubRelease) Install(ctx context.Context, a Action) error {
 	if a.Target.Repository == "" {
 		return fmt.Errorf("install %s: strategy %s requires a repository", a.Tool, manifest.StrategyGithubRelease)
 	}
+	// A pinned release tag, when the manifest declares one. Without it the
+	// installer resolves `releases/latest`, whose bytes change with no record —
+	// the same supply-chain risk the checksum exists to catch, applied to the
+	// URL itself. Measured on 2026-09-28: sbh was pinned to v0.6.12 while
+	// upstream had moved to v0.6.16, so the download 404'd and the tool
+	// reported as missing.
+	if a.Target.ReleaseTag != "" {
+		g.Version = a.Target.ReleaseTag
+	}
 
 	asset, err := assetFor(a, a.Host.Arch)
 	if err != nil {

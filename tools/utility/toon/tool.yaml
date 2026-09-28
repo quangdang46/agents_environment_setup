@@ -16,6 +16,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v0.2.0
     repository: Dicklesworthstone/toon_rust
     asset:
       amd64: toon-darwin-amd64.tar.xz
@@ -25,6 +26,7 @@ install:
       arm64: fe163da70b7f504ad489aeea1e8887971df6b526b6bcdd0f37add9cdab7c2fce
   linux:
     strategy: github-release
+    release_tag: v0.2.0
     repository: Dicklesworthstone/toon_rust
     asset:
       amd64: toon-linux-amd64.tar.xz

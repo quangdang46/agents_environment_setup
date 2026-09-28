@@ -13,6 +13,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v1.3.2
     repository: FiloSottile/age
     asset:
       amd64: age-v1.3.2-darwin-amd64.tar.gz
@@ -22,6 +23,7 @@ install:
       arm64: e2020b073c44f692685a24d6abc378817eb81ffaaf49fd0531ef8565f767f2f5
   linux:
     strategy: github-release
+    release_tag: v1.3.2
     repository: FiloSottile/age
     asset:
       amd64: age-v1.3.2-linux-amd64.tar.gz

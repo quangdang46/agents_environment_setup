@@ -15,6 +15,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.10.0
     repository: ajeetdsouza/zoxide
     asset:
       amd64: zoxide-0.10.0-x86_64-apple-darwin.tar.gz
@@ -24,6 +25,7 @@ install:
       arm64: b55ae6f2f5f23d0a6ccb3bd4eeb2af9c7e0a6556e5255c82100e40305129bbb0
   linux:
     strategy: github-release
+    release_tag: 0.10.0
     repository: ajeetdsouza/zoxide
     asset:
       amd64: zoxide-0.10.0-x86_64-unknown-linux-musl.tar.gz

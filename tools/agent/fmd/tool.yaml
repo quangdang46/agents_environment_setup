@@ -19,6 +19,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v0.4.5
     repository: Dicklesworthstone/franken_markdown
     asset:
       amd64: fmd-v0.4.5-x86_64-apple-darwin.tar.gz
@@ -28,6 +29,7 @@ install:
       arm64: ba4ff7ab765c0ba1e507cd73013bf1c265b628e0eb91f2ca4de1893ed27589cd
   linux:
     strategy: github-release
+    release_tag: v0.4.5
     repository: Dicklesworthstone/franken_markdown
     asset:
       amd64: fmd-v0.4.5-x86_64-unknown-linux-gnu.tar.gz

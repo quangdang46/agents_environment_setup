@@ -14,6 +14,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v0.51.0
     repository: derailed/k9s
     asset:
       amd64: k9s_Darwin_amd64.tar.gz
@@ -23,6 +24,7 @@ install:
       arm64: 9b8c0e8f461e5d33aeee43a67f5ef4aff646a008a786887b8266cbb153c610cc
   linux:
     strategy: github-release
+    release_tag: v0.51.0
     repository: derailed/k9s
     asset:
       amd64: k9s_Linux_amd64.tar.gz

@@ -16,6 +16,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.25.0
     repository: Dicklesworthstone/beads_viewer
     binary:
       amd64: bv
@@ -28,6 +29,7 @@ install:
       arm64: bcd132c6636feb21af7e9b8d091063358989b34144faceac3b3d7cdb819745f1
   linux:
     strategy: github-release
+    release_tag: 0.25.0
     repository: Dicklesworthstone/beads_viewer
     binary:
       amd64: bv

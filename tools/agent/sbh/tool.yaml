@@ -33,19 +33,21 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v0.6.16
     repository: Dicklesworthstone/storage_ballast_helper
     asset:
       amd64: sbh-x86_64-apple-darwin.tar.xz
       arm64: sbh-aarch64-apple-darwin.tar.xz
     sha256:
-      amd64: e6006dc12b2bbe65ef660ae1d1ba44cf6e0d3793ea16cb16d0027e9aaa46be01
+      amd64: 496211015e7b123eb25262ac0580936c89c4dd8c2e10918b2f67f7096334a678
       arm64: 0f37bbf3a8837816e1e9e08df2828bc12963b554ee0e911f7328f38de10ee7f2
   linux:
     strategy: github-release
+    release_tag: v0.6.16
     repository: Dicklesworthstone/storage_ballast_helper
     asset:
       # Unversioned name — see note 2 above.
-      amd64: sbh-x86_64-unknown-linux-gnu.tar.xz
+      amd64: sbh-v0.6.16-x86_64-unknown-linux-gnu.tar.xz
       arm64: sbh-aarch64-unknown-linux-gnu.tar.xz
     sha256:
       amd64: df446dbd2cde939d9caae552dc49aa5fc3c996d953fdc767ee3bf622b49b064f

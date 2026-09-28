@@ -155,6 +155,14 @@ type Target struct {
 	// Repository, Binary and the arch-keyed maps apply only to
 	// github-release.
 	Repository string `yaml:"repository,omitempty"`
+	// ReleaseTag pins the GitHub release tag, e.g. "v0.6.12". Empty means
+	// "latest", which is a supply-chain risk: the bytes under that URL change
+	// with no record, so a tool that verified yesterday can fail today with
+	// nothing in the repo having changed. Measured on 2026-09-28: sbh was
+	// pinned to v0.6.12 while upstream had moved to v0.6.16, so the download
+	// 404'd and the tool reported as missing. Every github-release tool should
+	// carry this.
+	ReleaseTag string `yaml:"release_tag,omitempty"`
 	// Binary is the filename inside the archive, when it differs from the tool
 	// name. opentofu ships a binary called `tofu`, and there was no way to say
 	// so: the installer inferred the name from the tool name, which is right
@@ -307,23 +315,23 @@ var strategySpecs = map[string]strategySpec{
 	},
 	StrategyPackage: {
 		required: []string{"manager", "package"},
-		rejected: []string{"repository", "asset", "sha256", "binary", "go_package", "npm_package", "cargo_name", "uv_package"},
+		rejected: []string{"release_tag", "repository", "asset", "sha256", "binary", "go_package", "npm_package", "cargo_name", "uv_package"},
 	},
 	StrategyGo: {
 		required: []string{"go_package"},
-		rejected: []string{"manager", "package", "repository", "asset", "sha256", "binary", "npm_package", "cargo_name", "uv_package"},
+		rejected: []string{"release_tag", "manager", "package", "repository", "asset", "sha256", "binary", "npm_package", "cargo_name", "uv_package"},
 	},
 	StrategyNPM: {
 		required: []string{"npm_package"},
-		rejected: []string{"manager", "package", "repository", "asset", "sha256", "binary", "go_package", "cargo_name", "uv_package"},
+		rejected: []string{"release_tag", "manager", "package", "repository", "asset", "sha256", "binary", "go_package", "cargo_name", "uv_package"},
 	},
 	StrategyCargo: {
 		required: []string{"cargo_name"},
-		rejected: []string{"manager", "package", "repository", "asset", "sha256", "go_package", "npm_package", "uv_package"},
+		rejected: []string{"release_tag", "manager", "package", "repository", "asset", "sha256", "go_package", "npm_package", "uv_package"},
 	},
 	StrategyUV: {
 		required: []string{"uv_package"},
-		rejected: []string{"manager", "package", "repository", "asset", "sha256", "binary", "go_package", "npm_package", "cargo_name"},
+		rejected: []string{"release_tag", "manager", "package", "repository", "asset", "sha256", "binary", "go_package", "npm_package", "cargo_name"},
 	},
 }
 
@@ -614,6 +622,7 @@ func (t Target) present() map[string]bool {
 		"manager":     t.Manager != "",
 		"package":     t.Package != "",
 		"repository":  t.Repository != "",
+		"release_tag": t.ReleaseTag != "",
 		"asset":       len(t.Asset) > 0,
 		"sha256":      len(t.SHA256) > 0,
 		"binary":      len(t.Binary) > 0,

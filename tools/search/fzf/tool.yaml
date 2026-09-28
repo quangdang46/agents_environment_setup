@@ -25,6 +25,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.74.4
     repository: junegunn/fzf
     asset:
       amd64: fzf-0.74.4-darwin_amd64.tar.gz
@@ -34,6 +35,7 @@ install:
       arm64: 4f6a113bfc0c7959e0005c78d566a51afc4fcefc956f43735c62a9deb19e92ae
   linux:
     strategy: github-release
+    release_tag: 0.74.4
     repository: junegunn/fzf
     asset:
       amd64: fzf-0.74.4-linux_amd64.tar.gz

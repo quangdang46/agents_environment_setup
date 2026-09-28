@@ -18,6 +18,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v0.15.2
     repository: Dicklesworthstone/eidetic_engine_cli
     asset:
       amd64: ee-x86_64-apple-darwin.tar.xz
@@ -27,6 +28,7 @@ install:
       arm64: 2da34611107f8c62de8c51a3c8a1490dcb6d1d6eda8d17b79c860cb38eff44e9
   linux:
     strategy: github-release
+    release_tag: v0.15.2
     repository: Dicklesworthstone/eidetic_engine_cli
     asset:
       amd64: ee-x86_64-unknown-linux-gnu.tar.xz

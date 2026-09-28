@@ -15,6 +15,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.45.3
     repository: ast-grep/ast-grep
     asset:
       amd64: app-x86_64-apple-darwin.zip
@@ -24,6 +25,7 @@ install:
       arm64: 6d2279dea5bea2ad79c66ea93f5fe54ba926e398a8a26de76c56db68fe59eac6
   linux:
     strategy: github-release
+    release_tag: 0.45.3
     repository: ast-grep/ast-grep
     asset:
       amd64: app-x86_64-unknown-linux-gnu.zip

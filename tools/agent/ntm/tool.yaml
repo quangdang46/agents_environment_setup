@@ -33,6 +33,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 1.35.1
     repository: dicklesworthstone/ntm
     asset:
       amd64: ntm_1.35.1_darwin_amd64.tar.gz
@@ -42,6 +43,7 @@ install:
       arm64: 6b8e7c5fefd84338ef8e6541494b74ed3f877294839faea787ef0fc770364c59
   linux:
     strategy: github-release
+    release_tag: 1.35.1
     repository: dicklesworthstone/ntm
     asset:
       amd64: ntm_1.35.1_linux_amd64.tar.gz

@@ -28,6 +28,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 2.101.0
     repository: cli/cli
     asset:
       amd64: gh_2.101.0_macOS_amd64.zip
@@ -37,6 +38,7 @@ install:
       arm64: e4303e39d8f07141c4bad4b99b01079f05029c59b27076e8fbc825c985ecdd8b
   linux:
     strategy: github-release
+    release_tag: 2.101.0
     repository: cli/cli
     asset:
       amd64: gh_2.101.0_linux_amd64.tar.gz

@@ -21,6 +21,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v0.1.1
     repository: Dicklesworthstone/aadc
     asset:
       amd64: aadc-darwin-amd64.tar.xz
@@ -30,6 +31,7 @@ install:
       arm64: 70ac50d0dec48a17e9ab1aa4c296a13c53816149ce87b7e106e2de708652d3ef
   linux:
     strategy: github-release
+    release_tag: v0.1.1
     repository: Dicklesworthstone/aadc
     asset:
       amd64: aadc-linux-amd64.tar.xz

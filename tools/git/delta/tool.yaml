@@ -17,6 +17,7 @@ install:
     package: git-delta
   linux:
     strategy: github-release
+    release_tag: 0.19.2
     repository: dandavison/delta
     asset:
       amd64: delta-0.19.2-x86_64-unknown-linux-gnu.tar.gz

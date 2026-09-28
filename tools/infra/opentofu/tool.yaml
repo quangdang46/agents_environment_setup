@@ -15,6 +15,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 1.12.6
     repository: opentofu/opentofu
     binary:
       amd64: tofu
@@ -27,6 +28,7 @@ install:
       arm64: f958ec5e511063be9feb180ca015a4cb7977566a9cf6a8550bba8c2a9b5aba74
   linux:
     strategy: github-release
+    release_tag: 1.12.6
     repository: opentofu/opentofu
     binary:
       amd64: tofu

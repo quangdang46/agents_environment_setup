@@ -1,0 +1,62 @@
+# AES catalog. github-release at oven-sh/bun release bun-v1.4.2 (2026-09-05).
+#
+# Every sha256 below was computed in-session by downloading the asset and
+# running sha256sum, and each one was then cross-checked against the release's
+# own SHASUMS256.txt. All four agreed. Nothing here is copied from upstream
+# documentation or from ACFS.
+#
+# The asset names carry NO version — `bun-linux-x64.zip`, not
+# `bun-v1.4.2-linux-x64.zip` — which is what makes `releases/latest` work. A
+# versioned asset name 404s forever against that endpoint, because latest
+# always moves. The checksum is the part that pins: it fixes the bytes to
+# v1.4.2, so when upstream publishes 1.4.3 this entry fails a checksum rather
+# than silently installing new code. That is the intended failure. A checksum
+# proves the bytes are what someone recorded once; it says nothing about
+# whether they are current, and a manifest that quietly tracks latest is a
+# manifest that means two different things on two different days.
+#
+# The binary inside is `bun` in all four archives, nested one directory deep
+# (`bun-linux-x64/bun`). The zip extractor matches on filepath.Base, so the
+# nesting is fine and no `binary:` override is needed. `bunx` is NOT in the
+# archive, so nothing here claims to provide it.
+name: bun
+description: Bun JavaScript runtime
+category: runtime
+tested: false
+tags:
+  - runtime
+verify:
+  command: bun
+  version:
+    # Measured, not guessed. `bun --version` prints a bare `1.4.2` and exits 0.
+    # Two neighbouring commands were also run and both are wrong for a
+    # manifest: `bun -v` happens to work today but is undocumented, and
+    # `bun version` exits 1 with `error: Script not found "version"` — bun
+    # treats a bare word as a script to run, which is the same trap that makes
+    # `--version` the wrong assumption for slb/fsfs/ntm/caam.
+    command: bun --version
+    min: "1.3.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: oven-sh/bun
+    asset:
+      amd64: bun-darwin-x64.zip
+      arm64: bun-darwin-aarch64.zip
+    sha256:
+      amd64: 80520d7e17526308c9185d261679ac6d27798d3803a0e9f7ff9121ab8affb012
+      arm64: 90987a3a16d7db556d886ac3d551e7b6d3edf0a1cf43acaed622e8676be1d12f
+  linux:
+    strategy: github-release
+    repository: oven-sh/bun
+    asset:
+      # The plain x64/aarch64 builds, not the `-baseline` ones. Baseline
+      # exists for CPUs without AVX2; this catalog does not know the target
+      # CPU, and the regular build is what upstream's own installer prefers
+      # when AVX2 is present. A host without AVX2 would get SIGILL here rather
+      # than a wrong answer, which is a failure worth having.
+      amd64: bun-linux-x64.zip
+      arm64: bun-linux-aarch64.zip
+    sha256:
+      amd64: 36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913
+      arm64: 54328bbc2d9c8e0c9f892c544d66c57a83b84139e34909e5ee81758f1ac8fda7

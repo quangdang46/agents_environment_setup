@@ -23,6 +23,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 1.10.0
     repository: Dicklesworthstone/frankensearch
     asset:
       amd64: fsfs-lite-1.10.0-x86_64-apple-darwin.tar.xz
@@ -32,6 +33,7 @@ install:
       arm64: fd86d12e5ab8794d930715e5dd59b3445d1789717d31f902cf95135f4bf2f18f
   linux:
     strategy: github-release
+    release_tag: 1.10.0
     repository: Dicklesworthstone/frankensearch
     asset:
       # musl, not gnu. The gnu build links against GLIBC 2.43 and dies on

@@ -33,6 +33,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.7.0
     repository: Dicklesworthstone/beads_rust
     binary:
       amd64: br
@@ -45,6 +46,7 @@ install:
       arm64: 124cf030f06a92e58c05eebef00e997e5877ab4806752841c707ab9bd278c487
   linux:
     strategy: github-release
+    release_tag: 0.7.0
     repository: Dicklesworthstone/beads_rust
     # The archive ships a binary called `br`, not `beads`. Without this the
     # installer looks for `beads` inside the tarball, does not find it, and

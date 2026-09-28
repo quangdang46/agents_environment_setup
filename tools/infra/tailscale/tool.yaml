@@ -1,0 +1,52 @@
+# AES catalog. package for darwin (homebrew/core formula) and linux (tailscale's
+# own apt repo). github-release is NOT an option: tailscale/tailscale publishes
+# release tags but no release assets at all, so there is nothing to download and
+# hash. Verified 2026-09-29 on linux/amd64 by unpacking the amd64 .deb from
+# pkgs.tailscale.com and listing it — the binary is `tailscale` (/usr/bin), and
+# `tailscale version` exits 0 printing "1.98.4" on line 1 followed by commit
+# lines. The verifier reads line 1 only, so those trailing lines are harmless.
+name: tailscale
+description: WireGuard mesh VPN client and admin CLI
+category: infra
+tested: false
+tags:
+  - infra
+  - network
+  - vpn
+verify:
+  command: tailscale
+  version:
+    command: tailscale version
+    min: "1.0"
+install:
+  darwin:
+    # homebrew/core ships a `tailscale` formula (keg_only: false) that links
+    # bin/tailscale onto PATH, so this is the whole darwin story. Its version is
+    # whatever brew has — the package strategy is unpinned by design, and
+    # `tailscale --version` is not used anywhere: `tailscale version` is the
+    # subcommand form, and both print the same thing.
+    strategy: package
+    manager: brew
+    package: tailscale
+  linux:
+    # PREREQUISITE, and it is the reason this entry is honest rather than
+    # convenient: `tailscale` is NOT in Ubuntu's own archives, in universe or
+    # anywhere else. It only resolves once pkgs.tailscale.com is in
+    # /etc/apt/sources.list.d. AES's package strategy runs a bare
+    # `apt-get install -y <pkg>` and has no way to add a repository, so on a
+    # stock Ubuntu image this target fails with "Unable to locate package".
+    #
+    # The user adds the repo first, exactly as Tailscale documents:
+    #
+    #   curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+    #     | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg
+    #   echo 'deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] \
+    #     https://pkgs.tailscale.com/stable/ubuntu noble main' \
+    #     | sudo tee /etc/apt/sources.list.d/tailscale.list
+    #   sudo apt-get update
+    #
+    # The package name is `tailscale` and the repo ships both amd64 and arm64.
+    # Verified 2026-09-29 by downloading the 1.98.4 amd64 .deb and unpacking it.
+    strategy: package
+    manager: apt
+    package: tailscale

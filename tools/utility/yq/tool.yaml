@@ -21,6 +21,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v4.53.6
     repository: mikefarah/yq
     binary:
       amd64: yq_darwin_amd64
@@ -33,6 +34,7 @@ install:
       arm64: 4e2b18f4242c720965af7919dc0573819474cecf03a71b6cd7656025f2e5162c
   linux:
     strategy: github-release
+    release_tag: v4.53.6
     repository: mikefarah/yq
     binary:
       amd64: yq_linux_amd64

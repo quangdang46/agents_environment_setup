@@ -38,6 +38,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.14.4
     repository: Dicklesworthstone/destructive_command_guard
     asset:
       amd64: dcg-x86_64-apple-darwin.tar.xz
@@ -47,6 +48,7 @@ install:
       arm64: b704fe0190bfeec51bc264a573fa3d620590286b2b2b63b2ca2293aa24aad013
   linux:
     strategy: github-release
+    release_tag: 0.14.4
     repository: Dicklesworthstone/destructive_command_guard
     asset:
       # musl for x86_64, gnu for aarch64 — the names differ per arch.

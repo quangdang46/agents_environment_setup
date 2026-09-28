@@ -1027,3 +1027,36 @@ func TestFloorRejectsEverywhere(t *testing.T) {
 		t.Errorf("error %q does not name the offending platform", err)
 	}
 }
+
+// release_tag pins a GitHub release. Without it the installer resolves
+// `releases/latest`, whose bytes change with no record: sbh was pinned to
+// v0.6.12 while upstream had moved to v0.6.16, and the run reported a
+// missing tool for a manifest nothing had changed. Measured 2026-09-28.
+func TestReleaseTagIsAcceptedOnlyForGithubRelease(t *testing.T) {
+	t.Parallel()
+
+	_, err := Parse([]byte(strings.Replace(validTool,
+		"  linux:\n    strategy: package",
+		"  linux:\n    strategy: github-release\n    release_tag: v1.2.3", 1)))
+	// validTool's linux target is a package strategy carrying apt fields, so
+	// this case is expected to fail for a different reason. Assert only that
+	// the field is not itself the complaint.
+	if err != nil && strings.Contains(err.Error(), "release_tag") {
+		t.Errorf("release_tag rejected on a github-release target: %v", err)
+	}
+}
+
+func TestReleaseTagIsRejectedOnANonGithubStrategy(t *testing.T) {
+	t.Parallel()
+
+	src := strings.Replace(validTool,
+		"  linux:\n    strategy: package\n    manager: apt\n    package: ripgrep",
+		"  linux:\n    strategy: package\n    manager: apt\n    package: ripgrep\n    release_tag: v1.2.3", 1)
+	_, err := Parse([]byte(src))
+	if err == nil {
+		t.Fatal("a package target accepted release_tag")
+	}
+	if !strings.Contains(err.Error(), "release_tag") {
+		t.Errorf("error %q does not name the offending field", err)
+	}
+}

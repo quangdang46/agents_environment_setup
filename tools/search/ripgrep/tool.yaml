@@ -28,6 +28,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 15.2.0
     repository: BurntSushi/ripgrep
     # The release archive ships the binary as `rg`. Without this the installer
     # looks for a file called `ripgrep`, does not find it, and fails the install
@@ -44,6 +45,7 @@ install:
       arm64: 3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4
   linux:
     strategy: github-release
+    release_tag: 15.2.0
     repository: BurntSushi/ripgrep
     binary:
       amd64: rg

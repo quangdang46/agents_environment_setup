@@ -16,6 +16,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.3.36
     repository: Dicklesworthstone/mcp_agent_mail_rust
     binary:
       amd64: am
@@ -28,6 +29,7 @@ install:
       arm64: 2b90585878dd3c8509c21b177450f9f975caebb27a2f6a8601efed0ffb016523
   linux:
     strategy: github-release
+    release_tag: 0.3.36
     repository: Dicklesworthstone/mcp_agent_mail_rust
     binary:
       amd64: am

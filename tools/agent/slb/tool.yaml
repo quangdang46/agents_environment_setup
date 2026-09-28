@@ -22,6 +22,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.5.2
     repository: Dicklesworthstone/simultaneous_launch_button
     asset:
       amd64: slb_0.5.2_darwin_amd64.tar.gz
@@ -31,6 +32,7 @@ install:
       arm64: e6e425605df4ea01fef10c701a139d282613aab22a3a7f49e8e5eb32d6e2f933
   linux:
     strategy: github-release
+    release_tag: 0.5.2
     repository: Dicklesworthstone/simultaneous_launch_button
     asset:
       amd64: slb_0.5.2_linux_amd64.tar.gz

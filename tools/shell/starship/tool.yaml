@@ -13,6 +13,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v1.26.0
     repository: starship/starship
     asset:
       amd64: starship-x86_64-apple-darwin.tar.gz
@@ -22,6 +23,7 @@ install:
       arm64: c40b27b11f580411e068f2fa6c1be7830a387c0bc47a94d1d37f32b054c5361d
   linux:
     strategy: github-release
+    release_tag: v1.26.0
     repository: starship/starship
     asset:
       amd64: starship-x86_64-unknown-linux-gnu.tar.gz

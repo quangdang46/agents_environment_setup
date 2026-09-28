@@ -15,6 +15,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.12.20
     repository: astral-sh/uv
     asset:
       amd64: uv-x86_64-apple-darwin.tar.gz
@@ -24,6 +25,7 @@ install:
       arm64: a9a8df1eedeb192f2e47e40e2faabfb387db4b850209118786d42f89dde3e0ba
   linux:
     strategy: github-release
+    release_tag: 0.12.20
     repository: astral-sh/uv
     asset:
       amd64: uv-x86_64-unknown-linux-gnu.tar.gz

@@ -15,6 +15,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.65.1
     repository: jesseduffield/lazygit
     asset:
       amd64: lazygit_0.65.1_Darwin_x86_64.tar.gz
@@ -24,6 +25,7 @@ install:
       arm64: 65a367c6ea9a88efebaaf7998a6835eedb987e04916cef677264ff9b31b1b13e
   linux:
     strategy: github-release
+    release_tag: 0.65.1
     repository: jesseduffield/lazygit
     asset:
       amd64: lazygit_0.65.1_linux_x86_64.tar.gz
