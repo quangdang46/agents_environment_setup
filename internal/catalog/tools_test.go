@@ -183,6 +183,45 @@ var layer1Tools = map[string]bool{
 // The other direction, and the one that actually caught a bug: every tool the
 // Layer 1 fixtures exercise must be installable from this catalog.
 //
+// An alias must not shadow a system binary. `alias cc=...` on a machine where
+// /usr/bin/cc is the C compiler means typing `cc` to compile runs an agent
+// instead — measured on 2026-09-28, when aes shipped exactly that and the
+// user's fresh shell stopped being able to compile C. ACFS ships the same
+// collision, and their zshrc carries a defensive `unalias br` guard for
+// their own earlier `alias br='bun run dev'` shadowing the real binary.
+//
+// The check cannot look at the developer's PATH: a test that reads runtime
+// PATH passes on the machine that wrote it and fails on everyone else's. The
+// allowlist below is the POSIX-required commands plus the C toolchain, which
+// is the set of names that exist on every Unix rather than the set this
+// machine happens to have.
+var systemBinaryNames = map[string]bool{
+	// POSIX-required commands (IEEE 1003.1): an alias with one of these
+	// names shadows something present on every conforming system.
+	"cat": true, "cp": true, "mv": true, "rm": true, "ls": true,
+	"echo": true, "sh": true, "test": true, "kill": true, "sleep": true,
+	"sort": true, "grep": true, "awk": true, "sed": true, "tar": true,
+	"vi": true, "ed": true, "find": true, "make": true, "man": true,
+	// The C toolchain lives in /usr/bin on every Unix with a compiler, and
+	// none of these is an interactive alias anyone wants: `cc` compiles C.
+	"cc": true, "c89": true, "c99": true, "cpp": true, "ld": true,
+	"gcc": true, "g++": true, "as": true, "ar": true, "nm": true,
+}
+
+func TestAliasMustNotShadowASystemBinary(t *testing.T) {
+	c := loadTools(t)
+	for _, tool := range c.All() {
+		for name := range tool.Aliases {
+			if systemBinaryNames[name] {
+				t.Errorf("%s declares alias %q, which shadows a system binary; "+
+					"a shortcut that hides /usr/bin/%s is the failure aes doctor "+
+					"exists to report, not something a manifest should introduce",
+					tool.Name, name, name)
+			}
+		}
+	}
+}
+
 // The verifier builds its fixtures from the spec's table, and it passed
 // happily while zoxide had no manifest at all. A fixture suite and the thing
 // it fixtures are separate artifacts; only a comparison between them catches
