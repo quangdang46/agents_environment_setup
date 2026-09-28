@@ -200,7 +200,93 @@ type Verify struct {
 // and the minimum acceptable version.
 type VersionCheck struct {
 	Command string `yaml:"command"`
-	Min     string `yaml:"min,omitempty"`
+	// Min is the minimum acceptable version: a dotted-integer string, or a
+	// map from GOOS to a dotted-integer string when platforms supply
+	// different versions.
+	//
+	// The map exists because Ubuntu noble ships node 18 while brew ships node
+	// 26, and mise is packaged in noble as 1.6.13 while upstream uses calendar
+	// versions like 2024.x. A single floor against two different distributions
+	// means "the newest version aes has ever seen", which is where node failed
+	// with a floor of 20.0 on a machine that could only ever supply 18.
+	// A scalar keeps every existing manifest working unchanged.
+	Min Floor `yaml:"min,omitempty"`
+}
+
+// Floor is a version floor: either a single dotted-integer string that
+// applies to every platform, or a map from GOOS to the floor that platform
+// can supply.
+type Floor struct {
+	// Default applies when no per-platform entry matches. It is the only
+	// thing a scalar YAML value sets.
+	Default string
+	// ByOS maps a GOOS to that platform's floor. Only `darwin` and `linux`
+	// are accepted — anything else is a platform AES does not install on.
+	ByOS map[string]string
+}
+
+// FloorFor returns the floor that applies on goos, or "" when none is
+// declared. A per-platform entry wins; the scalar is the fallback.
+func (f Floor) FloorFor(goos string) string {
+	if v, ok := f.ByOS[goos]; ok {
+		return v
+	}
+	// A `*` key is the shared default, written this way so a manifest that has
+	// both a per-platform entry and a common floor stays a single map.
+	if v, ok := f.ByOS["*"]; ok {
+		return v
+	}
+	return f.Default
+}
+
+// MarshalYAML serialises a Floor back to the shape a human would write: a
+// scalar when there is one floor for every platform, a map when platforms
+// differ. Without this a round trip turns `min: 14.0` into
+// `min: {default: 14.0, byos: {}}` — field names a manifest author never
+// wrote, and which do not parse back.
+func (f Floor) MarshalYAML() (any, error) {
+	if len(f.ByOS) == 0 {
+		return f.Default, nil
+	}
+	if f.Default == "" {
+		return f.ByOS, nil
+	}
+	// Both present: emit the map with a `*` key for the shared default, which
+	// FloorFor already reads as a per-platform entry.
+	merged := make(map[string]string, len(f.ByOS)+1)
+	for k, v := range f.ByOS {
+		merged[k] = v
+	}
+	merged["*"] = f.Default
+	return merged, nil
+}
+
+// UnmarshalYAML accepts either a scalar ("20.0") or a map
+// ({darwin: 26.0, linux: 18.0}). Every existing manifest uses the scalar, so
+// this keeps them all working; the map is opt-in per tool.
+//
+// The scalar form is decoded through a node rather than by re-marshalling,
+// because a manifest that says `min: 20.0` means the string "20.0" and not
+// the float 20 — the floor regex is deliberately dotted-integer only.
+func (f *Floor) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		var s string
+		if err := node.Decode(&s); err != nil {
+			return err
+		}
+		f.Default = s
+		return nil
+	case yaml.MappingNode:
+		m := map[string]string{}
+		if err := node.Decode(&m); err != nil {
+			return err
+		}
+		f.ByOS = m
+		return nil
+	default:
+		return fmt.Errorf("verify.version.min must be a version string or a map of GOOS to version string")
+	}
 }
 
 // strategySpec is the required and rejected field set for one strategy. Every
@@ -484,11 +570,31 @@ func (t *Tool) validateVerify() error {
 		if strings.TrimSpace(v.Command) == "" {
 			return fmt.Errorf("verify.version requires verify.command: a version check needs a presence check to compare against")
 		}
-		if v.Version.Min != "" && strings.TrimSpace(v.Version.Command) == "" {
+		if v.Version.Min.FloorFor("") != "" && strings.TrimSpace(v.Version.Command) == "" {
 			return fmt.Errorf("verify.version.min requires verify.version.command: nothing would produce a version to compare")
 		}
-		if v.Version.Min != "" && !minRe.MatchString(v.Version.Min) {
-			return fmt.Errorf("verify.version.min %q must be dotted integers with an optional leading v", v.Version.Min)
+		// Every declared floor is validated, not just the one that happens to
+		// match this machine. A floor that is malformed on a platform AES does
+		// not install on is a floor that will fail the day someone adds one.
+		// The platform set is checked too: a key that is not a GOOS AES
+		// installs on is a typo that would otherwise be read as a floor for a
+		// platform nobody can reach.
+		for _, where := range sortedKeys(v.Version.Min.ByOS) {
+			if !contains(supportedGOOS, where) {
+				return fmt.Errorf("verify.version.min: %q is not a supported platform (valid: %s)",
+					where, strings.Join(supportedGOOS, ", "))
+			}
+			floor := v.Version.Min.ByOS[where]
+			if floor == "" {
+				continue
+			}
+			if !minRe.MatchString(floor) {
+				return fmt.Errorf("verify.version.min[%s] %q must be dotted integers with an optional leading v",
+					where, floor)
+			}
+		}
+		if v.Version.Min.Default != "" && !minRe.MatchString(v.Version.Min.Default) {
+			return fmt.Errorf("verify.version.min %q must be dotted integers with an optional leading v", v.Version.Min.Default)
 		}
 	}
 	// A tool has to be checkable by something. verify: null is valid on its

@@ -275,7 +275,7 @@ func TestVerifyVersionComparison(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tool := &manifest.Tool{
 				Name:   "probe",
-				Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: tc.command, Min: tc.min}},
+				Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: tc.command, Min: manifest.Floor{Default: tc.min}}},
 			}
 			got := Verify(tool)
 			if got.Status != tc.want {
@@ -314,7 +314,7 @@ func TestVerifyDistinguishesBrokenFromUnreadable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tool := &manifest.Tool{
 				Name:   "probe",
-				Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: tc.command, Min: "2.0.0"}},
+				Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: tc.command, Min: manifest.Floor{Default: "2.0.0"}}},
 			}
 			got := Verify(tool)
 			if got.Status != tc.wantStatus {
@@ -337,7 +337,7 @@ func TestVerifyTimeoutIsNotProbeFailure(t *testing.T) {
 	}
 	tool := &manifest.Tool{
 		Name:   "probe",
-		Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: "sleep 30", Min: "2.0.0"}},
+		Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: "sleep 30", Min: manifest.Floor{Default: "2.0.0"}}},
 	}
 	got := Verify(tool)
 	if got.ProbeFailed {
@@ -353,7 +353,7 @@ func TestVerifyReportsDetectedVersion(t *testing.T) {
 		Name: "probe",
 		Verify: &manifest.Verify{
 			Command: "sh",
-			Version: &manifest.VersionCheck{Command: "echo jq-1.7.1", Min: "1.0.0"},
+			Version: &manifest.VersionCheck{Command: "echo jq-1.7.1", Min: manifest.Floor{Default: "1.0.0"}},
 		},
 	}
 	got := Verify(tool)
@@ -379,7 +379,7 @@ func TestVerifyIsRepeatable(t *testing.T) {
 	// calls would make doctor report phantom drift.
 	tool := &manifest.Tool{
 		Name:   "probe",
-		Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: "echo 1.2.3", Min: "1.0.0"}},
+		Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: "echo 1.2.3", Min: manifest.Floor{Default: "1.0.0"}}},
 	}
 	first := Verify(tool)
 	second := Verify(tool)
@@ -393,7 +393,7 @@ func TestVerifyContextRespectsCancellation(t *testing.T) {
 	cancel()
 	tool := &manifest.Tool{
 		Name:   "probe",
-		Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: "echo 1.2.3", Min: "1.0.0"}},
+		Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: "echo 1.2.3", Min: manifest.Floor{Default: "1.0.0"}}},
 	}
 	// Presence still resolves; the cancelled version probe must not hang or
 	// panic, and must report the minimum as unchecked rather than met.
@@ -421,7 +421,7 @@ func TestStatusIsExhaustiveAndDistinct(t *testing.T) {
 	for want, tc := range cases {
 		tool := &manifest.Tool{
 			Name:   "probe",
-			Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: tc.command, Min: tc.min}},
+			Verify: &manifest.Verify{Command: "sh", Version: &manifest.VersionCheck{Command: tc.command, Min: manifest.Floor{Default: tc.min}}},
 		}
 		got := Verify(tool)
 		if got.Status != want {

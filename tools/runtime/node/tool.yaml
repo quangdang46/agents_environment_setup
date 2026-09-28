@@ -1,16 +1,16 @@
 # AES catalog. Package names verified against the homebrew formula index and the
 # Debian package index.
 #
-# The floor is 18, not 20, and it is a per-platform compromise forced by the
-# schema: verify.version.min is a single number, but the platform supplies
-# wildly different versions. Ubuntu 24.04 (noble) offers nodejs 18.19.1 and
-# nothing else, so a 20.0 floor made aes setup --only node install correctly
-# and then report it stale, exit 6, forever. All four AI tools depend on node,
-# so the entire npm set was uninstallable through aes on stock Ubuntu.
+# The floor is per-platform, and that is the whole point of this entry.
+# A single number cannot describe two platforms: brew ships node 26.10.0,
+# Ubuntu 24.04 (noble) ships nodejs 18.19.1 and nothing else. A 20.0 floor
+# made `aes setup --only node` install correctly and then report it stale,
+# exit 6, forever — and all four AI tools depend on node, so the entire npm
+# set was uninstallable through aes on stock Ubuntu.
 #
-# The floor now means "new enough to be worth installing on a platform that
-# cannot supply more". That is weaker than a per-platform floor and it needs
-# revisiting - tracked separately.
+# The map says what each platform can actually supply. A tool whose floor is
+# above what its platform offers is now reported as unavailable rather than
+# stale, which is the distinction bead 8tv asked for.
 name: node
 description: Node.js JavaScript runtime
 category: runtime
@@ -24,7 +24,9 @@ verify:
   command: node
   version:
     command: node --version
-    min: "18.0"
+    min:
+      darwin: "26.0"
+      linux: "18.0"
 install:
   darwin:
     strategy: package

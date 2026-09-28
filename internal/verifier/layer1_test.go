@@ -70,7 +70,7 @@ func (f layer1Fixture) tool() *manifest.Tool {
 		Name: f.name,
 		Verify: &manifest.Verify{
 			Command: f.bin,
-			Version: &manifest.VersionCheck{Command: f.versionCmd, Min: f.min},
+			Version: &manifest.VersionCheck{Command: f.versionCmd, Min: manifest.Floor{Default: f.min}},
 		},
 	}
 }

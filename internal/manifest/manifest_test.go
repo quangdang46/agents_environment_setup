@@ -58,7 +58,7 @@ func TestParseValid(t *testing.T) {
 	if tool.Verify == nil || tool.Verify.Version == nil {
 		t.Fatal("verify.version did not survive parsing")
 	}
-	if got := tool.Verify.Version.Min; got != "14.0" {
+	if got := tool.Verify.Version.Min.FloorFor(""); got != "14.0" {
 		t.Errorf("min = %q, want 14.0", got)
 	}
 }
@@ -969,5 +969,61 @@ func TestSettingsPathRules(t *testing.T) {
 				t.Errorf("error %q does not name %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Floors understand two shapes: a scalar that applies everywhere, and a map
+// from GOOS to the version that platform can supply. Ubuntu noble ships node
+// 18 while brew ships node 26, so a single number means "the newest version
+// aes has ever seen" rather than a statement about what a platform offers.
+func TestFloorParsesBothShapes(t *testing.T) {
+	t.Parallel()
+
+	scalar, err := Parse([]byte(validTool))
+	if err != nil {
+		t.Fatalf("scalar manifest: %v", err)
+	}
+	if got := scalar.Verify.Version.Min.FloorFor(""); got != "14.0" {
+		t.Errorf("scalar floor = %q, want 14.0", got)
+	}
+	if got := scalar.Verify.Version.Min.FloorFor("linux"); got != "14.0" {
+		t.Errorf("scalar floor on linux = %q, want the single value", got)
+	}
+
+	mapped, err := Parse([]byte(strings.Replace(validTool,
+		`    min: "14.0"`,
+		"    min:\n      darwin: \"26.0\"\n      linux: \"18.0\"", 1)))
+	if err != nil {
+		t.Fatalf("mapped manifest: %v", err)
+	}
+	if got := mapped.Verify.Version.Min.FloorFor("darwin"); got != "26.0" {
+		t.Errorf("darwin floor = %q, want 26.0", got)
+	}
+	if got := mapped.Verify.Version.Min.FloorFor("linux"); got != "18.0" {
+		t.Errorf("linux floor = %q, want 18.0", got)
+	}
+}
+
+// A floor that violates the dotted-integer rule on ANY platform is refused,
+// including on a platform aes does not install on. A floor that fails the day
+// someone adds that platform is a floor that should have failed when written.
+func TestFloorRejectsEverywhere(t *testing.T) {
+	t.Parallel()
+
+	if _, err := Parse([]byte(strings.Replace(validTool,
+		`    min: "14.0"`,
+		"    min:\n      darwin: \"not-a-version\"\n      linux: \"18.0\"", 1))); err == nil {
+		t.Error("a map with a bad darwin floor parsed without complaint")
+	} else if !strings.Contains(err.Error(), "darwin") {
+		t.Errorf("error %q does not name the offending platform", err)
+	}
+
+	// Unknown platforms are a platform aes does not install on.
+	if _, err := Parse([]byte(strings.Replace(validTool,
+		`    min: "14.0"`,
+		"    min:\n      plan9: \"1.0\"\n      linux: \"18.0\"", 1))); err == nil {
+		t.Error("a map with an unknown platform parsed without complaint")
+	} else if !strings.Contains(err.Error(), "plan9") {
+		t.Errorf("error %q does not name the offending platform", err)
 	}
 }

@@ -32,6 +32,7 @@ import (
 
 	aesexec "github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
+	"github.com/quangdang46/agents_environment_setup/internal/platform"
 )
 
 // Status is the outcome of verifying one tool.
@@ -343,14 +344,37 @@ func probeEnv() []string {
 }
 
 // Verify reports what is true of t on this machine right now.
+//
+// The floor applied is the scalar or the "" entry. Per-platform floors are
+// honoured only by VerifyFor, which knows which platform to ask for — this
+// form keeps the old behaviour for callers that do not have a host.
 func Verify(t *manifest.Tool) Result {
-	return VerifyContext(context.Background(), t)
+	return VerifyFor(nil, t)
+}
+
+// VerifyFor is Verify with the host the tool is being checked on. A tool
+// with a per-platform floor is compared against that platform's number, not
+// against the scalar: node at min 26 on darwin and 18 on linux is OK at 18
+// on linux, and a scalar compare would call it stale.
+func VerifyFor(h *platform.Host, t *manifest.Tool) Result {
+	return VerifyContextFor(context.Background(), h, t)
+}
+
+// VerifyContextFor is VerifyContext with the host the tool is checked on.
+func VerifyContextFor(ctx context.Context, h *platform.Host, t *manifest.Tool) Result {
+	res, _ := verifyInner(ctx, h, t)
+	return res
 }
 
 // VerifyContext is Verify with cancellation, so a run over a whole profile
 // stops when the user interrupts it. Verify is the form the spec names; this is
 // the one callers should reach for.
 func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
+	res, _ := verifyInner(ctx, nil, t)
+	return res
+}
+
+func verifyInner(ctx context.Context, h *platform.Host, t *manifest.Tool) (Result, error) {
 	res := Result{Tool: t.Name, Status: StatusMissing}
 
 	// verify.command is the primary binary; provides lists the rest. Every one
@@ -361,13 +385,13 @@ func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
 		// Manifest validation rejects a tool that checks nothing, so this is
 		// unreachable from a validated manifest. Fail closed rather than
 		// reporting a tool as OK when nothing was actually checked.
-		return res
+		return res, nil
 	}
 
 	for _, bin := range required {
 		path, err := lookPath(bin)
 		if err != nil {
-			return res
+			return res, nil
 		}
 		if res.Path == "" {
 			res.Path = path
@@ -376,7 +400,7 @@ func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
 	res.Status = StatusOK
 
 	if t.Verify == nil || t.Verify.Version == nil || t.Verify.Version.Command == "" {
-		return res
+		return res, nil
 	}
 
 	// The version command can fail, hang, or print something unparseable. A
@@ -394,7 +418,11 @@ func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
 		Timeout: aesexec.VerifyTimeout,
 		Env:     probeEnv(),
 	})
-	min := t.Verify.Version.Min
+	// The floor is the one for THIS platform. A tool declaring
+	// min: {darwin: 26, linux: 18} is satisfied by node 18 on linux; reading
+	// the scalar would report it stale, which is the node-18 failure that
+	// started bead 8tv.
+	min := t.Verify.Version.Min.FloorFor(goosOf(h))
 	if err != nil {
 		// ErrFailed is the binary running and failing; ErrTimeout is the probe
 		// running out of budget. Only the first says anything about the tool.
@@ -402,19 +430,30 @@ func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
 		if min != "" {
 			res.Status = StatusUnknown
 		}
-		return res
+		return res, nil
 	}
 	res.Version = ExtractVersion(run.Stdout)
 	switch {
 	case min == "":
 		// Presence was the only claim, and it held.
-		return res
+		return res, nil
 	case res.Version == "":
 		res.Status = StatusUnknown
 	case CompareVersions(res.Version, min) < 0:
 		res.Status = StatusStale
 	}
-	return res
+	return res, nil
+}
+
+// goosOf is the platform a verification is running on, or "" when the caller
+// did not say. A tool with a scalar floor behaves identically either way; a
+// per-platform floor falls back to its default, which is the safe direction —
+// it under-claims rather than over-claims.
+func goosOf(h *platform.Host) string {
+	if h == nil {
+		return ""
+	}
+	return string(h.OS)
 }
 
 // binaries is everything that must resolve for the tool to count as present:

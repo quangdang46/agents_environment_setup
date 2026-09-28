@@ -110,9 +110,13 @@ func TestAptCoordinatesMatchWhatAptOffers(t *testing.T) {
 		// The 8tv failure: a floor above what the platform can supply. This
 		// compares the number apt WILL install against the number the manifest
 		// demands, which is the only comparison that means anything.
+		// The floor is the one for THIS platform. A tool declaring
+		// min: {darwin: 26, linux: 18} is satisfied by node 18 on linux; reading
+		// the scalar would report it stale, which is the node-18 failure that
+		// started bead 8tv.
 		min := ""
 		if tool.Verify != nil && tool.Verify.Version != nil {
-			min = tool.Verify.Version.Min
+			min = tool.Verify.Version.Min.FloorFor(string(hostFor(box.GoArch).OS))
 		}
 		if min == "" {
 			continue
