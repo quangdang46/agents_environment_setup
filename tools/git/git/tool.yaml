@@ -10,6 +10,13 @@ category: git
 tested: true
 tested_on:
   - linux/arm64
+  # Layer 1: a real machine carrying git 2.53.0. Layer 2: a fresh
+  # ubuntu:24.04 container, where the distro index supplies git 2.43.0 and
+  # `aes verify` reports StatusOK. Both measured 2026-09-29 during the
+  # full-catalog run. Without this the only catalog entry a full-profile run
+  # never touched: I15 skips a tool unproven on the host, and this was the
+  # one still carrying only the arm64 proof.
+  - linux/amd64
 tags:
   - git
 verify:
