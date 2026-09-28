@@ -1,11 +1,14 @@
 package installer
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ulikunitz/xz"
 )
 
 // ast-grep ships only .zip, and aadc only .tar.xz. The extractor handled
@@ -105,5 +108,121 @@ func TestExtractZipMissingWant(t *testing.T) {
 
 	if _, err := extractArchive(archivePath, filepath.Join(dir, "dest"), "sg"); err == nil {
 		t.Fatal("a zip without the wanted binary was accepted")
+	}
+}
+
+// aadc ships only .tar.xz. The extractor handled gzip-tar and zip, so aadc
+// was uninstallable by any strategy. xz is not in the Go stdlib, so this
+// needs a dependency — ulikunitz/xz, pure Go, no cgo, no transitive deps.
+
+func TestExtractTarXz(t *testing.T) {
+	t.Parallel()
+
+	// Build a real .tar.xz in memory.
+	var buf bytes.Buffer
+	xw, err := xz.NewWriter(&buf)
+	if err != nil {
+		t.Fatalf("xz writer: %v", err)
+	}
+	tw := tar.NewWriter(xw)
+	body := []byte("#!/bin/sh\n")
+	if err := tw.WriteHeader(&tar.Header{Name: "aadc", Mode: 0o755, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := xw.Close(); err != nil {
+		t.Fatalf("xz close: %v", err)
+	}
+
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "aadc.tar.xz")
+	if err := os.WriteFile(archivePath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write xz: %v", err)
+	}
+
+	dest := filepath.Join(dir, "dest")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	got, err := extractArchive(archivePath, dest, "aadc")
+	if err != nil {
+		t.Fatalf("extract tar.xz: %v", err)
+	}
+	if filepath.Base(got) != "aadc" {
+		t.Errorf("extracted %q, want the file named aadc", got)
+	}
+}
+
+// A tar.xz that slips a "../" entry past the extractor must be refused.
+func TestExtractTarXzRejectsTraversal(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	xw, err := xz.NewWriter(&buf)
+	if err != nil {
+		t.Fatalf("xz writer: %v", err)
+	}
+	tw := tar.NewWriter(xw)
+	if err := tw.WriteHeader(&tar.Header{Name: "../escape", Mode: 0o755, Size: 5, Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write([]byte("pwned")); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := xw.Close(); err != nil {
+		t.Fatalf("xz close: %v", err)
+	}
+
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "aadc.tar.xz")
+	if err := os.WriteFile(archivePath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write xz: %v", err)
+	}
+
+	if _, err := extractArchive(archivePath, filepath.Join(dir, "dest"), "aadc"); err == nil {
+		t.Fatal("a tar.xz entry escaping the destination was accepted")
+	}
+}
+
+// A tar.xz without the wanted binary must be refused, not silently accepted.
+func TestExtractTarXzMissingWant(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	xw, err := xz.NewWriter(&buf)
+	if err != nil {
+		t.Fatalf("xz writer: %v", err)
+	}
+	tw := tar.NewWriter(xw)
+	if err := tw.WriteHeader(&tar.Header{Name: "other", Mode: 0o755, Size: 1, Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write([]byte("x")); err != nil {
+		t.Fatalf("tar write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := xw.Close(); err != nil {
+		t.Fatalf("xz close: %v", err)
+	}
+
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "aadc.tar.xz")
+	if err := os.WriteFile(archivePath, buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write xz: %v", err)
+	}
+
+	if _, err := extractArchive(archivePath, filepath.Join(dir, "dest"), "aadc"); err == nil {
+		t.Fatal("a tar.xz without the wanted binary was accepted")
 	}
 }

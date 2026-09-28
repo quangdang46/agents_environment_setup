@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ulikunitz/xz"
 )
 
 // maxArchiveEntryBytes caps a single decompressed entry. A release asset that
@@ -30,9 +32,10 @@ const maxArchiveEntryBytes = 512 << 20 // 512 MiB
 // Format is detected from the content, not the filename. ast-grep ships only
 // .zip and aadc only .tar.xz; the strategy set is closed, so a tool AES cannot
 // unpack is a tool it cannot install, and renaming the asset in the manifest
-// would not change what the bytes are. archive/zip is stdlib; the xz case is
-// still refused, because a pure-Go xz decoder is a dependency AES does not
-// have, and a shell-out to `tar` is the arbitrary-shell thing I3 forbids.
+// would not change what the bytes are. archive/zip and ulikunitz/xz are both
+// pure Go with no cgo and no transitive dependencies; the xz case is still
+// refused when the dependency is absent, because a shell-out to `tar` is the
+// arbitrary-shell thing I3 forbids.
 func extractArchive(archivePath, destDir, want string) (string, error) {
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -43,7 +46,126 @@ func extractArchive(archivePath, destDir, want string) (string, error) {
 	if isZip(archivePath) {
 		return extractZip(archivePath, destDir, want)
 	}
+	if isXz(archivePath) {
+		return extractTarXz(f, destDir, want)
+	}
 	return extractTarGz(f, destDir, want)
+}
+
+// isXz reports whether the file is an xz container.
+//
+// The magic bytes are the whole check: FD 37 7A 58 5A 00. A filename can be
+// wrong; the bytes cannot.
+func isXz(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var magic [6]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == 0xFD && magic[1] == '7' && magic[2] == 'z' &&
+		magic[3] == 'X' && magic[4] == 'Z' && magic[5] == 0x00
+}
+
+// extractTarXz unpacks an xz-compressed tar, refusing any entry that would
+// escape destDir.
+func extractTarXz(f *os.File, destDir, want string) (string, error) {
+	return extractTar(func() (io.Reader, error) {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("rewind archive: %w", err)
+		}
+		xr, err := xz.NewReader(f)
+		if err != nil {
+			return nil, fmt.Errorf("open xz: %w", err)
+		}
+		return xr, nil
+	}, destDir, want)
+}
+
+// extractTarGz unpacks a gzipped tar.
+func extractTarGz(f *os.File, destDir, want string) (string, error) {
+	return extractTar(func() (io.Reader, error) {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("rewind archive: %w", err)
+		}
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return nil, fmt.Errorf("open gzip: %w", err)
+		}
+		return gz, nil
+	}, destDir, want)
+}
+
+// extractTar unpacks a tar stream, refusing any entry that would escape
+// destDir.
+//
+// open yields a fresh decompressed stream for the second pass. The safety
+// pass above consumed the first one, and tar readers are strictly
+// forward-only, so the archive has to be read twice rather than buffered
+// whole. Two passes over a few hundred KB is cheaper than the memory.
+func extractTar(open func() (io.Reader, error), destDir, want string) (string, error) {
+	first, err := open()
+	if err != nil {
+		return "", err
+	}
+	if err := checkArchiveEntries(tar.NewReader(first)); err != nil {
+		return "", err
+	}
+
+	stream, err := open()
+	if err != nil {
+		return "", err
+	}
+	found := ""
+	tr := tar.NewReader(stream)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("read archive: %w", err)
+		}
+		// Already validated above; re-checked so this function is safe to
+		// call on its own.
+		if err := validateArchiveEntry(hdr.Name); err != nil {
+			return "", err
+		}
+		if hdr.Typeflag != tar.TypeReg || filepath.Base(hdr.Name) != want {
+			continue
+		}
+		target := filepath.Join(destDir, filepath.Clean(hdr.Name))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return "", fmt.Errorf("create %s: %w", filepath.Dir(target), err)
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+		if err != nil {
+			return "", fmt.Errorf("create %s: %w", target, err)
+		}
+		// LimitReader keeps a lying header from filling the disk. The
+		// extra byte turns an exactly-at-limit entry into a clean error
+		// rather than a silent truncation.
+		_, copyErr := io.Copy(out, io.LimitReader(tr, maxArchiveEntryBytes+1))
+		closeErr := out.Close()
+		if copyErr != nil {
+			return "", fmt.Errorf("extract %s: %w", hdr.Name, copyErr)
+		}
+		if closeErr != nil {
+			return "", fmt.Errorf("close %s: %w", target, closeErr)
+		}
+		if info, err := os.Stat(target); err == nil && info.Size() > maxArchiveEntryBytes {
+			return "", fmt.Errorf("archive entry %s exceeds %d bytes", hdr.Name, maxArchiveEntryBytes)
+		}
+		found = target
+	}
+
+	if found == "" {
+		return "", fmt.Errorf("%w: %q", ErrBinaryMissing, want)
+	}
+	return found, nil
 }
 
 // isZip reports whether the file is a zip container.
@@ -127,81 +249,6 @@ func extractZip(archivePath, destDir, want string) (string, error) {
 }
 
 // extractTarGz unpacks a gzipped tar.
-func extractTarGz(f *os.File, destDir, want string) (string, error) {
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return "", fmt.Errorf("open gzip: %w", err)
-	}
-	defer gz.Close()
-
-	if err := checkArchiveEntries(tar.NewReader(gz)); err != nil {
-		return "", err
-	}
-
-	// Re-open: the safety pass consumed the stream, and tar readers are
-	// strictly forward-only. Two passes over a few hundred KB is cheaper
-	// than buffering the whole thing to memory.
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return "", fmt.Errorf("rewind archive: %w", err)
-	}
-	gz, err = gzip.NewReader(f)
-	if err != nil {
-		return "", fmt.Errorf("open gzip: %w", err)
-	}
-	defer gz.Close()
-
-	found := ""
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", fmt.Errorf("read archive: %w", err)
-		}
-		// Already validated above; re-checked so this function is safe to
-		// call on its own.
-		if err := validateArchiveEntry(hdr.Name); err != nil {
-			return "", err
-		}
-		if hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-		if filepath.Base(hdr.Name) != want {
-			continue
-		}
-
-		target := filepath.Join(destDir, filepath.Clean(hdr.Name))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return "", fmt.Errorf("create %s: %w", filepath.Dir(target), err)
-		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
-		if err != nil {
-			return "", fmt.Errorf("create %s: %w", target, err)
-		}
-		// LimitReader keeps a lying header from filling the disk. The
-		// extra byte turns an exactly-at-limit entry into a clean error
-		// rather than a silent truncation.
-		_, copyErr := io.Copy(out, io.LimitReader(tr, maxArchiveEntryBytes+1))
-		closeErr := out.Close()
-		if copyErr != nil {
-			return "", fmt.Errorf("extract %s: %w", hdr.Name, copyErr)
-		}
-		if closeErr != nil {
-			return "", fmt.Errorf("close %s: %w", target, closeErr)
-		}
-		if info, err := os.Stat(target); err == nil && info.Size() > maxArchiveEntryBytes {
-			return "", fmt.Errorf("archive entry %s exceeds %d bytes", hdr.Name, maxArchiveEntryBytes)
-		}
-		found = target
-	}
-
-	if found == "" {
-		return "", fmt.Errorf("%w: %q", ErrBinaryMissing, want)
-	}
-	return found, nil
-}
 
 // checkArchiveEntries walks the whole archive and rejects it if any entry is
 // unsafe. Doing this as a separate pass means a hostile archive is refused

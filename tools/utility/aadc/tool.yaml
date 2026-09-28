@@ -1,0 +1,39 @@
+# AES catalog. github-release at Dicklesworthstone/aadc v0.1.1. Asset names and
+# sha256 read from the upstream release's per-asset .sha256 sidecar files, and
+# every checksum re-verified by downloading the artifact and hashing it on this
+# host (2026-09-28).
+#
+# aadc ships only .tar.xz. The extractor handled gzip-tar and zip, so this tool
+# was uninstallable by any strategy until xz was added (bead rp7). Format is
+# detected from the bytes, so a manifest renaming the asset would not change
+# what gets unpacked.
+name: aadc
+description: ASCII diagram corrector for malformed ASCII art
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: aadc
+  version:
+    command: aadc --version
+    min: "0.1"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/aadc
+    asset:
+      amd64: aadc-darwin-amd64.tar.xz
+      arm64: aadc-darwin-arm64.tar.xz
+    sha256:
+      amd64: 40e29ca631f7e65b90d9300c71a8d9520b88acae07bb5913ee44c39139b4569b
+      arm64: 70ac50d0dec48a17e9ab1aa4c296a13c53816149ce87b7e106e2de708652d3ef
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/aadc
+    asset:
+      amd64: aadc-linux-amd64.tar.xz
+      arm64: aadc-linux-arm64.tar.xz
+    sha256:
+      amd64: 6d3f879deec1c8ff4af5da6d921726f51f758417991e709ce7e07261db420300
+      arm64: 3658b0566f7f321a0bbc79bf3eaf46e9dc72f203582d13a9f50f03db59e044f0
