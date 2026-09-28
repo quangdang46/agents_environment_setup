@@ -407,7 +407,12 @@ func TestShippedProfilesLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadDir(profiles): %v", err)
 	}
-	for _, want := range []string{"minimal", "developer", "ai", "full", "default"} {
+	// `full` is deliberately absent from this list: it selects every tool
+	// by category, so it necessarily picks up untested tools, and
+	// require_tested would refuse them all. The profile was unrunnable on
+	// every machine until the gate came off (2026-09-28), and the regression
+	// test for that lives in TestFullProfileResolvesToSomething.
+	for _, want := range []string{"minimal", "developer", "ai", "default"} {
 		p, err := set.Get(want)
 		if err != nil {
 			t.Errorf("Get(%q): %v", want, err)
