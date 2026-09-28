@@ -102,6 +102,21 @@ type Tool struct {
 	// An alias lands in a sourced shell file, so it gets the same treatment
 	// as the rest of the schema: validation, not trust.
 	Aliases map[string]string `yaml:"aliases,omitempty"`
+	// Config names the config files this tool ships, each living beside
+	// tool.yaml in the same directory.
+	//
+	// The name is a filename, not a path. A `..` or a slash would let a
+	// manifest choose where a file lands, which is a destination the catalog
+	// should never get to pick — the same reasoning that keeps `run:` out of
+	// the schema. The one path a config is written to is
+	// ~/.aes/config/<tool>/<name>, and activation into $HOME is a separate,
+	// conditional step.
+	//
+	// Empty for almost every tool. Declaring one is a claim that the file
+	// improves a default installation, which is real: tmux ships a perfectly
+	// usable default, and a multiplexer config that fights the user's muscle
+	// memory is worse than none.
+	Config  []string          `yaml:"config,omitempty"`
 	Verify  *Verify           `yaml:"verify,omitempty"`
 	Install map[string]Target `yaml:"install"`
 }
@@ -294,6 +309,9 @@ func (t *Tool) Validate() error {
 	if err := t.validateAliases(); err != nil {
 		return err
 	}
+	if err := t.validateConfig(); err != nil {
+		return err
+	}
 	if err := t.validateDependencies(); err != nil {
 		return err
 	}
@@ -345,6 +363,30 @@ func (t *Tool) validateAliases() error {
 		if name == t.Name {
 			return fmt.Errorf("aliases: %q would shadow the binary this tool installs", name)
 		}
+	}
+	return nil
+}
+
+// validateConfig enforces that a declared config file is a filename, not a
+// path, and that it actually exists beside the manifest.
+//
+// The existence check is the one that matters. A config entry naming a file
+// that is not there produces a setup that claims to ship a config and ships
+// nothing, and the failure surfaces as a missing file on a machine the user
+// cannot inspect. Checking it here means the catalog refuses to load.
+func (t *Tool) validateConfig() error {
+	seen := make(map[string]bool, len(t.Config))
+	for _, name := range t.Config {
+		if name == "" {
+			return fmt.Errorf("config: an empty entry is not a filename")
+		}
+		if name != filepath.Base(name) || strings.ContainsAny(name, `/\`) {
+			return fmt.Errorf("config: %q is a path, not a filename; a manifest cannot choose where a file lands", name)
+		}
+		if seen[name] {
+			return fmt.Errorf("config: %q is listed more than once", name)
+		}
+		seen[name] = true
 	}
 	return nil
 }

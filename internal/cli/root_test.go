@@ -88,6 +88,36 @@ func newHarness(t *testing.T, tools ...[3]string) *harness {
 	return h
 }
 
+// writeToolConfig writes a config file beside a tool's manifest AND declares
+// it there. Both halves are needed: the declaration is what makes setup look
+// for the file, so a helper that only wrote the file would test nothing —
+// and would pass for the same reason a broken implementation passes.
+func (h *setupHarness) writeToolConfig(name, category, file, body string) {
+	dir := filepath.Join(h.app.CatalogRoot, category, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		panic("writeToolConfig mkdir: " + err.Error())
+	}
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
+		panic("writeToolConfig write: " + err.Error())
+	}
+	// Add the `config:` key to the existing manifest. Inserted before the
+	// first top-level key that follows it, which keeps the result parseable
+	// without reimplementing a YAML emitter.
+	path := filepath.Join(dir, "tool.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		panic("writeToolConfig read: " + err.Error())
+	}
+	updated := strings.Replace(string(raw), "provides:",
+		"config:\n  - "+file+"\nprovides:", 1)
+	if updated == string(raw) {
+		panic("writeToolConfig: no provides: line to anchor on")
+	}
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		panic("writeToolConfig rewrite: " + err.Error())
+	}
+}
+
 func (h *harness) run(args ...string) int {
 	return h.app.Run(args)
 }
@@ -810,5 +840,127 @@ func TestSetupOnAnUnknownShellStillSucceeds(t *testing.T) {
 	}
 	if !strings.Contains(h.stderr.String(), "could not link the shell rc") {
 		t.Errorf("setup did not say why the rc was not linked:\n%s", h.stderr.String())
+	}
+}
+
+// A tool that ships a config gets it copied under AES_HOME, and activated
+// only when the well-known path is free. Both halves matter: a copy that
+// never lands is a config the user cannot find, and an activation that
+// overwrites is worse than no config at all.
+func TestSetupActivatesAToolConfigOnlyWhenThePathIsFree(t *testing.T) {
+	// Not parallel: newSetupHarness calls t.Setenv.
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+
+	// Give the tool a config file. The harness writes tool.yaml into a temp
+	// catalog, so the file has to land beside it.
+	h.writeToolConfig("demo", "utility", "demo.conf", "# demo config\n")
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Fatalf("setup exit %d\n%s", got, h.stderr.String())
+	}
+
+	// 1. The copy lands under AES_HOME, regardless.
+	shipped := filepath.Join(h.app.Home, "config", "demo", "demo.conf")
+	if _, err := os.Stat(shipped); err != nil {
+		t.Fatalf("the config was not copied to %s: %v", shipped, err)
+	}
+	body, err := os.ReadFile(shipped)
+	if err != nil {
+		t.Fatalf("read shipped config: %v", err)
+	}
+	if string(body) != "# demo config\n" {
+		t.Errorf("shipped config is %q, want the declared file's bytes", body)
+	}
+
+	// 2. Activation is a table lookup, and `demo` is not in it, so the file is
+	// NOT linked anywhere. A tool with no known activation path must not get
+	// one invented.
+	if _, err := os.Stat(filepath.Join(home, ".demo.conf")); err == nil {
+		t.Error("a tool with no configured activation path was linked anyway")
+	}
+}
+
+// The whole point of the activation step: an existing file is the user's and
+// must survive byte-identical. A test that only checks the happy path misses
+// the case that matters most, because the happy path is the one that is
+// easy to get right.
+func TestSetupNeverOverwritesAnExistingUserConfig(t *testing.T) {
+	// Not parallel: newSetupHarness calls t.Setenv.
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+	h.writeToolConfig("demo", "utility", "demo.conf", "# aes config\n")
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
+
+	// A config activation path the test controls, so the symlink WOULD be
+	// created if the guard were absent.
+	restore := configActivation["demo"]
+	configActivation["demo"] = ".demo.conf"
+	t.Cleanup(func() { delete(configActivation, "demo") })
+	if restore != "" {
+		t.Fatalf("configActivation already has a demo entry; the test's premise is wrong")
+	}
+
+	const userOwned = "# the user's own config\n"
+	target := filepath.Join(home, ".demo.conf")
+	if err := os.WriteFile(target, []byte(userOwned), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Fatalf("setup exit %d\n%s", got, h.stderr.String())
+	}
+
+	after, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(after) != userOwned {
+		t.Errorf("aes overwrote a config the user owns:\n%s", after)
+	}
+	if !strings.Contains(h.stderr.String(), "left untouched") {
+		t.Errorf("setup did not say it left the file alone:\n%s", h.stderr.String())
+	}
+}
+
+// With the path free, the config IS activated. Without this the refusal test
+// above would also pass if the symlink never happened at all.
+func TestSetupActivatesTheConfigWhenNothingIsThere(t *testing.T) {
+	// Not parallel: newSetupHarness calls t.Setenv.
+	h := newSetupHarness(t, toolSpec{name: "demo", category: "utility"})
+	h.writeToolConfig("demo", "utility", "demo.conf", "# aes config\n")
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHELL", "/bin/bash")
+
+	configActivation["demo"] = ".demo.conf"
+	t.Cleanup(func() { delete(configActivation, "demo") })
+
+	if got, _ := h.run(t, "--only", "demo"); got != ExitOK {
+		t.Fatalf("setup exit %d\n%s", got, h.stderr.String())
+	}
+
+	target := filepath.Join(home, ".demo.conf")
+	info, err := os.Lstat(target)
+	if err != nil {
+		t.Fatalf("no config was activated: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the activated config is not a symlink (mode %v); a copy would "+
+			"go stale the moment the user edits the shipped file", info.Mode())
+	}
+	want := filepath.Join(h.app.Home, "config", "demo", "demo.conf")
+	link, err := os.Readlink(target)
+	if err != nil {
+		t.Fatalf("readlink: %v", err)
+	}
+	if link != want {
+		t.Errorf("symlink points at %q, want %q", link, want)
 	}
 }

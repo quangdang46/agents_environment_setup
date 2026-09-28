@@ -529,7 +529,95 @@ func writeEnv(app *App, rc *runContext, results []toolResult) (string, error) {
 	if err := envgen.WriteAliases(aliasesPath, envTools); err != nil {
 		return "", err
 	}
+	writeToolConfigs(app, rc, results)
 	return path, nil
+}
+
+// writeToolConfigs copies each installed tool's declared config files into
+// ~/.aes/config/<tool>/, then activates the one that has an obvious activation
+// path.
+//
+// Two properties are the whole design:
+//
+//   - The copy always lands under AES_HOME. Activation is separate and
+//     conditional: ~/.tmux.conf is symlinked ONLY when it does not already
+//     exist. ACFS does exactly this, and it is the difference between a
+//     config that helps and one that overwrites work a user did.
+//   - A tool with no config declares none, which is nearly all of them.
+//
+// Failures are reported and skipped, never fatal: the tools are installed,
+// and refusing to finish over a config file leaves the user worse off.
+func writeToolConfigs(app *App, rc *runContext, results []toolResult) {
+	configDir := filepath.Join(app.Home, "config")
+	for _, r := range results {
+		if r.Status != outcomeInstalled && r.Status != outcomePresent {
+			continue
+		}
+		tool, ok := rc.Catalog.ByName(r.Name)
+		if !ok || len(tool.Config) == 0 {
+			continue
+		}
+		// The source is beside tool.yaml: <category>/<name>/<file>.
+		srcDir := filepath.Join(app.CatalogRoot, tool.Category, tool.Name)
+		dstDir := filepath.Join(configDir, tool.Name)
+		for _, name := range tool.Config {
+			src := filepath.Join(srcDir, name)
+			data, err := os.ReadFile(src)
+			if err != nil {
+				fmt.Fprintf(app.Err, "aes: warning: %s declares config %q but %s is unreadable: %v\n",
+					tool.Name, name, src, err)
+				continue
+			}
+			if err := os.MkdirAll(dstDir, 0o755); err != nil {
+				fmt.Fprintf(app.Err, "aes: warning: could not create %s: %v\n", dstDir, err)
+				continue
+			}
+			dst := filepath.Join(dstDir, name)
+			// Not atomic: this is a static asset copied from the same binary
+			// that declared it, and a partial write is fixed by the next run.
+			if err := os.WriteFile(dst, data, 0o644); err != nil {
+				fmt.Fprintf(app.Err, "aes: warning: could not write %s: %v\n", dst, err)
+				continue
+			}
+			activateConfig(app, tool.Name, name, dst)
+		}
+	}
+}
+
+// activateConfig points a tool's config at its well-known path, but ONLY when
+// nothing is there.
+//
+// The `-e` test is deliberate: an existing file OR an existing symlink both
+// count as "the user has an opinion", and `-e` catches the broken-symlink
+// case that `-f` would silently overwrite. This is the rule that makes it
+// safe for aes to ship a config at all.
+func activateConfig(app *App, tool, name, src string) {
+	target, ok := configActivation[tool]
+	if !ok {
+		// No known path: the copy is the deliverable, and the user links it
+		// themselves. Saying so is better than a config that quietly does
+		// nothing.
+		fmt.Fprintf(app.Err, "aes: wrote %s (link it yourself to use it)\n", src)
+		return
+	}
+	dst := filepath.Join(os.Getenv("HOME"), target)
+	if _, err := os.Lstat(dst); err == nil {
+		fmt.Fprintf(app.Err, "aes: %s already exists; left untouched (aes ships %s)\n", dst, src)
+		return
+	}
+	if err := os.Symlink(src, dst); err != nil {
+		fmt.Fprintf(app.Err, "aes: warning: could not link %s: %v\n", dst, err)
+		return
+	}
+	fmt.Fprintf(app.Err, "aes: %s now symlinked to %s\n", dst, src)
+}
+
+// configActivation is the ONE place a tool's config gets a well-known path.
+// A map rather than logic: a tool that needs activation logic to install a
+// config is a tool whose config is doing more than a config file should, and
+// it belongs in the catalog review rather than in a switch statement here.
+var configActivation = map[string]string{
+	"tmux": ".tmux.conf",
 }
 
 func summarise(results []toolResult) summaryOutput {

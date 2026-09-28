@@ -47,7 +47,7 @@ is the primary strategy: independent of any package manager, explicit checksum, 
 | 2 | Catalog | 40–50 definitions, **10–15 integration-tested** |
 | 3 | `env` | Minimal in MVP |
 | 4 | `needs_sudo` | **Removed from `tool.yaml`** → property of the strategy |
-| 5 | Shell | No modification by default; `--link-shell` is opt-in, with backup |
+| 5 | Shell | **Changed 2026-09-28**: `aes setup` links the rc. Always backed up, always a delimited block, never inlined content. The old opt-in only meant the run ended one step short of a working environment |
 | 6 | Directory | **`~/.aes/`** — never touches `~/.agents/` |
 | 7 | Platforms | macOS (arm64/x64) + Ubuntu (amd64/arm64) |
 | 8 | Testing | unit · dry-run · **real sandbox** |
