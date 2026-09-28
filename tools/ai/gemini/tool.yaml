@@ -7,6 +7,11 @@ tags:
   - ai
 dependencies:
   - node
+  # npm is its own tool, not something node provides: `apt install nodejs`
+  # installs node and NOT npm. Without this the install fails with
+  # "strategy npm requires npm on PATH" — measured on a fresh container
+  # during the full-catalog run.
+  - npm
 verify:
   command: gemini
   version:

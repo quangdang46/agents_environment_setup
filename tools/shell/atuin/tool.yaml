@@ -15,7 +15,10 @@ install:
     strategy: github-release
     repository: atuinsh/atuin
     asset:
-      amd64: atuin-server-x86_64-apple-darwin.tar.gz
+      # `atuin-`, not `atuin-server-`. The server is a different binary with a
+      # different name; pointing at it installs a daemon and then fails to find
+      # the client. Measured by downloading the release and listing the archive.
+      amd64: atuin-x86_64-apple-darwin.tar.gz
       arm64: atuin-aarch64-apple-darwin.tar.gz
     sha256:
       amd64: 06e7f211880cec688b4642719b2d901a870666f592b8d0b9580f4b3969b5cf8e

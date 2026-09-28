@@ -13,7 +13,11 @@ tags:
 verify:
   command: slb
   version:
-    command: slb --version
+    # `slb version`, not `slb --version`. The dashed spelling is rejected with
+    # "Error: unknown flag: --version" and exits 0, so the probe printed no
+    # version and the tool reported as unknown on a machine where it works.
+    # Measured by running the binary from the release archive.
+    command: slb version
     min: "0.5.0"
 install:
   darwin:

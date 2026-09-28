@@ -12,7 +12,11 @@ tags:
   - agent
   - coordination
 verify:
-  command: agent-mail
+  # `am`, not `agent-mail`. The archive ships both `am` and `mcp-agent-mail`,
+  # and the binary the user types is `am` — measured by downloading the
+  # release and listing its contents. Verifying a name that is not in the
+  # archive reports a working install as missing.
+  command: am
   version:
     command: am --version
     min: "0.3.0"

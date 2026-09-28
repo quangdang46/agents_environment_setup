@@ -1,22 +1,57 @@
-# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (verified via crates.io /owners). A crate's repository field is self-declared, so the owners endpoint is the only real check. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+# AES catalog. github-release at
+# Dicklesworthstone/destructive_command_guard v0.14.4; asset names and sha256
+# read from the upstream release's per-asset .sha256 sidecar files, and every
+# checksum re-verified by downloading the artifact and hashing it on this host
+# (2026-09-28).
+#
+# This was `strategy: cargo` with `cargo_name: destructive_command_guard@0.14.4`,
+# and it failed with exit 101: "cannot install package `destructive_command_guard
+# 0.14.4`, it requires rustc 1.89 or newer, while the currently active rustc
+# version is 1.75.0". Every non-yanked version of the crate has an MSRV of at
+# least 1.88 — measured against the crates.io sparse index, not guessed — so no
+# pin can fix it. The release ships prebuilt binaries, which is the route that
+# does not care what rustc the machine has.
 name: dcg
 description: destructive command guard
 category: agent
-tested: false
+# Both layers passed on the platform named below.
+tested: true
+tested_on:
+  - linux/arm64
+  # Layer 1: a real machine carrying dcg. Layer 2: a fresh ubuntu:24.04
+  # container; `aes setup --only dcg` installed the release binary and
+  # `aes verify` reported StatusOK with a parsed version. Both measured
+  # 2026-09-28.
+  - linux/amd64
 tags:
   - agent
   - safety
-dependencies:
-  - rust
 verify:
   command: dcg
   version:
     command: dcg --version
-    min: "0.1.0"
+    # 0.5.0, not the 0.14.4 the release ships. The floor records the
+    # minimum a working install needs, not the newest version upstream has —
+    # setting it to 0.10.0 would make every machine on an older dcg report
+    # stale forever, which is the node-20 failure in a different costume.
+    min: "0.5.0"
 install:
   darwin:
-    strategy: cargo
-    cargo_name: destructive_command_guard@0.14.4
+    strategy: github-release
+    repository: Dicklesworthstone/destructive_command_guard
+    asset:
+      amd64: dcg-x86_64-apple-darwin.tar.xz
+      arm64: dcg-aarch64-apple-darwin.tar.xz
+    sha256:
+      amd64: d9b4e2e565f1e1853039b7c956fa4ce7576c7bb641382fe41ec44a0deabb5f07
+      arm64: b704fe0190bfeec51bc264a573fa3d620590286b2b2b63b2ca2293aa24aad013
   linux:
-    strategy: cargo
-    cargo_name: destructive_command_guard@0.14.4
+    strategy: github-release
+    repository: Dicklesworthstone/destructive_command_guard
+    asset:
+      # musl for x86_64, gnu for aarch64 — the names differ per arch.
+      amd64: dcg-x86_64-unknown-linux-musl.tar.xz
+      arm64: dcg-aarch64-unknown-linux-gnu.tar.xz
+    sha256:
+      amd64: 09daf765e21457a756e69cc9f8bce41635836c6b958f5b27c7a6a6a376cbde21
+      arm64: 0cb6a4e851bb1626807e1c5fbfd6d565275383a0e704cf7c257da7b53ec81c8f

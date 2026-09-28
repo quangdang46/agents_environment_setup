@@ -14,7 +14,11 @@ tags:
 verify:
   command: fsfs
   version:
-    command: fsfs --version
+    # `fsfs version`, not `fsfs --version`. The dashed spelling prints a JSON
+    # error object — {"ok":false,"error":{"code":"invalid_config", ...}} — and
+    # exits 0, so a probe that cannot read a version looks exactly like one
+    # that succeeded. Measured by running the binary from the release archive.
+    command: fsfs version
     min: "1.10.0"
 install:
   darwin:

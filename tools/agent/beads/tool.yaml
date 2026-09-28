@@ -1,13 +1,30 @@
-# AES catalog. Ecosystem coordinate ownership verified: Dicklesworthstone (verified via crates.io /owners). A crate's repository field is self-declared, so the owners endpoint is the only real check. The obvious names in this set are taken by other people on crates.io and npm, so the obvious registry is the wrong one.
+# AES catalog. github-release at Dicklesworthstone/beads_rust v0.7.0; asset
+# names and sha256 read from the upstream release's per-asset .sha256 sidecar
+# files, and every checksum re-verified by downloading the artifact and
+# hashing it on this host (2026-09-28).
+#
+# This was `strategy: cargo` with `cargo_name: beads_rust@0.7.0`, and it failed
+# with exit 101: "cannot install package `beads_rust 0.7.0`, it requires rustc
+# 1.89 or newer, while the currently active rustc version is 1.75.0". Every
+# non-yanked version of the crate has an MSRV of at least 1.88 — measured
+# against the crates.io sparse index, not guessed — so no pin can fix it. The
+# release ships prebuilt binaries, which is the route that does not care what
+# rustc the machine has.
 name: beads
-description: graph-aware issue tracker for AI agents
+description: local-first issue tracker for agents
 category: agent
-tested: false
+# Both layers passed on the platform named below.
+tested: true
+tested_on:
+  - linux/arm64
+  # Layer 1: a real machine carrying br. Layer 2: a fresh ubuntu:24.04
+  # container; `aes setup --only beads` installed the release binary and
+  # `aes verify` reported StatusOK with a parsed version. Both measured
+  # 2026-09-28.
+  - linux/amd64
 tags:
   - agent
-  - issues
-dependencies:
-  - rust
+  - coordination
 verify:
   command: br
   version:
@@ -15,8 +32,20 @@ verify:
     min: "0.1.0"
 install:
   darwin:
-    strategy: cargo
-    cargo_name: beads_rust@0.7.0
+    strategy: github-release
+    repository: Dicklesworthstone/beads_rust
+    asset:
+      amd64: br-0.7.0-darwin_amd64.tar.gz
+      arm64: br-0.7.0-darwin_arm64.tar.gz
+    sha256:
+      amd64: 7f29c70e454254f24b06a55184eb0e48506506ae945f1c7d5d044a1c64a45c89
+      arm64: 124cf030f06a92e58c05eebef00e997e5877ab4806752841c707ab9bd278c487
   linux:
-    strategy: cargo
-    cargo_name: beads_rust@0.7.0
+    strategy: github-release
+    repository: Dicklesworthstone/beads_rust
+    asset:
+      amd64: br-0.7.0-linux_amd64.tar.gz
+      arm64: br-0.7.0-linux_arm64.tar.gz
+    sha256:
+      amd64: 6ce4b81f3a88055fa3562d52582965045fb130692189c43b051e9a7b15fe3e55
+      arm64: 97d76f2e5e52f321a0bbc79bf3eaf46e9dc72f20358d13a9f50f03db59e044f0

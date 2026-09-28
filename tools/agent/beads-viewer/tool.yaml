@@ -12,7 +12,9 @@ tags:
   - agent
   - issues
 verify:
-  command: beads-viewer
+  # `bv`, not `beads-viewer`. The archive ships a binary called bv; verifying a
+  # name that is not in the archive reports a working install as missing.
+  command: bv
   version:
     command: bv --version
     min: "0.16.0"

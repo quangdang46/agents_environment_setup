@@ -1,9 +1,23 @@
-# AES catalog. github-release for darwin, linux at Dicklesworthstone/storage_ballast_helper release v0.6.12;
-# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+# AES catalog. github-release for darwin, linux at
+# Dicklesworthstone/storage_ballast_helper release v0.6.14; asset names and
+# sha256 read from the upstream release by scripts/release_probe.py.
 #
 # This was `package`/apt until an audit found the package name does not exist in
 # Debian. The first check that said it did was reading an HTTP 200 from a page
 # whose body said 'No such package' - a check that could not fail.
+#
+# Two deliberate pin rules:
+#
+# 1. The linux asset is `sbh-x86_64-...` with NO version in the name, while
+#    darwin is `sbh-aarch64-apple-darwin.tar.xz`. The versioned name fails with
+#    404 on every run because `releases/latest` always moves to the newest tag.
+#    A checksum in a manifest that names an asset which does not exist is a
+#    better failure than a stale one, but only if the wrong name is caught.
+# 2. The sha256 is pinned to v0.6.14 (not v0.6.12). The old pin failed because
+#    `releases/latest` had moved on, so the bytes no longer matched. A
+#    checksum protects integrity, not staleness: it proves the bytes are what
+#    someone recorded once, and says nothing about whether they are current.
+#    Every hash here was re-fetched from the tagged release and re-verified.
 name: sbh
 description: disk-pressure defence for agent workloads
 category: agent
@@ -21,17 +35,18 @@ install:
     strategy: github-release
     repository: Dicklesworthstone/storage_ballast_helper
     asset:
-      amd64: sbh-v0.6.12-x86_64-apple-darwin.tar.xz
+      amd64: sbh-x86_64-apple-darwin.tar.xz
       arm64: sbh-aarch64-apple-darwin.tar.xz
     sha256:
-      amd64: c0a68599f8352277ddd3fd06b2b5a93fbae2dc9fb467e460257b64aed15e2fd0
-      arm64: ec300d49e37426010f13838fff16da36da073cc4ad3cb419ea31b83b1ef77fb5
+      amd64: e6006dc12b2bbe65ef660ae1d1ba44cf6e0d3793ea16cb16d0027e9aaa46be01
+      arm64: 0f37bbf3a8837816e1e9e08df2828bc12963b554ee0e911f7328f38de10ee7f2
   linux:
     strategy: github-release
     repository: Dicklesworthstone/storage_ballast_helper
     asset:
-      amd64: sbh-v0.6.12-x86_64-unknown-linux-gnu.tar.xz
+      # Unversioned name — see note 2 above.
+      amd64: sbh-x86_64-unknown-linux-gnu.tar.xz
       arm64: sbh-aarch64-unknown-linux-gnu.tar.xz
     sha256:
-      amd64: 5ea4f724711a029c5c65d158fbf8e0b9c028b14780ed2617f27f90b8e2df2ab9
-      arm64: fbc18eda22bb5451a8f26995ba8ebe8808f1298021fd2258f0c461e6b2407083
+      amd64: df446dbd2cde939d9caae552dc49aa5fc3c996d953fdc767ee3bf622b49b064f
+      arm64: 7392776a454f47925ec5f1e491a8da11d3ecd7d166f9a7f2bb92c3ca5499fca1
