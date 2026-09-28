@@ -98,6 +98,29 @@ type Result struct {
 // an empty string rather than a guess.
 var versionRe = regexp.MustCompile(`\d+(?:\.\d+)*(?:[a-z]+)?`)
 
+// gitHashRe matches a git commit hash as it appears in a version string:
+// `commit=<40 hex>`, or a short form `commit=<7+ hex>`. It is used to reject
+// the token before versionRe sees it, because versionRe would otherwise take
+// the hash's leading digits as a version.
+//
+// The `commit=` prefix is required. A bare 40-hex string is not necessarily a
+// hash — it could be a build identifier that happens to be all hex — and the
+// cost of rejecting a real version is far higher than the cost of a hash
+// slipping through, which is only a wrong version on a tool that also prints
+// its real one.
+var gitHashRe = regexp.MustCompile(`(?i)\bcommit=[0-9a-f]{7,40}\b`)
+
+// namedVersionRe matches a version that a tool has explicitly labelled, such
+// as `version=0.65.1` or `version: 0.65.1`.
+//
+// It is preferred over versionRe when both are present, because a labelled
+// version is the tool's own claim about itself, while the first dotted run
+// on a line is often a date. `lazygit --version` prints
+// `commit=<hash>, build date=2026-09-13T05:42:30Z, ..., version=0.65.1, ...`:
+// after the hash is removed, versionRe takes "2026" from the build date, which
+// is a year, not a version, and the tool is reported as version 2026.
+var namedVersionRe = regexp.MustCompile(`(?i)\bversion\s*[=:]\s*(\d+(?:\.\d+)*(?:[a-z]+)?)`)
+
 // ansiRe matches the escape sequences a tool may embed in its version output.
 //
 // This is not cosmetic. `btop --version` prints:
@@ -132,11 +155,49 @@ var dottedRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)*(?:[a-z]+)?`)
 //
 // The fallback requires at least two numeric components, so a bare copyright
 // year on line 2 is rejected while a real version is not.
+//
+// # A commit hash is not a version
+//
+// `lazygit --version` prints one line:
+//
+//	commit=17cb09fa7b08bc96d9f0e81b91f4720fc1a36700, build date=..., version=0.65.1, ...
+//
+// Line 1 has digits, so the old rule took the first one: `17cb`, a git short
+// hash. It compared as a version and passed — by luck. A hash beginning with
+// a zero (`0abc...`) compares *below* any floor, so the same tool on the same
+// machine would be reported stale and reinstalled on every run. That is the
+// failure mode this repo has been bitten by before: a check that passes for
+// the wrong reason.
+//
+// So a token that is a hex hash is rejected before the first match is taken.
+// The rule is deliberately narrow — it must look like a git hash, not merely
+// contain digits — because a real version can be short and a real tool can
+// print one. `versionRe` is then applied to the remainder, which is where
+// `version=0.65.1` lives.
 func ExtractVersion(output string) string {
 	lines := strings.Split(ansiRe.ReplaceAllString(output, ""), "\n")
 	// Line 1 is the source, and the lenient rule applies to it: a bare "3" is a
 	// legitimate version and we do not want to lose it.
-	if v := versionRe.FindString(strings.TrimSpace(lines[0])); v != "" {
+	//
+	// A `commit=<hash>` token is removed first. Without this, lazygit's single
+	// line yields "17cb" — a git short hash — and the tool is reported as
+	// version 17cb. It passes a floor of 0.40 by luck; a hash starting with a
+	// zero fails the same floor and the tool is reinstalled on every run.
+	first := strings.TrimSpace(lines[0])
+	// A labelled `version=` wins over any other number on the line, and a
+	// `commit=` hash is discarded rather than parsed. Both rules are needed:
+	// dropping the hash alone still leaves `build date=2026-...` to be read as
+	// the version.
+	if m := namedVersionRe.FindStringSubmatch(first); m != nil {
+		return m[1]
+	}
+	if hash := gitHashRe.FindString(first); hash != "" {
+		if v := versionRe.FindString(strings.Replace(first, hash, " ", 1)); v != "" {
+			return v
+		}
+		// The hash was the only digit-bearing token on line 1, so line 1 has
+		// nothing left to offer and the fallback below applies.
+	} else if v := versionRe.FindString(first); v != "" {
 		return v
 	}
 	// Only when line 1 has no digits at all do we look further. This is what

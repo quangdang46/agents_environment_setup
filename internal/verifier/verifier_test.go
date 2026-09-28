@@ -33,6 +33,34 @@ func TestExtractVersion(t *testing.T) {
 		{"gh with a date in parens", "gh version 2.93.0 (2026-05-27)\n", "2.93.0"},
 		{"fzf homebrew build suffix", "0.73.1 (Homebrew)\n", "0.73.1"},
 
+		// Captured verbatim from `lazygit --version` on 2026-09-28. A commit
+		// hash is not a version: the old rule took `17cb` from the hash and
+		// compared it as one. It passed a 0.40 floor by luck; a hash starting
+		// with a zero fails the same floor, so the same tool would be
+		// reported stale and reinstalled on every run.
+		{"lazygit with commit hash", "commit=17cb09fa7b08bc96d9f0e81b91f4720fc1a36700, build date=2026-09-13T05:42:30Z, build source=binaryRelease, version=0.65.1, os=linux, arch=amd64, git version=2.43.0\n", "0.65.1"},
+		// The same shape with a zero-leading hash: without the fix this is
+		// reported as version "0abc", which is below any floor and reinstalls
+		// the tool on every run.
+		{"lazygit with zero-leading commit hash", "commit=0abc09fa7b08bc96d9f0e81b91f4720fc1a36700, build date=2026-09-13T05:42:30Z, version=0.65.1\n", "0.65.1"},
+		// A named `version=` wins even when an earlier token has a version-like
+		// number. Here `build date=2026-...` must lose to `version=0.65.1`,
+		// because a year is not a version.
+		{"a build date is not the version", "tool build date=2026-01-01 version=1.2.3\n", "1.2.3"},
+
+		// A tool that prints ONLY a commit hash. Without the hash-rejection
+		// branch, versionRe takes "17cb" — a git short hash — and the tool is
+		// reported as version 17cb. A zero-leading hash ("0abc") is worse: it
+		// compares below any floor, so the tool is reported stale and
+		// reinstalled on every run. The correct answer is no version at all.
+		{"a commit hash alone is not a version", "commit=17cb09fa7b08bc96d9f0e81b91f4720fc1a36700\n", ""},
+		{"a zero-leading commit hash alone is not a version", "commit=0abc09fa7b08bc96d9f0e81b91f4720fc1a36700\n", ""},
+		// The hash is removed and the remainder is searched, so what follows
+		// it is what gets read. "2026" is the year, not the hash — which is
+		// the documented leniency applied: a bare number on line 1 is a version
+		// (the same rule that keeps `tmux 3` reading as 3).
+		{"a hash followed by a date reads the date", "commit=17cb09fa7b08bc96d9f0e81b91f4720fc1a36700, built 2026-01-01\n", "2026"},
+
 		// Captured verbatim from binaries on a developer machine while writing
 		// the agent/ catalog. ntm has no --version at all - it prints this from
 		// `ntm version` - so a manifest written by pattern-matching its peers

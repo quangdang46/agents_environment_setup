@@ -1,0 +1,35 @@
+# AES catalog. github-release at jesseduffield/lazydocker v0.25.2; asset names
+# and sha256 read from the upstream release's checksums.txt, and every checksum
+# re-verified by downloading the artifact and hashing it on this host
+# (2026-09-28). A checksum copied from another project's manifest is a
+# checksum nobody checked.
+name: lazydocker
+description: terminal UI for docker and docker compose
+category: infra
+tested: false
+tags:
+  - infra
+verify:
+  command: lazydocker
+  version:
+    command: lazydocker --version
+    min: "0.20"
+install:
+  darwin:
+    strategy: github-release
+    repository: jesseduffield/lazydocker
+    asset:
+      amd64: lazydocker_0.25.2_Darwin_x86_64.tar.gz
+      arm64: lazydocker_0.25.2_Darwin_arm64.tar.gz
+    sha256:
+      amd64: af70b6e234089aa24924db25fc201d17f224e76d334e743e4595d30cf83a013b
+      arm64: 4a54d7b4abdf255b2bce9806641eac5568d5b7fbc820c1b5d3f9e34ea1367d60
+  linux:
+    strategy: github-release
+    repository: jesseduffield/lazydocker
+    asset:
+      amd64: lazydocker_0.25.2_Linux_x86_64.tar.gz
+      arm64: lazydocker_0.25.2_Linux_arm64.tar.gz
+    sha256:
+      amd64: 0d9dbfc26068b218e7ed84b104748cadc6e3cf733c0afd35465306fb39b9523c
+      arm64: 005c38b685aaa557e7d646d83a3dadb5024340eeed8c6a2e1949eee6f530de23
