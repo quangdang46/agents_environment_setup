@@ -56,4 +56,4 @@ install:
       arm64: dcg-aarch64-unknown-linux-gnu.tar.xz
     sha256:
       amd64: 09daf765e21457a756e69cc9f8bce41635836c6b958f5b27c7a6a6a376cbde21
-      arm64: 0cb6a4e851bb1626807e1c5fbfd6d565275383a0e704cf7c257da7b53ec81c8f
+      arm64: 0cb6a4e851bb1626807e1c5fbfd6d565275383a7624228678f858570bf416e6f

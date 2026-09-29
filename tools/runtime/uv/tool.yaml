@@ -21,8 +21,8 @@ install:
       amd64: uv-x86_64-apple-darwin.tar.gz
       arm64: uv-aarch64-apple-darwin.tar.gz
     sha256:
-      amd64: 6590717592ace991ff83a63fef799e3ad9d33ecc8f96c5d6bdd732496e79337f
-      arm64: a9a8df1eedeb192f2e47e40e2faabfb387db4b850209118786d42f89dde3e0ba
+      amd64: ac54283d211fd77cdc152b67606dbaf6406ff4ab03f3af4ae99468fa8e887141
+      arm64: 848fdeb602ff1a1baacd4f6c8b7bdc6cf1ad026a6d9cf59475fda17c179743ca
   linux:
     strategy: github-release
     release_tag: 0.12.20
@@ -32,4 +32,4 @@ install:
       arm64: uv-aarch64-unknown-linux-gnu.tar.gz
     sha256:
       amd64: 6590717592ace991ff83a63fef799e3ad9d33ecc8f96c5d6bdd732496e79337f
-      arm64: 0804e9b164c64b6914182d5920c08551958a095986f10a3731056df701126436
+      arm64: 8a7aad7bc76a2fae5151566ff3e43eacce0b2a113d5e4de3e4afe3e58fa2441e

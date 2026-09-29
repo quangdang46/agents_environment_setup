@@ -39,8 +39,8 @@ install:
       amd64: sbh-x86_64-apple-darwin.tar.xz
       arm64: sbh-aarch64-apple-darwin.tar.xz
     sha256:
-      amd64: 496211015e7b123eb25262ac0580936c89c4dd8c2e10918b2f67f7096334a678
-      arm64: 0f37bbf3a8837816e1e9e08df2828bc12963b554ee0e911f7328f38de10ee7f2
+      amd64: 0ede25cb3e2f1488dbc2de5cc4282e87f50dd2790ed7397b7d26acbdb2aec884
+      arm64: c696fe2b646e61520e264b88e1fdea43d12c5230e4346406a4f1610fc88ecf2a
   linux:
     strategy: github-release
     release_tag: v0.6.16
@@ -51,4 +51,4 @@ install:
       arm64: sbh-aarch64-unknown-linux-gnu.tar.xz
     sha256:
       amd64: 496211015e7b123eb25262ac0580936c89c4dd8c2e10918b2f67f7096334a678
-      arm64: 7392776a454f47925ec5f1e491a8da11d3ecd7d166f9a7f2bb92c3ca5499fca1
+      arm64: bf941296387c10e27d3faade4ece978578790496387d3a30e96d2995413f1a62
