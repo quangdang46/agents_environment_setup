@@ -1,0 +1,112 @@
+# AES catalog. github-release for darwin, linux at
+# Dicklesworthstone/brenner_bot release v0.4.1; asset names and sha256 read
+# from the upstream release by hand on 2026-09-29.
+#
+# The asset is a RAW executable (ELF on linux, Mach-O on darwin), not an
+# archive — see internal/installer/archive.go for the format dispatch that
+# makes that work. Measured on the downloaded bytes: linux assets begin
+# 7f 45 4c 46, darwin assets begin cf fa ed fe, and none of the four is a
+# gzip, an xz or a zip. The installer's isExecutable branch is what installs
+# this; the extractTarGz fallback would refuse it with "open gzip: gzip:
+# invalid header", a message that says the download is corrupt when the
+# download is exactly what it said it was.
+#
+# release_tag is `v0.4.1`, not `0.4.1`, and the `v` is load-bearing: the tag
+# is interpolated verbatim into the releases/download URL (installer.assetURL),
+# so the unversioned form 404s and the tool reports as missing with no hint
+# that the manifest is what is wrong. The tag was read from
+# `gh api repos/Dicklesworthstone/brenner_bot/releases/latest` (.tag_name),
+# never parsed out of an asset filename — the asset names here carry no
+# version at all, so there was nothing to parse.
+#
+# All four platform coordinates exist upstream, so all four are declared:
+# linux/amd64, linux/arm64, darwin/amd64, darwin/arm64. Each asset was
+# downloaded from the tagged release and hashed with sha256sum, and each
+# digest was then compared against the release's own <asset>.sha256 sidecar
+# fetched from the same tag. All four matched. ACFS's checksums.yaml carries
+# no entry for brenner_bot at all — only an install.sh URL — so there was no
+# second source to disagree with, and nothing here was copied from ACFS.
+#
+# The binary inside the asset is called `brenner`, which is also the tool
+# name, so there is no `binary:` map to declare: the installer's fallback is
+# the tool name and it is right here. The upstream installer agrees — it
+# installs to "${DEST_DIR}/${TOOL_NAME}" with TOOL_NAME="brenner".
+#
+# Version probe, measured by running the extracted linux/amd64 binary:
+#
+#   $ brenner --version
+#   brenner 0.4.1
+#   git: 34a59a89846d
+#   built: 2026-08-16T23:42:25Z
+#   target: linux-x64
+#   exit 0, 0.2s, stdout only
+#
+# `brenner version` prints the same four lines and exits 0, so either works;
+# --version is the one the upstream installer's own verify step uses. The
+# `git:` line is a bare hash with no `commit=` label, so gitHashRe does not
+# strip it — it does not need to, because the real version leads line 1 and
+# versionRe takes the first dotted-integer run. Confirmed against a copy of
+# verifier.ExtractVersion: it returns "0.4.1" for this exact output.
+#
+# `brenner doctor --json --skip-ntm --skip-cass --skip-cm` also exits 0 and
+# reports "version": "0.4.1", but it is NOT the probe: it walks the machine
+# looking for ntm/cass/cm/claude and so depends on what else is installed.
+# A probe that answers about the neighbour tools is not a version probe.
+#
+# The tool name is `brenner-bot`, not `brenner_bot`. ACFS ids this tool
+# `stack.brenner_bot` (underscore, matching the GitHub repo), but the AES
+# naming contract is lowercase kebab-case — nameRe, "^[a-z0-9]+(-[a-z0-9]+)*$"
+# — and an underscore is a hard catalog-load error, not a warning. Measured:
+# with `name: brenner_bot` the whole catalog fails to load and every command
+# reports "invalid manifest: name \"brenner_bot\" must be lowercase kebab-case",
+# because one bad manifest takes the entire load down by design. So the name
+# is the repo name kebab-cased, and the directory keeps the ACFS spelling so
+# the two projects can be grepped against each other. Note the underscore is
+# only in the path; the CLI the user types is `brenner`, which is what
+# verify.command and the installed binary are called.
+#
+# tested: false. The coordinates above are measured, but Layer 1 and Layer 2
+# have not been run, and a tool may only be `tested: true` once both pass.
+name: brenner-bot
+description: research session manager with hypothesis tracking
+category: agent
+tested: false
+tags:
+  - agent
+  - research
+verify:
+  command: brenner
+  version:
+    command: brenner --version
+    # min is deliberately equal to the pinned release, not to the first 0.4.x.
+    # This was measured, not reasoned: with min "0.4.0", `aes list` reported the
+    # stale v0.4.0 already on this machine as "ok 0.4.0", so `aes setup` would
+    # leave it there forever and never deliver the v0.4.1 this manifest pins.
+    # A floor below the pinned tag makes the floor check nothing — it is the
+    # version check that never fires, which is the quietest failure shape this
+    # repo has. The pre-existing binary was confirmed to be the real upstream
+    # v0.4.0 release asset (sha256 2c5a5f01987c30933228d4b62c80e2d20ad872af60
+    # bd83604daa6b370e1f8ca3, byte-identical to the v0.4.0 sidecar), so the
+    # "ok" reading was about the tool, not about a stray file on PATH.
+    min: "0.4.1"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/brenner_bot
+    release_tag: v0.4.1
+    asset:
+      amd64: brenner-darwin-x64
+      arm64: brenner-darwin-arm64
+    sha256:
+      amd64: 6c0549d41cd9fa7a109ba8f0aa136e93a2d04de1f9225c292dd7010d053f7e4f
+      arm64: eb26b67d1354a22512dd9139d22723a3023648ff314b12674527f8a10460bec9
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/brenner_bot
+    release_tag: v0.4.1
+    asset:
+      amd64: brenner-linux-x64
+      arm64: brenner-linux-arm64
+    sha256:
+      amd64: ca831e88e7572479db587ea9464ab85fd57bcf30aa6898a4792a51cbf85a5f47
+      arm64: b97f5d92613b7e065e6dc5b2517a00c64976ac9a3829a7804dca07f4af9938a6

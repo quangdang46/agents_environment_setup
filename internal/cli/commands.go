@@ -52,8 +52,8 @@ type toolReport struct {
 // would answer about the developer's real machine while the command was
 // answering about a temp one — which is how `aes uninstall yq` in a test found
 // a real ~/.aes/bin/yq, called the removal a failure, and exited 6.
-func report(t *manifest.Tool, st *state.Store, aesHome string) toolReport {
-	res := verifier.VerifyIn(verifier.Target{AESHome: aesHome}, t)
+func report(t *manifest.Tool, st *state.Store, tgt verifier.Target) toolReport {
+	res := verifier.VerifyIn(tgt, t)
 	row := toolReport{
 		Name:     t.Name,
 		Category: t.Category,
@@ -132,7 +132,7 @@ func runList(ctx context.Context, app *App, f *Flags, extra any, args []string) 
 
 	rows := make([]toolReport, 0, len(tools))
 	for _, t := range tools {
-		rows = append(rows, report(t, st, app.Home))
+		rows = append(rows, report(t, st, rc.target()))
 	}
 
 	if f.JSON {
@@ -200,7 +200,7 @@ func runVerify(ctx context.Context, app *App, f *Flags, extra any, args []string
 	rows := make([]toolReport, 0, len(tools))
 	failure := &verifyFailure{}
 	for _, t := range tools {
-		r := report(t, st, app.Home)
+		r := report(t, st, rc.target())
 		rows = append(rows, r)
 		switch verifier.Status(r.Status) {
 		case verifier.StatusMissing:
@@ -307,7 +307,7 @@ func runDoctor(ctx context.Context, app *App, f *Flags, extra any, args []string
 		if !rc.Host.Supports(t) {
 			continue
 		}
-		r := report(t, st, app.Home)
+		r := report(t, st, rc.target())
 		switch {
 		case r.Installed && verifier.Status(r.Status) == verifier.StatusMissing:
 			// The signature of drift: state remembers a tool whose binary

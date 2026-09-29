@@ -1,0 +1,249 @@
+# AES catalog. github-release for darwin, linux at
+# Dicklesworthstone/repo_updater release v1.4.0.
+#
+# WHAT `ru` IS. ACFS ids this tool `ru` and installs it by curl|bash of
+# https://raw.githubusercontent.com/Dicklesworthstone/repo_updater/main/install.sh
+# (ACFS checksums.yaml carries exactly that URL for `ru`). That is the shape AES
+# does NOT take, and the reason it does not take it is not squeamishness: the
+# upstream installer's whole job is to resolve a version, download, verify and
+# cp, and every one of those is a thing the github-release strategy already
+# does with a pinned tag and a checked digest. Fetching install.sh to learn
+# that would hand a mutable script on `main` authority to choose the bytes,
+# and the checksum ACFS records (4af6f6fc...) is the checksum OF THAT SCRIPT,
+# not of the artifact AES installs. The two digests are unrelated by
+# construction; nothing below is copied from ACFS.
+#
+# THE ASSET IS A SINGLE PLATFORM-INDEPENDENT FILE. `ru` is a bash CLI, not a
+# compiled program: the release asset is 820,350 bytes and `file` reports
+# "Bourne-Again shell script, Unicode text, UTF-8 text executable". The v1.4.0
+# release carries exactly five assets — checksums.txt, install.sh,
+# install.sh.sha256, ru, ru.sha256 — and NONE of them carries a platform or
+# arch suffix. There is no `ru-linux-x64` and no `ru-macos-arm64`; there is one
+# file called `ru`.
+#
+# That is why all four coordinates below carry the same asset name and the same
+# digest. It is not a placeholder and not a copy-paste: it is the honest
+# description of a coordinate system with only one point. Upstream is source,
+# so "the darwin/arm64 build" and "the linux/amd64 build" are the same bytes on
+# every machine. (Same shape as giil in this catalog, which is the precedent.)
+#
+# Measured 2026-09-29 by downloading the asset from the tagged release and
+# hashing it locally with sha256sum, twice:
+#
+#   $ curl -sSL -o ru https://github.com/Dicklesworthstone/repo_updater/releases/download/v1.4.0/ru
+#   $ sha256sum ru
+#   774931b25ee1b7b5a7d4776db34608898c974ad702a6bd914ec240da8fbaa27d  ru
+#   $ sha256sum ru      # a second, independent download
+#   774931b25ee1b7b5a7d4776db34608898c974ad702a6bd914ec240da8fbaa27d  ru
+#
+# Cross-checked against upstream two further ways, both agreeing: the release's
+# bare `ru.sha256` sidecar (compared as a string) and the formatted
+# `checksums.txt` line for the same asset. The sidecar is a BARE digest with no
+# "  filename" suffix, so `sha256sum -c ru.sha256` fails with "no properly
+# formatted checksum lines found" — that is the sidecar's format, not a bad
+# download; checksums.txt is the one to verify with.
+#
+# The release tag came from the GitHub API and never from an asset filename —
+# which here would have been impossible anyway, since no asset name carries a
+# version. `gh api repos/Dicklesworthstone/repo_updater/releases/latest
+# --jq .tag_name` returns v1.4.0; it was cross-checked against
+# /releases/tags/v1.4.0 and against the releases list, where v1.4.0
+# (2026-09-29T08:06:37Z) is newer than v1.3.1 and v1.2.1, and is not a
+# prerelease.
+#
+# The `v` in v1.4.0 is load-bearing. The tag is interpolated verbatim into the
+# releases/download URL (installer.assetURL), so "1.4.0" would 404 and the tool
+# would report as missing with nothing pointing at the manifest.
+#
+# The asset is a RAW EXECUTABLE, not an archive. Measured on the downloaded
+# bytes: the first two are 23 21 ("#!") and the first line is
+# "#!/usr/bin/env bash". It is not a gzip, an xz or a zip, so
+# internal/installer/archive.go's isExecutable branch is what installs it —
+# content sniffing, not filename. Its executableMagic table carries explicit
+# `#!` entries. The extractTarGz fallback would have refused this asset with
+# "open gzip: gzip: invalid header", a message that says the download is corrupt
+# when the download is exactly what it said it was.
+#
+# No `binary:` is declared, and that is measured rather than conventional. The
+# asset is itself the program and is named `ru`, which is the tool name, so
+# both Action.installName() and Action.binaryName() fall back to the tool name
+# and are right. The upstream installer agrees independently: it copies the
+# downloaded file to "${install_dir}/${SCRIPT_NAME}" with SCRIPT_NAME="ru".
+#
+# THE PROBE CARRIES HOME INLINE, AND THAT IS LOAD-BEARING. The verifier runs a
+# version probe through `sh -c` with an environment that is PATH ONLY —
+# probeEnv returns a single element, and exec.Run's Options comment says "Env
+# replaces the environment. Nil inherits os.Environ()". So the probe inherits no
+# HOME, and `ru` is `set -uo pipefail` (line 65) with this guard at line 68,
+# before any argument dispatch:
+#
+#     : "${HOME:?ru: HOME must be set}"
+#
+# Measured, reproducing probeEnv's exact shape:
+#
+#   $ env -i PATH="$PWD:/usr/bin:/bin" sh -c 'ru --version'
+#   .../ru: line 68: HOME: ru: HOME must be set
+#   exit 1
+#
+# The binary is fine and the manifest is fine; the probe's environment is what
+# is missing. Note the failure mode is exit 1 with a message, NOT the quieter
+# "exits 0 while printing nothing" trap — but it is the same bug class, and it
+# reports as StatusUnknown rather than as a stale tool, so it would not announce
+# itself. Measured with HOME supplied inside the command string:
+#
+#   $ env -i PATH="$PWD:/usr/bin:/bin" sh -c 'HOME="${HOME:-/tmp/aes-ru-home}" ru --version'
+#   ru version 1.4.0
+#   exit 0
+#
+# Setting HOME in the SHELL does not work and that distinction is the whole
+# bug: probeEnv REPLACES the environment, so an ambient HOME is discarded
+# before `sh -c` ever runs. It has to be inside the command string, which is
+# what the `${HOME:-...}` default form does — it is inert on a machine that
+# has a HOME and supplies a harmless one on a machine (like the probe) that
+# does not. Measured to write NOTHING: pointed at a directory that did not
+# exist, the probe still exited 0, printed the version, and left the directory
+# uncreated. So it is safe to hand it a scratch path on every run, and it does
+# not initialise ~/.config/ru on the user's behalf.
+#
+# DO NOT USE `ru version` AS THE PROBE. It is not a version subcommand — it
+# falls through to the sync path. Measured: it printed "First run detected.
+# Initializing configuration...", created ~/.config/ru with a `config` file and
+# a `repos.d/public.txt`, and then treated the word as a repo spec ("Invalid
+# repo spec: version"). A probe that writes a config directory into the user's
+# home is not a probe. `--version` short-circuits before that and is the one to
+# use; the upstream script's own help text lists it as `-v, --version`. (The
+# ~/.config/ru created by this measurement was removed afterwards; it held only
+# first-run defaults.)
+#
+# The probe output was run against the real parser, not reasoned about:
+# ExtractVersion("ru version 1.4.0") returns "1.4.0" (checked with a temporary
+# test in package verifier, since removed; `go test ./internal/verifier/` is
+# green and `git status` on internal/ is clean). CompareVersions("1.4.0",
+# "1.3.1") is 1 and against "1.4.0" is 0. There is no commit= hash on the line
+# to confuse gitHashRe, and no build-date line that could outrank it.
+#
+# min IS THE PINNED TAG, NOT A LOWER FLOOR. This machine already has a `ru` at
+# ~/.local/bin/ru, dated 2026-06-01, digest 6ae3ae2d850d26c0ad82e3b5e713338f
+# 74f2bfd483691e4d09d9d75e00a79b3a, reporting "ru version 1.3.1" — a DIFFERENT
+# build from the pinned v1.4.0 asset. Measured, before the manifest existed:
+#
+#   $ aes list | grep ru
+#   ru   git   stale   1.3.1   /home/quangdang/.local/bin/ru
+#
+# It reads stale, not ok, and that is the floor doing its job. With a floor
+# below 1.4.0 the verifier would call that binary ok forever, `aes setup` would
+# report "already present", and the pinned asset would never be downloaded —
+# leaving the manifest's checksum checked against nothing. A floor below the
+# pinned tag makes the floor check nothing, which is the quietest failure shape
+# in this catalog. So the floor is 1.4.0.
+#
+# The stale binary is NOT a hazard to the install path, and that is worth
+# stating because it is the opposite of the giil/brenner-bot situation. Those
+# pre-existing tools report the SAME version number as the pinned release, so
+# they satisfy the floor and the pinned asset is never fetched. This one is
+# OLDER, so it fails the floor and the pinned asset is fetched instead. The
+# trap only closes if the stale binary is ahead of the AES bin dir on PATH —
+# probeEnv prepends the AES bin dir, so the AES install wins, and the stale one
+# is only reachable if a user's PATH puts ~/.local/bin ahead of it. Measured
+# both ways: with the AES bin dir first, `aes verify --only ru` reports
+# "ok 1.4.0 /tmp/aes-ru-e2e/home/.aes/bin/ru"; with ~/.local/bin first it
+# still reports the AES install, because the AES bin dir is prepended ahead of
+# the inherited PATH.
+#
+# A CAVEAT THIS MANIFEST CANNOT FIX, recorded honestly: `ru` requires
+# bash >= 4.0 (line 70, `(( BASH_VERSINFO[0] < 4 ))` → "ru: Bash >= 4.0 is
+# required") and its shebang is `#!/usr/bin/env bash`. Linux has had bash 4+
+# as the default for many years; macOS still ships /bin/bash 3.2, so a darwin
+# host reaches the probe's bash through PATH. The script's own error path tells
+# the user to install a newer bash, and upstream gates on it. AES has no
+# strategy for "provision a shell runtime", and inventing one would stretch a
+# strategy past what it fits, so this is left as a documented upstream
+# requirement rather than papered over. It is the reason tested: false is not
+# the only reason, but it is a real one.
+#
+# END-TO-END, run on 2026-09-29 in an isolated scratch AES_HOME with a PATH
+# that excluded the pre-existing ru on this machine. This is a real `aes setup`
+# against the real pinned release, not a unit test:
+#
+#   $ aes setup --only ru --non-interactive
+#   installed 1 · already present 0 · skipped 0 · failed 0
+#   ru    installed
+#   exit 0
+#   $ aes verify --only ru
+#   ru    ok    1.4.0    /tmp/aes-ru-e2e/home/.aes/bin/ru
+#
+# The installed binary hashed to 774931b2...fbaa27d, byte-identical to the
+# release asset, and state.json recorded version 1.4.0. A second `aes setup`
+# installed 0 and reported "already present 1" — idempotent, no reinstall storm.
+#
+# The PATH had to be narrowed for the same reason the giil header gives: this
+# machine already has a ru at ~/.local/bin/ru, and on a normal PATH the
+# verifier resolves that one first. It is older (1.3.1) so it fails the floor
+# and the pinned asset is still fetched, but the measurement is cleaner without
+# it in the way. On a machine with no ru at all, the install path above is what
+# happens.
+#
+# NOT VERIFIED off linux/amd64. This measurement machine is linux/amd64, so `ru
+# --version` was executed for that coordinate only. The other three
+# coordinates need no separate run to be trustworthy — they are the same file,
+# verified by digest above — but no ru was executed as a darwin/arm64 process,
+# and this comment exists so the next agent does not mistake "declared for 4
+# platforms" for "measured on 4 platforms".
+#
+# tested: false. The coordinates are measured and the install path was
+# exercised end-to-end, but Layer 1 and Layer 2 have not been run, and a tool
+# may only be `tested: true` once both pass.
+name: ru
+description: sync many GitHub repositories with one command
+category: git
+tested: false
+tags:
+  - git
+  - github
+  - sync
+verify:
+  command: ru
+  version:
+    # HOME is not decoration. The verifier probes with a PATH-only environment
+    # and ru's `set -u` guard at line 68 aborts without a HOME — measured, exit
+    # 1, "ru: HOME must be set". It has to be inside the command string, not
+    # in the shell: probeEnv replaces the environment. See the header.
+    # No HOME= prefix, and that is a correction rather than a convenience.
+    # This used to read `HOME="${HOME:-/tmp/aes-ru-home}" ru --version`, because
+    # ru aborts under `set -u` with no HOME. The prefix was a code-execution
+    # hole: ru's line 249 runs
+    # `source "${TOON_SH_PATH:-$HOME/.local/lib/toon.sh}"` at load, before
+    # argument dispatch, so with HOME unset the fallback fired, /tmp is 1777,
+    # and any local user could pre-create that file and have it execute on
+    # every `aes verify`, `aes list` and `aes setup`. Reproduced 2026-09-30:
+    # the planted file printed `PWNED uid=1001` and ru still printed its real
+    # version line, so nothing looked wrong.
+    #
+    # The verifier now carries HOME into the probe environment, so the tool
+    # gets the user's real HOME and the workaround is unnecessary.
+    command: ru --version
+    min: "1.4.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/repo_updater
+    release_tag: v1.4.0
+    # One asset, no platform or arch variant: ru ships as a bash script, so
+    # every coordinate is the same file. See the header before reading these
+    # four identical entries as a copy-paste error.
+    asset:
+      amd64: ru
+      arm64: ru
+    sha256:
+      amd64: 774931b25ee1b7b5a7d4776db34608898c974ad702a6bd914ec240da8fbaa27d
+      arm64: 774931b25ee1b7b5a7d4776db34608898c974ad702a6bd914ec240da8fbaa27d
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/repo_updater
+    release_tag: v1.4.0
+    asset:
+      amd64: ru
+      arm64: ru
+    sha256:
+      amd64: 774931b25ee1b7b5a7d4776db34608898c974ad702a6bd914ec240da8fbaa27d
+      arm64: 774931b25ee1b7b5a7d4776db34608898c974ad702a6bd914ec240da8fbaa27d

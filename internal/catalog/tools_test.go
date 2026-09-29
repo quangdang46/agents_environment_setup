@@ -248,6 +248,43 @@ func TestAliasMustNotShadowASystemBinary(t *testing.T) {
 	}
 }
 
+// A verify command must not name a directory any local user can write to.
+//
+// Four manifests carried `HOME="${HOME:-/tmp/aes-<tool>-home}" <tool> --version`
+// as a workaround for a tool that aborts without a HOME, and it was a
+// code-execution path, not an untidy probe. /tmp is 1777; `ru` runs
+// `source "${TOON_SH_PATH:-$HOME/.local/lib/toon.sh}"` at load, before argument
+// dispatch; so any local user could pre-create that file and have it execute on
+// every `aes verify`, `aes list` and `aes setup` — while ru still printed its
+// real version line, so nothing looked wrong. Reproduced 2026-09-30.
+//
+// The real fix is in the verifier, which now carries HOME into the probe
+// environment so no manifest needs the workaround. This test is the second
+// net: it cannot tell you why a probe works, but it will tell you the moment
+// one starts steering itself from a world-writable path again.
+func TestVerifyCommandMustNotNameAWorldWritableDir(t *testing.T) {
+	c := loadTools(t)
+	for _, tool := range c.All() {
+		if tool.Verify == nil {
+			continue
+		}
+		probes := []string{}
+		if tool.Verify.Version != nil {
+			probes = append(probes, tool.Verify.Version.Command)
+		}
+		for _, probe := range probes {
+			for _, bad := range []string{"/tmp/", "/var/tmp/", "/dev/shm/"} {
+				if strings.Contains(probe, bad) {
+					t.Errorf("%s probes with %q, which names %s — a directory any "+
+						"local user can write to. A tool that reads from $HOME at "+
+						"load time will execute whatever they left there.",
+						tool.Name, probe, strings.TrimSuffix(bad, "/"))
+				}
+			}
+		}
+	}
+}
+
 // The verifier builds its fixtures from the spec's table, and it passed
 // happily while zoxide had no manifest at all. A fixture suite and the thing
 // it fixtures are separate artifacts; only a comparison between them catches

@@ -1,0 +1,278 @@
+# AES catalog. github-release for darwin, linux at
+# Dicklesworthstone/ultimate_bug_scanner release v5.4.9; asset name and sha256
+# read from the upstream release by hand on 2026-09-29.
+#
+# THE ASSET IS A BASH SCRIPT, NOT A BINARY. This is the fact that decides
+# everything else in this file. `file` on the downloaded bytes says
+# "Bourne-Again shell script, Unicode text, UTF-8 text executable", the first
+# line is `#!/usr/bin/env bash`, and the header calls it "UBS Meta-Runner
+# (v1.0) — Unified dispatcher for Ultimate Bug Scanner". It is a dispatcher:
+# it detects languages, then lazily downloads per-language modules from
+# raw.githubusercontent.com at run time and shells out to them. So the release
+# asset is one file that is the same on every platform, and the per-platform
+# variation lives in modules fetched later, not in the release.
+#
+# That is why there is ONE asset name and ONE sha256, not four. Measured from
+# `gh api repos/Dicklesworthstone/ultimate_bug_scanner/releases/tags/v5.4.9`:
+# the release carries exactly eight assets — git_safety_guard.py, install.sh,
+# sbom.spdx.json, SHA256SUMS, SHA256SUMS.minisig, ubs, ubs.rb, verify.sh —
+# and not one of them is platform- or arch-suffixed. There is no
+# ubs-linux-amd64, no ubs-darwin-arm64, and no archive to unpack. The same is
+# true of every release back to v5.2.72 (checked with
+# `gh api 'releases?per_page=100'`): the asset list is the same eight names
+# throughout. So the four platform coordinates are not four downloads; they
+# are the same download four times, and declaring four different asset names
+# would be inventing filenames the release does not contain.
+#
+# The asset was downloaded from the tagged release and hashed with sha256sum:
+#
+#   70225bce812c7e386fee6696519bfdae38d9810640965c7ad4b86b4796cd3b2b  ubs
+#
+# That digest was then compared against the release's own SHA256SUMS, fetched
+# from the same tag, which says the same thing. It is NOT taken from ACFS: ACFS
+# checksums.yaml has no `ubs` entry at all — it carries only an install.sh URL
+# and a sha256 for that script (f221a797…), which is a different file. ACFS
+# installs ubs by piping install.sh into bash, so there was no second source
+# to copy a binary digest from and nothing here was copied from ACFS.
+#
+# release_tag is `v5.4.9`, read from
+# `gh api repos/Dicklesworthstone/ultimate_bug_scanner/releases/latest`
+# (.tag_name), never parsed out of an asset filename — the asset is named
+# `ubs` and carries no version, so there was nothing to parse. The `v` is
+# load-bearing: the tag is interpolated verbatim into the releases/download
+# URL. Measured as a control: the unversioned form
+# .../releases/download/5.4.9/ubs returns 404, so the tag without the `v`
+# installs nothing and the tool reports as missing with no hint that the
+# manifest is what is wrong.
+#
+# The binary inside the asset is called `ubs`, which is also the tool name
+# and also what the user types, so there is no `binary:` map to declare: the
+# installer's fallback is the tool name and it is right here. The upstream
+# installer agrees — SCRIPT_NAME="ubs", INSTALL_NAME="ubs", and it lands at
+# "$install_dir/ubs". installNameOf() reads verify.command, so the file is
+# placed as $AES_HOME/bin/ubs and the verifier reads the same declaration.
+#
+# Version probe, measured by running the extracted asset on linux/amd64:
+#
+#   $ ubs --version
+#   UBS Meta-Runner v5.4.9
+#   exit 0
+#
+# One line, exit 0, stdout only. This is a real probe, not the
+# "--version exits 0 while printing nothing" shape: there is a version on
+# line 1 and the process exits 0. Confirmed against a copy of
+# verifier.ExtractVersion: it returns "5.4.9" for this exact output, because
+# line 1 has digits and versionRe takes the first dotted-integer run. The
+# `v` is not part of the match, which is what makes "v5.4.9" yield "5.4.9".
+#
+# `ubs --help` was also run and exits 0 after printing ~90 lines of usage,
+# so the script is not merely a version stub — it dispatches. A real scan was
+# run too, on a three-line file containing `var x = 1`, an assignment inside
+# an `if` condition, and an `eval()` call:
+#
+#   $ ubs bad.js --format=json
+#   {"status":"ok","scanners":[{"language":"js","files":1,"critical":1,
+#     "warning":2,"findings":[
+#       {"rule":"js.vars.var-declarations","severity":"warning",...},
+#       {"rule":"js.security.eval","severity":"critical",...},
+#       {"rule":"js.eval-call","severity":"warning",...}]}],
+#    "totals":{"critical":1,"warning":2,"info":0,"files":1}}
+#   exit 1
+#
+# Exit 1 is the tool doing its job — it found a critical — not a crash. Note
+# that this scan only worked because the js module had already been fetched
+# into ~/.local/share/ubs/modules by an earlier invocation; on a clean
+# machine the first scan downloads modules from raw.githubusercontent.com
+# before it can report anything. That is upstream's design (the script pins
+# them to the v5.4.9 tree and enforces its own per-module sha256 table), and
+# it is why the version probe above is the right probe and a scan is not: a
+# probe that needs the network and a warm cache is not a version probe.
+#
+# THE BASH 4 REQUIREMENT, AND WHY darwin IS STILL DECLARED. The script's
+# first executable statement is a hard guard:
+#
+#   if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+#     echo "ERROR: UBS requires bash >= 4.0 (you have ${BASH_VERSION:-unknown})."
+#     exit 2
+#   fi
+#
+# macOS ships bash 3.2 as /bin/bash, so `/bin/bash ubs --version` exits 2
+# there. Upstream asserts this as a contract rather than leaving it to
+# chance: .github/workflows/ci.yml, job macos-smoke, runs
+# `/bin/bash ./ubs --version`, REQUIRES exit code 2, and requires the output
+# to contain "brew install bash". So "runs on macOS" is a claim that needs
+# an argument, and this is it.
+#
+# The shebang is `#!/usr/bin/env bash`, so which bash runs the script is
+# decided by PATH at invocation time, not by anything AES controls. That
+# makes the darwin coordinate depend on one question: is a bash 4+ earlier in
+# PATH than /bin?
+#
+# It is, on a machine where Homebrew is set up, and that is the machine this
+# manifest is about because `dependencies: [bash]` makes AES run `brew install
+# bash` before it installs ubs. Two facts make the chain hold:
+#   - macOS's default PATH (from /etc/paths) is
+#     /usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin — /usr/local/bin, which IS
+#     Homebrew's prefix on Intel, comes BEFORE /bin. A brew bash on Intel is
+#     found by `env bash` without anything being added to PATH.
+#   - On Apple silicon the prefix is /opt/homebrew/bin and `brew shellenv`
+#     PREPENDS it to PATH. That is standard Homebrew setup, and it is
+#     self-evidencing here: AES invokes `brew install bash` as a bare
+#     `brew` command (package.go, ManagerBrew), so for the dependency install
+#     to work at all, `brew` — which lives in the prefix's bin directory —
+#     must already be on PATH. If brew is reachable, its bin directory is on
+#     PATH, and `env bash` finds the brew bash there rather than /bin/bash.
+#
+# So the darwin coordinate is a real one and the sha256 is the same file: an
+# identical script, verified identically. It is declared, and its one caveat
+# is that it rests on Homebrew being on PATH, which is the same assumption
+# the `bash` dependency and every other brew-backed tool in this catalog
+# already rests on. A macOS user with no Homebrew at all cannot have AES
+# install this tool — that is a property of the strategy set, not of ubs.
+#
+# WHAT WAS AND WAS NOT MEASURED. Measured on linux/amd64 only: the download,
+# the sha256, `ubs --version`, `ubs --help`, and a real scan. There is no
+# macOS host in reach, so no darwin coordinate was executed and none is
+# claimed to have been — the darwin blocks are justified by the asset being
+# the same cross-platform file plus the PATH argument above, not by a run.
+# tested: false below is load-bearing for exactly this reason.
+#
+# dependencies: [bash] is what makes the darwin coordinate above true rather
+# than hoped-for. The script's own first check is the bash version, and AES
+# already ships bash as a package tool (tools/shell/bash — brew on darwin,
+# apt on linux, min 5.0), so the requirement is expressible as a dependency
+# instead of as prose nobody reads. The resolver pulls dependencies ahead of
+# the dependent and TopoSort keeps the order, so bash is installed first.
+# Verified rather than assumed: a throwaway profile selecting tag `scanner`
+# resolved to `bash` then `ultimate-bug-scanner`, in that order.
+#
+# WHY BOTH ARCHES POINT AT THE SAME ASSET ON BOTH PLATFORMS. The asset is a
+# bash script with no architecture and no operating system in it. There are
+# not four downloads; there is one download, four times. Declaring four
+# different asset names would be inventing filenames the release does not
+# contain, and the catalog test that checks asset/sha256 agreement would
+# still pass while the installer 404'd on all four. The arch keys exist
+# because the schema requires asset and sha256 to cover the same arch set
+# (manifest.go validateTarget), not because the bytes differ.
+#
+# KNOWN BLOCKER, MEASURED, NOT WORKED AROUND: `aes verify` CANNOT READ THIS
+# TOOL'S VERSION, AND THAT IS A VERIFIER BUG, NOT A BAD PROBE. The probe is
+# correct — it is `ubs --version`, it exits 0 and prints "UBS Meta-Runner
+# v5.4.9" in a normal shell (measured above). It fails under AES because of
+# how the verifier builds the probe's environment.
+#
+# `ubs` runs `set -Eeuo pipefail` (line 27 of the asset) and dereferences $HOME
+# at module scope — `TOOLS_DIR_DEFAULT="${XDG_DATA_HOME:-$HOME/.local/share}/ubs/tools"`
+# (line 1037). Under `set -u` an unset $HOME is fatal, so the script exits 1
+# with "HOME: unbound variable" before printing anything.
+#
+# The verifier hands the probe an environment containing PATH and nothing
+# else. probeEnv (internal/verifier/verifier.go) returns
+# []string{"PATH=" + dir + ":" + os.Getenv("PATH")}, and exec.run() assigns
+# that straight to shell.Env — which per Options.Env's own documentation
+# "replaces the environment", not "prepends to it". So $HOME is unset for the
+# probe. probeEnv's own test comment says it "prepends the AES bin directory",
+# which is the intent; the implementation replaces. Nothing in the catalog
+# noticed, because every other tool's version probe is a native binary that
+# does not care which variables are set.
+#
+# Measured, not reasoned. Driven through the real verifier.VerifyIn with a
+# manifest carrying exactly the verify block below:
+#
+#   CONTROL jq   status="ok"      version="1.8.1"  probeFailed=false
+#   CONTROL ubs  status="unknown" version=""      probeFailed=true
+#
+# Same verifier, same environment, same day: jq reads fine, ubs does not. And
+# by hand, reproducing the probe environment exactly:
+#
+#   $ env -i PATH="$HOME/.aes/bin:$PATH" sh -c 'ubs --version'
+#   /home/quangdang/.local/bin/ubs: line 153: HOME: unbound variable
+#   exit 1
+#   $ env -i PATH="$HOME/.aes/bin:$PATH" sh -c 'jq --version'
+#   jq-1.8.1
+#   exit 0
+#
+# Setting XDG_DATA_HOME avoids the dereference entirely (the `:-` default is
+# then never evaluated) and the probe succeeds — but the manifest schema has
+# no field for probe environment: Verify carries only command and version,
+# VersionCheck carries only command and min, and Settings writes config FILES
+# rather than environment variables. So there is no in-manifest fix, and
+# prefixing the command with an assignment would be a hack that papers over a
+# verifier defect rather than a fact about this tool.
+#
+# The consequence, stated plainly because it is the whole reason this manifest
+# is `tested: false`: `aes setup` installs ubs, re-verifies, gets
+# StatusUnknown with ProbeFailed set, and exits non-zero with "installed but
+# verification says unknown". The install is correct and the file is on PATH;
+# the gate fails on a probe environment defect. Fixing it is a one-line
+# change in probeEnv (append to os.Environ() instead of replacing it), which
+# is out of scope here — no go source is edited by this change. Until then,
+# `aes verify ultimate-bug-scanner` prints "declares a minimum but its version
+# could not be read", and that message is TRUE and is not about ubs.
+#
+# ACFS ids this tool `stack.ultimate_bug_scanner` and installs it with
+# `install.sh --easy-mode --skip-hooks`, verifying with `ubs --help` and
+# `ubs doctor`. The AES naming contract is lowercase kebab-case (nameRe,
+# "^[a-z0-9]+(-[a-z0-9]+)*$"), and an underscore is a hard catalog-load error,
+# not a warning: one bad manifest takes the entire load down by design. So
+# the name is `ultimate-bug-scanner`, the kebab-cased repo name, and the
+# directory keeps the ACFS spelling so the two projects can be grepped against
+# each other — the same split brenner_bot uses. The CLI the user types is
+# `ubs`, which is what verify.command and the installed binary are called.
+#
+# tested: false, for two independent reasons. Layer 1 and Layer 2 have not been
+# run, and a tool may only be `tested: true` once both pass. And the version
+# probe cannot currently pass under this verifier at all — see the KNOWN
+# BLOCKER section above, which is a defect in the probe environment and not in
+# this manifest. Setting tested: true would be a claim that `aes setup` was
+# observed to end green, and it has not been observed to do anything of the
+# kind.
+name: ultimate-bug-scanner
+description: pattern-based bug scanner with 1000+ detection rules
+category: agent
+tested: false
+tags:
+  - agent
+  - scanner
+  - lint
+dependencies:
+  - bash
+verify:
+  command: ubs
+  version:
+    command: ubs --version
+    # min is deliberately equal to the pinned release, not to the first 5.4.x.
+    # A floor below the pinned tag makes the floor check nothing — it is the
+    # version check that never fires, which is the quietest failure shape this
+    # repo has. Measured here: a stale ubs v5.3.2 is already on this machine's
+    # PATH at ~/.local/bin/ubs (installed by hand, 2026-06-01, and NOT in
+    # $AES_HOME/bin), and `ubs --version` there prints
+    # "UBS Meta-Runner v5.3.2 (git 432d417)". With min "5.4.0" that stale copy
+    # would read as satisfying the floor and `aes setup` would leave it there
+    # forever, never delivering the v5.4.9 this manifest pins. The floor is
+    # the pinned tag for the same reason brenner-bot's is.
+    min: "5.4.9"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/ultimate_bug_scanner
+    release_tag: v5.4.9
+    asset:
+      # Same asset as linux: one cross-platform bash script, not four
+      # platform builds. See the header for the measurement and for the
+      # bash-4/PATH argument that makes darwin a real coordinate.
+      amd64: ubs
+      arm64: ubs
+    sha256:
+      amd64: 70225bce812c7e386fee6696519bfdae38d9810640965c7ad4b86b4796cd3b2b
+      arm64: 70225bce812c7e386fee6696519bfdae38d9810640965c7ad4b86b4796cd3b2b
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/ultimate_bug_scanner
+    release_tag: v5.4.9
+    asset:
+      amd64: ubs
+      arm64: ubs
+    sha256:
+      amd64: 70225bce812c7e386fee6696519bfdae38d9810640965c7ad4b86b4796cd3b2b
+      arm64: 70225bce812c7e386fee6696519bfdae38d9810640965c7ad4b86b4796cd3b2b

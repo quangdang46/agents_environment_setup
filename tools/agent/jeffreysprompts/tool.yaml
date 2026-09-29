@@ -1,0 +1,301 @@
+# AES catalog. github-release for darwin and linux at
+# Dicklesworthstone/jeffreysprompts.com release v1.0.3.
+#
+# jeffreysprompts ("jfp") is a CLI over a curated registry of battle-tested
+# prompts for AI agents: list, fuzzy search, show, render with variables, copy
+# to clipboard, suggest for a task, and install prompts as Claude Code skills.
+# Upstream is TypeScript compiled with `bun build --compile` into a single
+# self-contained native binary, so there is no runtime to declare — the
+# release asset IS the program.
+#
+# ACFS INSTALLS THIS TOOL BY curl|bash, AND THAT IS NOT A COORDINATE AES CAN
+# USE. acfs.manifest.yaml:2251 is `  - id: stack.jeffreysprompts`, with
+# cli_name "jfp", installed_check `command -v jfp`, and an EMPTY `install: []`
+# — the work is done by `verified_installer: {tool: jfp, runner: bash}`.
+# checksums.yaml:88 is `  jfp:` and line 89 names the thing it pins:
+#
+#   jfp:
+#     url: "https://jeffreysprompts.com/install-cli.sh"
+#     sha256: "6b82c8d88ad7de4524679cd08406117177f3643b34028b611447fb9c69f4fc4e"
+#
+# A manifest may not carry a url: field and may not carry a run: field (I3 — a
+# manifest is data, never a program), and the closed strategy set has no
+# "fetch a script and execute it" member. So the ACFS mechanism is unavailable
+# here. WHAT AES INSTEAD INSTALLS IS THE UPSTREAM RELEASE ASSET, which is a
+# different and better fact: the same project publishes pinned, checksummed
+# binaries on GitHub releases. Nothing below was taken from ACFS.
+#
+# ACFS's PINNED DIGEST IS FOR THE INSTALLER SCRIPT, NOT FOR ANY BINARY, AND
+# THAT WAS CHECKED RATHER THAN ASSUMED. I downloaded the exact URL ACFS names
+# on 2026-09-29 and hashed it:
+#
+#   $ curl -sSL -o install-cli.sh https://jeffreysprompts.com/install-cli.sh
+#   http=200  size=8333
+#   $ sha256sum install-cli.sh
+#   6b82c8d88ad7de4524679cd08406117177f3643b34028b611447fb9c69f4fc4e  install-cli.sh
+#
+# That is character-for-character the value ACFS's checksums.yaml:90 pins for
+# `jfp`. It follows that ACFS's number is the digest of install-cli.sh, an
+# artifact served from a website's live document root — copying it into this
+# manifest would pin a checksum for bytes AES never downloads. Every digest
+# below was computed from a release asset I downloaded.
+#
+# READING THAT SCRIPT ALSO CONFIRMS THE ASSET NAMES INDEPENDENTLY OF MY OWN
+# LISTING. get_download_url (line 41) builds every URL from one base,
+#
+#   https://github.com/Dicklesworthstone/jeffreysprompts.com/releases/latest/download
+#
+# and maps the platform to exactly four names: jfp-linux-x64, jfp-linux-arm64,
+# jfp-darwin-x64, jfp-darwin-arm64 (plus jfp-windows-x64.exe, which is outside
+# AES's darwin/linux vocabulary). get_binary_name (line 64) returns `jfp` for
+# every non-Windows platform. So upstream itself can only ever ask for those
+# four names — the same inventory below, reached by a second route.
+#
+# THE RELEASE TAG CAME FROM THE API, never from an asset filename:
+#
+#   $ gh api repos/Dicklesworthstone/jeffreysprompts.com/releases/latest --jq .tag_name
+#   v1.0.3
+#   $ gh api .../releases/tags/v1.0.3 --jq '{draft, prerelease, published_at}'
+#   {"draft":false,"prerelease":false,"published_at":"2026-07-27T16:45:20Z"}
+#   $ gh api repos/Dicklesworthstone/jeffreysprompts.com/tags --jq '.[0]'
+#   v1.0.3
+#
+# The leading `v` is load-bearing: the tag is interpolated verbatim into the
+# releases/download URL (installer.assetURL), so "1.0.3" would 404 and the tool
+# would report as missing with nothing in this file pointing at the cause. The
+# full tag list is v1.0.3, v1.0.2, v1.0.1 — three tags, three releases, all
+# draft=false and prerelease=false, so there is no tag-without-release trap of
+# the kind tools/agent/meta_skill records.
+#
+# MEASURED 2026-09-29: every asset below was downloaded from the tagged release
+# and hashed locally with sha256sum. All four returned http=200 with byte sizes
+# matching the API's asset listing exactly, which is the first cross-check — a
+# wrong or truncated asset would not match the advertised content-length.
+#
+#   200  96786560  jfp-linux-x64
+#        d09cf440ed05d4e88180ebcc1851ae1908553124c384f3417c0ab417ae5b086d
+#   200  95856784  jfp-linux-arm64
+#        9e7c248e5ca87c612631c458aa1754f54bb80bd635c1e836fd816b79329847c4
+#   200  71368784  jfp-darwin-x64
+#        705cd0c3082810ed44a0398a0a22f380d383c0118baf5def01e99ec85abffd72
+#   200  65658722  jfp-darwin-arm64
+#        03c9ab619c516c75a3aefd9f41119ade2d90a4064c5aaa375166dddba8d471f3
+#
+# Each locally computed digest then agreed with TWO independent upstream
+# sources: the `digest` field the release API reports per asset, and the
+# release's own SHA256SUMS.txt (all five lines, which also covers the
+# windows-x64.exe build this manifest does not use).
+#
+#   d09cf440...b086d  jfp-linux-x64        (mine == API digest == SHA256SUMS.txt)
+#   9e7c248e...47c4   jfp-linux-arm64      (mine == API digest == SHA256SUMS.txt)
+#   705cd0c3...ffd72  jfp-darwin-x64      (mine == API digest == SHA256SUMS.txt)
+#   03c9ab61...471f3  jfp-darwin-arm64    (mine == API digest == SHA256SUMS.txt)
+#
+# The per-asset `<name>.sha256` sidecar files carry the same four values, which
+# is a fourth agreement.
+#
+# ALL FOUR AES COORDINATES EXIST AT THIS TAG, so both platforms declare both
+# arches. That is the complete inventory of the release: 11 assets, of which 5
+# are the four binaries plus SHA256SUMS.txt and the other 6 are their .sha256
+# sidecars. There is no coordinate to decline and no hash to invent.
+#
+# ASSET NAMES ARE NOT AES ARCH NAMES, AND THAT IS FINE. Upstream spells the
+# platforms linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64. AES keys the
+# asset and sha256 maps by GOARCH (amd64, arm64) and selects the platform by
+# GOOS, so the map value is a free string and `jfp-linux-x64` is the honest
+# name of the amd64 linux asset. There is no translation layer and none is
+# needed: the key is which machine AES is on, the value is what upstream calls
+# the build for it. The same shape is already shipped in tools/agent/omp
+# (omp-linux-x64), tools/utility/s2p and tools/utility/csctf.
+#
+# THE ASSET IS A RAW EXECUTABLE, NOT AN ARCHIVE. Measured on the downloaded
+# bytes with `file`:
+#
+#   jfp-linux-x64:    ELF 64-bit LSB executable, x86-64, dynamically linked
+#   jfp-linux-arm64:  ELF 64-bit LSB executable, ARM aarch64
+#   jfp-darwin-x64:    Mach-O 64-bit x86_64 executable
+#   jfp-darwin-arm64:  Mach-O 64-bit arm64 executable
+#
+# There is no .tar.gz, no .zip and no .tar.xz, so internal/installer/archive.go
+# dispatches on content to its isExecutable branch (installRawExecutable), not
+# to extractTarGz. That branch's own comment names s2p as one of the tools it
+# exists for; jfp is the same shape. The extractTarGz fallback would instead
+# refuse these bytes with "open gzip: gzip: invalid header" — a message that
+# says the download is corrupt when the download is exactly what upstream
+# published.
+#
+# NO `binary:` IS DECLARED, and that is measured rather than conventional. A
+# bare executable has no archive member to look up, so installRawExecutable
+# copies the asset straight to destDir/<want>, and `want` is installName() —
+# which returns Action.Name (set by the CLI from verify.command) before it ever
+# consults binaryName(). Upstream's own CLI name is `jfp` (see --help below),
+# which is also this manifest's tool name and verify.command, so the fallback
+# is correct here. Declaring `binary: {amd64: jfp-linux-x64}` would name the
+# ASSET, which is a different fact, and would be wrong.
+#
+# VERSION PROBE, MEASURED BY RUNNING THE EXTRACTED BINARY on linux/amd64:
+#
+#   $ ./jfp-linux-x64 --version
+#   jfp/1.0.3 linux-x64 node-v24.3.0
+#   exit 0, stdout only (stderr was empty)
+#
+# This is a real probe and not the "exits 0 while prints nothing" trap: it
+# exits 0 AND emits a parseable version on stdout. Streams were captured
+# separately with two redirects rather than a pipe, because CombinedOutput
+# interleaving stderr into stdout is how a valid line gets turned into
+# something unparseable.
+#
+# ExtractVersion was run against the REAL parser (internal/verifier) with this
+# exact string, in a scratch copy of the module so the repo tree was untouched:
+#
+#   ExtractVersion("jfp/1.0.3 linux-x64 node-v24.3.0") = "1.0.3"
+#   CompareVersions("1.0.3","1.0.3") = 0
+#
+# The leading `jfp/` costs nothing: versionRe takes the first dotted-integer
+# run on line 1, and there is no `commit=` token for gitHashRe to strip. The
+# probe returns in 0.14s against the verifier's 15s VerifyTimeout.
+#
+# `jfp version` ALSO WORKS AND IS THE SHORTER PROBE — measured, it prints
+# `jfp/1.0.3` on stdout and exits 0, with the help text on stderr. It is not
+# used as the probe because `--version` is the conventional spelling and needs
+# no justification; both were measured so the choice is recorded either way.
+#
+# DO NOT USE `-V` AS THE PROBE. It is not short for --version here: measured,
+# `jfp -V` exits 1 with a CACError stack trace ("Unknown option `-V`"). The
+# help text documents the short flag as `-v`, not `-V` — a case difference that
+# is easy to misread and that fails loudly rather than silently.
+#
+# `jfp doctor` IS NOT USABLE AS A CHECK, and this is worth recording because
+# ACFS's manifest lists it (`verify: [jfp --version, jfp doctor || true]`).
+# Measured against a binary that has never been configured, it exits 0 and
+# prints JSON whose results are two warnings and three oks:
+#
+#   warning  Personal skills directory  Directory does not exist (will be created on first install)
+#   warning  Project skills directory   Directory does not exist in current project
+#   ok       Clipboard command          xclip available
+#   ok       Bun runtime                 Available (v1.3.14)
+#   ok       Prompt registry            21 prompts loaded
+#
+# The warnings are about directories that do not exist YET, so doctor reports
+# a healthy install as two warnings — and the `|| true` in ACFS is load-bearing
+# for the same reason. AES's strategies install the program, they do not run
+# its onboarding, so this manifest asserts version and nothing more. That is
+# upstream behaviour, not a manifest defect, and it is the honest boundary.
+#
+# THE PROBE NEEDS NO ENVIRONMENT WORKAROUND, unlike giil. giil's header records
+# that its probe requires XDG_CACHE_HOME because the verifier probes with a
+# PATH-only environment; probeEnv (internal/verifier/verifier.go:339) actually
+# PREPENDS the AES bin dir to the inherited PATH, so a probe inherits HOME
+# normally. Measured under a deliberately stripped environment anyway, to
+# confirm the contrast rather than assume it:
+#
+#   $ env -i PATH="$PWD" ./jfp-linux-x64 --version
+#   jfp/1.0.3 linux-x64 node-v24.3.0
+#   exit 0
+#
+# jfp is a statically self-contained Bun binary with no config directory read
+# at startup, so there is nothing for a bare environment to break.
+#
+# THIS MACHINE ALREADY HAS A `jfp`, AND IT IS THE TRAP THE NEXT AGENT WILL HIT.
+# `which -a jfp` resolves to /home/quangdang/.local/bin/jfp, which reports
+#
+#   jfp/1.0.2 linux-x64 node-v24.3.0
+#
+# — an older build than the pinned v1.0.3, sitting on a normal PATH. Its
+# digest is 7253717bcb522ef2931cfc3be37de834d769e3e41340ac92aa02000bd5158cd1,
+# which matches NO asset in v1.0.3 (the linux-x64 asset is d09cf440...b086d),
+# so it was installed by some other route. On a normal PATH the verifier
+# resolves THAT one first, so it is below the 1.0.3 floor, is reported stale,
+# and `aes setup` installs over it; and if a future floor were set at or below
+# 1.0.2, `aes setup` would report "already present" forever and the pinned
+# checksum would be checked against nothing. That is the brenner-bot trap from
+# its own header (a stale pre-existing binary satisfying the floor forever).
+# Any end-to-end run of this manifest should use a PATH without ~/.local/bin.
+#
+# END-TO-END, run on 2026-09-29 in an isolated scratch AES_HOME with a PATH
+# that excluded the pre-existing jfp on this machine (see below). This is a
+# real `aes setup` against the real pinned release, not a unit test:
+#
+#   $ env -i HOME=$H AES_HOME=$H/.aes PATH=/usr/bin:/bin aes setup \
+#       --only jeffreysprompts --non-interactive
+#   installed 1 · already present 0 · skipped 0 · failed 0
+#   jeffreysprompts  installed
+#   $ env -i HOME=$H AES_HOME=$H/.aes PATH=/usr/bin:/bin:$H/.aes/bin \
+#       aes verify --only jeffreysprompts
+#   jeffreysprompts  ok  1.0.3  $H/.aes/bin/jfp
+#
+# The installed file hashed to d09cf440...b086d, byte-identical to the pinned
+# jfp-linux-x64 asset, and running the INSTALLED binary printed
+# `jfp/1.0.3 linux-x64 node-v24.3.0`. A second `aes setup` reported
+# "installed 0 · already present 1" — idempotent, no reinstall storm.
+#
+# THE INSTALLED FILENAME IS `jfp`, WITH NO `binary:` MAP, and the run is what
+# confirms that rather than code reading. installRawExecutable copies the asset
+# to destDir/<want> where want is installName(), and installName() returns
+# Action.Name — set by the CLI from verify.command (cli.installNameOf) — before
+# it ever consults binaryName(). The path in the verify line above is
+# $H/.aes/bin/jfp, not .../jeffreysprompts, which is the fact this manifest
+# asserts and the run establishes.
+#
+# The `aes verify` line above also shows why a non-zero exit from that command
+# is not a verdict: it printed "verification failed" for 50 OTHER tools missing
+# from the scratch home, all of them absent because only one tool was selected.
+# Reading the table is the only way to learn that jeffreysprompts itself is ok.
+#
+# The PATH had to be narrowed for the reason given above: this machine already
+# had a jfp 1.0.2 on a normal PATH. Without the narrowing, `aes list` reports
+#
+#   jeffreysprompts  agent  stale  1.0.2  /home/quangdang/.local/bin/jfp
+#
+# which is AES's own verifier agreeing, from the catalog, with the claim in
+# this header — a stale pre-existing binary is found first and reported below
+# the floor. It also means the manifest's floor is observable end-to-end from a
+# cold read, not only from a test.
+#
+# tested: false. The coordinates are measured, the probe was exercised against
+# the real binary, and the install path was run end-to-end, but Layer 1 and
+# Layer 2 have not been run, and a tool may only be `tested: true` once both
+# pass.
+#
+# NOT VERIFIED OFF linux/amd64. This measurement machine is linux/amd64, so
+# the binary was RUN for that coordinate only. The other three coordinates are
+# trusted by digest, not by execution: each was downloaded, hashed, matched
+# against the API digest and upstream's SHA256SUMS.txt, and `file` confirms the
+# Mach-O arm64 / x64 and ELF arm64 bytes are the right architectures. No jfp
+# was run as a darwin or arm64 process, and this comment exists so the next
+# agent does not mistake "declared for 4 platforms" for "measured on 4
+# platforms".
+name: jeffreysprompts
+description: CLI for a curated registry of battle-tested agent prompts (jfp)
+category: agent
+tested: false
+tags:
+  - agent
+  - prompts
+  - skills
+verify:
+  command: jfp
+  version:
+    command: jfp --version
+    min: "1.0.3"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/jeffreysprompts.com
+    release_tag: v1.0.3
+    asset:
+      amd64: jfp-darwin-x64
+      arm64: jfp-darwin-arm64
+    sha256:
+      amd64: 705cd0c3082810ed44a0398a0a22f380d383c0118baf5def01e99ec85abffd72
+      arm64: 03c9ab619c516c75a3aefd9f41119ade2d90a4064c5aaa375166dddba8d471f3
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/jeffreysprompts.com
+    release_tag: v1.0.3
+    asset:
+      amd64: jfp-linux-x64
+      arm64: jfp-linux-arm64
+    sha256:
+      amd64: d09cf440ed05d4e88180ebcc1851ae1908553124c384f3417c0ab417ae5b086d
+      arm64: 9e7c248e5ca87c612631c458aa1754f54bb80bd635c1e836fd816b79329847c4

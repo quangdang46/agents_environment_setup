@@ -1,0 +1,111 @@
+# AES catalog. linux via github-release at
+# Dicklesworthstone/system_resource_protection_script release v1.4.2; darwin via
+# a pinned `go install` of the same tag, because upstream ships no darwin
+# binary. Tag read from the GitHub release API (gh api
+# .../releases/tags/v1.4.2), NOT parsed out of an asset filename.
+#
+# This is `curl | bash` in ACFS (verified_installer: srps, runner bash, args
+# --install) and it is deliberately not that here. ACFS pins the sha256 of
+# install.sh on `main` in checksums.yaml and carries no per-platform binary
+# coordinates at all; that script installs ananicy-cpp, 1700+ scheduler rules
+# and a systemd unit as root, which no strategy in I9's closed set can
+# express. What ACFS itself checks afterwards is `command -v sysmoni` — and
+# that binary IS a published release asset. So this manifest installs the
+# sysmoni TUI only. It is not the full SRPS stack, and nothing here touches
+# ananicy-cpp or systemd.
+name: srps
+description: live resource monitor from the System Resource Protection Script
+category: utility
+tested: false
+tags:
+  - utility
+  - monitoring
+# Presence only, and the omission is the finding rather than a gap.
+#
+# sysmoni has NO version flag. Measured by running the extracted
+# linux/amd64 binary on 2026-09-29:
+#
+#   $ sysmoni-linux-amd64 --version
+#   flag provided but not defined: -version
+#   Usage of sysmoni:
+#     -battery / -filter / -gpu / -interval / -json / -json-stream / -sort
+#   {"Timestamp":"2026-09-29T21:35:40.275740906+07:00",...}   <- then it runs
+#
+# The flag error does not exit. Execution falls through into the TUI/JSON
+# stream, which emits a sample every second and never returns, so `--version`,
+# `version` and `-h` all hang until killed. A probe here would spend the whole
+# 15s VerifyTimeout (internal/exec/exec.go) on every `aes verify`.
+#
+# `sysmoni -json` does suppress the TUI, which makes it look like the fix. It
+# is worse than useless: line 1 of that output is
+# {"Timestamp":"2026-09-29T21:36:58.864662825+07:00","Interval":1000000000,
+# "CPU":{...,"Load1":1.87,...}}  and verifier.ExtractVersion takes the first
+# digit run on line 1 — the 2026 out of the timestamp. Against a floor of
+# "1.0" a machine busier than the measuring one is reported stale and
+# reinstalled, forever. Presence is the whole claim this binary supports.
+verify:
+  command: sysmoni
+install:
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/system_resource_protection_script
+    release_tag: v1.4.2
+    # Raw ELF binaries, not archives — `file` reports "ELF 64-bit LSB
+    # executable, x86-64, statically linked, Go BuildID=..." for both. That is
+    # the isExecutable -> installRawExecutable path in archive.go (same shape
+    # as omp).
+    #
+    # No `binary:` map is needed, and that is measured rather than assumed.
+    # The raw-executable path names the downloaded file installName(), which
+    # internal/cli/setup.go reads from verify.command above, so the asset lands
+    # as `sysmoni` and the verifier looks for that same name. Declaring
+    # `binary: {amd64: srps}` would install a file called `srps` and verify a
+    # file called `sysmoni` — two names for one binary, which is the
+    # bottom/btm shape that `binary` exists to break.
+    asset:
+      amd64: sysmoni-linux-amd64
+      arm64: sysmoni-linux-arm64
+    # Computed with `sha256sum` over the downloaded bytes on 2026-09-29:
+    #   2b59689cb5a978d69153c57257aeccf2d2457a61645dd1b8f05e8f5cc2e5e6fe
+    #     sysmoni-linux-amd64  (5690482 bytes)
+    #   3bb8ff20d52eff85bbea121f0e72b011cf018db2b1310d70fd4e5e1e971d5cb4
+    #     sysmoni-linux-arm64  (5652189 bytes)
+    # Both also match the `digest` field the release API reports, so they are
+    # upstream-confirmed and not only locally computed. arm64 is hashed but
+    # NOT executed: this is an amd64 host, and a checksum is the only claim
+    # made about it.
+    sha256:
+      amd64: 2b59689cb5a978d69153c57257aeccf2d2457a61645dd1b8f05e8f5cc2e5e6fe
+      arm64: 3bb8ff20d52eff85bbea121f0e72b011cf018db2b1310d70fd4e5e1e971d5cb4
+  darwin:
+    # No darwin release asset exists, and that is a fact about every release
+    # rather than about v1.4.2. Across all 25 releases of this repo the
+    # complete set of asset names ever published is:
+    #   install.sh, install.sh.sha256, verify.sh,
+    #   sysmoni-linux-amd64, sysmoni-linux-arm64,   (v1.4.2+)
+    #   sysmon-linux-amd64, sysmon-linux-arm64      (v1.1.3 - v1.4.1, renamed)
+    # Zero assets match darwin|apple|macos|osx. Upstream's own install.sh
+    # hardcodes the linux asset name
+    # (releases/download/${ref}/sysmoni-linux-${goarch}), and ACFS declares
+    # `families: [ubuntu]` for this reason.
+    #
+    # So darwin builds from source at the SAME tag rather than 404ing on a
+    # release asset that was never published. The repository is a real Go
+    # module (module .../system_resource_protection_script, go 1.23.0) with
+    # cmd/sysmoni as its main package, and `go install` of a pinned module
+    # coordinate is exactly what the `go` strategy is for. This is the same
+    # tool at the same version, not a different tool.
+    #
+    # Measured 2026-09-29: `go install .../cmd/sysmoni@v1.4.2` builds and
+    # emits a binary named `sysmoni` (the last path element, which is what the
+    # verifier looks for), and GOOS=darwin go build succeeds for both arches
+    # from the v1.4.2 module — Mach-O 64-bit arm64 and Mach-O 64-bit x86_64
+    # both produced. Cross-compiled, not run: there is no darwin machine here.
+    #
+    # Tradeoff worth stating: this needs a Go toolchain on the darwin host,
+    # which the release-binary path does not. `go` on PATH is the strategy's
+    # own precondition and its error message says so; the `go` catalog entry
+    # installs it. It is a real cost and it is the only honest way to ship
+    # darwin at all here.
+    strategy: go
+    go_package: github.com/Dicklesworthstone/system_resource_protection_script/cmd/sysmoni@v1.4.2

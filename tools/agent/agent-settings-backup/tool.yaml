@@ -1,0 +1,245 @@
+# AES catalog. github-release at Dicklesworthstone/agent_settings_backup_script
+# v0.3.2; asset name and sha256 read from the upstream release API. The asset
+# is a RAW BASH SCRIPT, not an archive — see internal/installer/archive.go for
+# the format dispatch.
+#
+# ACFS INSTALLS THIS TOOL BY curl|bash, AND THAT IS NOT A COORDINATE AES CAN
+# USE. acfs.manifest.yaml:3132 is `  - id: stack.agent_settings_backup`, with
+# cli_name "asb", installed_check `command -v asb`, and an EMPTY `install: []`
+# — the work is done by `verified_installer: {tool: asb, runner: bash}`.
+# checksums.yaml:14 is `  url: "https://raw.githubusercontent.com/.../install.sh"`.
+# A manifest may not carry a url: field and may not carry a run: field (I3 — a
+# manifest is data, never a program), and the closed strategy set has no
+# "fetch a script and execute it" member. So the ACFS mechanism is unavailable
+# here. WHAT AES INSTEAD INSTALLS IS THE UPSTREAM RELEASE ASSET, which is a
+# different and better fact: the same project publishes a pinned, checksummed
+# bash script on GitHub releases. Nothing below was taken from ACFS.
+#
+# THE RELEASE TAG CAME FROM THE API, never from an asset filename:
+#
+#   $ gh api repos/Dicklesworthstone/agent_settings_backup_script/releases/latest --jq .tag_name
+#   v0.3.2
+#   $ gh api .../releases/tags/v0.3.2 --jq '{draft, prerelease, published_at}'
+#   {"draft":false,"prerelease":false,"published_at":"2026-08-20T04:00:52Z"}
+#   $ gh api repos/Dicklesworthstone/agent_settings_backup_script/tags --jq '.[0]'
+#   v0.3.2
+#
+# The leading `v` is load-bearing: the tag is interpolated verbatim into the
+# releases/download URL (installer.assetURL), so "0.3.2" would 404 and the tool
+# would report as missing with nothing in this file pointing at the cause. The
+# full tag list is v0.3.2, v0.3.1 — two tags, two releases, all draft=false and
+# prerelease=false, so there is no tag-without-release trap.
+#
+# MEASURED 2026-09-29: the asset was downloaded from the tagged release and
+# hashed locally with sha256sum. It returned http=200 with byte size matching
+# the API's asset listing exactly (140127 bytes), which is the first
+# cross-check — a wrong or truncated asset would not match the advertised
+# content-length.
+#
+#   200  140127  asb
+#        65aac23941938bf4f7d6c7dd986fadb254b16bea583551d9d00afb82bcc9bad0
+#
+# The locally computed digest then agreed with TWO independent upstream
+# sources: the `digest` field the release API reports per asset, and the
+# release's own asb-checksums.txt sidecar:
+#
+#   65aac23941938bf4f7d6c7dd986fadb254b16bea583551d9d00afb82bcc9bad0  asb
+#
+# (mine == API digest == asb-checksums.txt)
+#
+# THE RELEASE HAS EXACTLY TWO ASSETS: `asb` (the script) and `asb-checksums.txt`
+# (the sidecar). There are NO per-platform builds — no linux-x64, no darwin-arm64,
+# no .tar.gz, no .zip. The single `asb` asset is a platform-independent bash
+# script with shebang `#!/usr/bin/env bash`. All four AES coordinates
+# (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64) resolve to the SAME
+# asset with the SAME sha256. That is the complete inventory of the release.
+#
+# THE ASSET IS A RAW EXECUTABLE, NOT AN ARCHIVE. Measured on the downloaded
+# bytes with `file`:
+#
+#   asb: Bourne-Again shell script, Unicode text, UTF-8 text executable, with very long lines (582)
+#
+# There is no .tar.gz, no .zip and no .tar.xz, so internal/installer/archive.go
+# dispatches on content to its isExecutable branch (installRawExecutable), not
+# to extractTarGz. The shebang `#!/usr/bin/env bash` matches the executableMagic
+# table in archive.go, so isExecutable() returns true (verified by test). The
+# extractTarGz fallback would instead refuse these bytes with "open gzip: gzip:
+# invalid header" — a message that says the download is corrupt when the
+# download is exactly what upstream published.
+#
+# NO `binary:` IS DECLARED, and that is measured rather than conventional. A
+# bare executable has no archive member to look up, so installRawExecutable
+# copies the asset straight to destDir/<want>, and `want` is installName() —
+# which returns Action.Name (set by the CLI from verify.command) before it ever
+# consults binaryName(). Upstream's own CLI name is `asb` (see --help below),
+# which is also this manifest's tool name and verify.command, so the fallback
+# is correct here. Declaring `binary: {amd64: asb}` would name the ASSET, which
+# is a different fact, and would be wrong.
+#
+# VERSION PROBE, MEASURED BY RUNNING THE EXTRACTED BINARY on linux/amd64:
+#
+#   $ ./asb --version
+#   asb version 0.3.2
+#   exit 0, stdout only (stderr was empty)
+#
+# This is a real probe and not the "exits 0 while prints nothing" trap: it
+# exits 0 AND emits a parseable version on stdout. Streams were captured
+# separately with two redirects rather than a pipe, because CombinedOutput
+# interleaving stderr into stdout is how a valid line gets turned into
+# something unparseable.
+#
+# ExtractVersion was run against the REAL parser (internal/verifier) with this
+# exact string, in a scratch copy of the module so the repo tree was untouched:
+#
+#   ExtractVersion("asb version 0.3.2") = "0.3.2"
+#   CompareVersions("0.3.2","0.3.2") = 0
+#
+# The leading `asb version` costs nothing: versionRe takes the first
+# dotted-integer run on line 1, and there is no `commit=` token for gitHashRe
+# to strip. The probe returns in 0.00s against the verifier's 15s
+# VerifyTimeout.
+#
+# `asb version` ALSO WORKS AND IS THE SHORTER PROBE — measured, it prints
+# `asb version 0.3.2` on stdout and exits 0, with the help text on stderr. It
+# is not used as the probe because `--version` is the conventional spelling and
+# needs no justification; both were measured so the choice is recorded either
+# way.
+#
+# THE PROBE REQUIRES A HOME ENVIRONMENT VARIABLE, AND THIS IS THE MOST
+# IMPORTANT FACT IN THIS MANIFEST. The verifier's probeEnv (internal/verifier/
+# verifier.go:339) returns a single `PATH=` variable. exec.Run applies that
+# with `shell.Env = opts.Env`, which REPLACES the environment entirely — it
+# does not augment it. So the probe runs with NO HOME, NO USER, NO SHELL,
+# nothing but PATH. asb's line 54 reads:
+#
+#   DEFAULT_BACKUP_ROOT="${HOME}/.agent_settings_backups"
+#
+# Under `set -u` (which asb enables), an unset HOME is a fatal error. Measured
+# under the REAL probeEnv with a real asb in a scratch bin dir:
+#
+#   $ go test ./internal/verifier/ -run TestAsbProbeEnvReal -v
+#   probeEnv returned 1 vars (first var prefix: PATH=/)
+#   err=command failed with exit code 1: asb --version
+#   stdout=""
+#   stderr=".../bin/asb: line 54: HOME: unbound variable"
+#   exitcode=1
+#   ExtractVersion(stdout) = ""
+#
+# Every asb subcommand fails the same way under probeEnv — `--version`,
+# `version`, `--help`, `list` — because the HOME read happens at script
+# initialization before any subcommand dispatch. This is not a quirk of one
+# probe string; it is a property of the script.
+#
+# THE WORKAROUND IS A HOME FALLBACK PREFIX, and it is the same shape already
+# shipped in three other manifests: tools/agent/automated-plan-reviser:153,
+# tools/git/ru:211, and tools/utility/giil:188. The probe command is:
+#
+#   HOME="${HOME:-/tmp}" asb --version
+#
+# Measured under the REAL probeEnv:
+#
+#   $ go test ./internal/verifier/ -run TestAsbProbeWorkaround2 -v
+#   "HOME=\"${HOME:-/tmp}\" asb --version"   err=<nil> exit=0 stdout="asb version 0.3.2\n" ExtractVersion="0.3.2"
+#   "HOME=\"${HOME:-/tmp}\" asb version"     err=<nil> exit=0 stdout="asb version 0.3.2\n" ExtractVersion="0.3.2"
+#
+# The fallback is load-bearing, not defensive. Measured with HOME present in
+# os.Environ (the normal case) and with it absent:
+#
+#   HOME set in os.Environ:    err=<nil> exit=0 stdout="asb version 0.3.2\n"
+#   HOME absent (fallback):    err=<nil> exit=0 stdout="asb version 0.3.2\n" stderr=""
+#
+# Both succeed because `${HOME:-/tmp}` expands to the real HOME when it exists
+# and to /tmp when it does not. The /tmp fallback is safe: asb only reads HOME
+# to compute a default backup path; it does not write there at version-probe
+# time. The probe never touches the filesystem beyond reading the script itself.
+#
+# THIS MACHINE ALREADY HAS AN `asb`, AND IT IS THE TRAP THE NEXT AGENT WILL HIT.
+# `which -a asb` resolves to /home/quangdang/.local/bin/asb, which reports
+#
+#   asb version 0.3.0
+#
+# — an older build than the pinned v0.3.2, sitting on a normal PATH. Its
+# digest is 2bcd32f7c003f879e4a50dc2db559681950e9f8588d1c64ffac2941e7545d679,
+# which matches NO asset in v0.3.2 (the asb asset is 65aac239...bad0), so it
+# was installed by some other route. On a normal PATH the verifier resolves
+# THAT one first, so it is below the 0.3.2 floor, is reported stale, and
+# `aes setup` installs over it; and if a future floor were set at or below
+# 0.3.0, `aes setup` would report "already present" forever and the pinned
+# checksum would be checked against nothing. That is the brenner-bot trap from
+# its own header (a stale pre-existing binary satisfying the floor forever).
+# Any end-to-end run of this manifest should use a PATH without ~/.local/bin.
+#
+# DEPENDENCIES: bash AND git. The shebang is `#!/usr/bin/env bash`, so which
+# bash runs the script is decided by PATH at invocation time. On macOS the
+# system bash is 3.2, which may not support all features asb uses; the `bash`
+# dependency makes AES install a modern bash first (tools/shell/bash — brew on
+# darwin, apt on linux, min 5.0). The `git` dependency is load-bearing: asb's
+# main() hard-exits with "git is required but not installed" if git is missing
+# (line 3946). Both bash and git are already in the AES catalog, so the
+# dependencies resolve without new tools. rsync is NOT declared as a dependency
+# because asb guards it with `command_exists rsync` and falls back to `cp` if
+# missing — it is an optimization, not a requirement.
+#
+# tested: false. The coordinates are measured, the probe was exercised against
+# the real binary under the real probeEnv, and the digest was cross-checked
+# against two independent upstream sources. Layer 1 and Layer 2 have not been
+# run, and a tool may only be `tested: true` once both pass.
+#
+# NOT VERIFIED OFF linux/amd64. This measurement machine is linux/amd64, so
+# the binary was RUN for that coordinate only. The other three coordinates are
+# trusted by digest, not by execution: the asset is the same cross-platform
+# bash script for all four, and `file` confirms it is a UTF-8 text executable
+# with a bash shebang. No asb was run as a darwin or arm64 process, and this
+# comment exists so the next agent does not mistake "declared for 4 platforms"
+# for "measured on 4 platforms".
+#
+# THE AES TOOL NAME IS kebab-case; THE CLI NAME IS NOT. ACFS calls this tool
+# `agent_settings_backup` and the CLI is `asb`. AES's nameRe (internal/
+# manifest/manifest.go:381) requires lowercase kebab-case, so the tool is
+# declared here as `agent-settings-backup` and the CLI name appears only in
+# verify.command and the installNameOf fallback. The installed file is `asb`,
+# because installNameOf (internal/cli/setup.go:840) returns verify.command
+# before it ever consults tool.Name. So the user types `asb`, exactly as
+# upstream and ACFS document, and `aes list` shows the kebab-case catalog name.
+name: agent-settings-backup
+description: Git-versioned backup tool for AI coding agent configuration folders (asb)
+category: agent
+tested: false
+tags:
+  - agent
+  - backup
+dependencies:
+  - bash
+  - git
+verify:
+  command: asb
+  version:
+    # No HOME= prefix. This used to read `HOME="${HOME:-/tmp}" asb --version`,
+    # and of the three manifests that used this workaround this one was the
+    # worst: the fallback was /tmp itself, so a tool that sources anything from
+    # $HOME at load time would read it out of a world-writable directory. The
+    # verifier now carries HOME into the probe environment, so the tool gets
+    # the user's real HOME and the workaround is unnecessary.
+    command: asb --version
+    min: "0.3.2"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/agent_settings_backup_script
+    release_tag: v0.3.2
+    asset:
+      amd64: asb
+      arm64: asb
+    sha256:
+      amd64: 65aac23941938bf4f7d6c7dd986fadb254b16bea583551d9d00afb82bcc9bad0
+      arm64: 65aac23941938bf4f7d6c7dd986fadb254b16bea583551d9d00afb82bcc9bad0
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/agent_settings_backup_script
+    release_tag: v0.3.2
+    asset:
+      amd64: asb
+      arm64: asb
+    sha256:
+      amd64: 65aac23941938bf4f7d6c7dd986fadb254b16bea583551d9d00afb82bcc9bad0
+      arm64: 65aac23941938bf4f7d6c7dd986fadb254b16bea583551d9d00afb82bcc9bad0

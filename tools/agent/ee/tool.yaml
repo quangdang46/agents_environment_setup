@@ -1,5 +1,17 @@
-# AES catalog. github-release for darwin, linux at Dicklesworthstone/eidetic_engine_cli release v0.15.2;
-# asset names and sha256 read from the upstream release by scripts/release_probe.py.
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/eidetic_engine_cli release v0.16.0
+# (tag resolved from the GitHub API, not parsed out of an asset filename).
+#
+# Re-measured 2026-09-29. The two darwin digests below were v0.15.2's: the tag had been bumped to
+# v0.16.0 but the darwin hashes were not re-read, so on any Mac `aes setup` downloaded v0.16.0 and
+# failed with ErrChecksum. Replaced by digests of the v0.16.0 assets computed locally with
+# `sha256sum` after a full download; all four agree byte-for-byte with the release's own per-asset
+# .sha256 sidecars and with its SHA256SUMS. The linux pair was already correct and was left alone.
+# The file header previously said v0.15.2 while the body pinned v0.16.0 - the comment was stale too.
+#
+# Archive contents: each of the four .tar.xz holds exactly one file, `ee`, so the installed binary
+# name equals the tool name and no `binary:` override is needed.
+# Version probe, run against the extracted v0.16.0 linux/amd64 binary: `ee --version` prints
+# `ee 0.16.0`, exit 0, 10 bytes on stdout and nothing on stderr.
 #
 # This was `package`/apt until an audit found the package name does not exist in
 # Debian. The first check that said it did was reading an HTTP 200 from a page
@@ -24,8 +36,8 @@ install:
       amd64: ee-x86_64-apple-darwin.tar.xz
       arm64: ee-aarch64-apple-darwin.tar.xz
     sha256:
-      amd64: 0477bc9dee4e538fd84bc7329cd4130861b743b99aed49862c72454773364858
-      arm64: 2da34611107f8c62de8c51a3c8a1490dcb6d1d6eda8d17b79c860cb38eff44e9
+      amd64: d4ba6f3ddbfda84429f4c280c3743bafd9c1ad7bcd50a83af604eb71b80bfb29
+      arm64: 00352f783b3bd07f0fcded9278bf9d50cda0c5267bd0b7ac7bdfea941787e1a2
   linux:
     strategy: github-release
     release_tag: v0.16.0

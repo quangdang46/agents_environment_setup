@@ -1,0 +1,216 @@
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/giil
+# release v3.2.1.
+#
+# THE ASSET IS A SINGLE PLATFORM-INDEPENDENT FILE. giil is a bash CLI, not a
+# compiled program: the upstream repo is language=Shell, and every one of its
+# four releases (v3.0.0, v3.1.0, v3.2.0, v3.2.1) ships the SAME five assets —
+# checksums.sha256, giil, giil.sha256, install.sh, install.sh.sha256 — with no
+# per-platform or per-arch variants. There is no `giil-linux-x64` and no
+# `giil-macos-arm64`; there is one 136,239-byte file called `giil`.
+#
+# That is why all four coordinates below carry the same asset name and the same
+# digest. It is not a placeholder and not a copy-paste: it is the honest
+# description of a coordinate system that has only one point. Upstream is
+# source (a bash script), so "the darwin/arm64 build" and "the linux/amd64
+# build" are the same bytes on every machine.
+#
+# Measured 2026-09-29 by downloading the asset from the tagged release and
+# hashing it locally with sha256sum:
+#
+#   $ curl -sSL -o giil https://github.com/Dicklesworthstone/giil/releases/download/v3.2.1/giil
+#   http=200 size=136239
+#   $ sha256sum giil
+#   2a1a2b8b658cd2c112406f4fd8943bffb23ba580b736ba0547d7d57703d60bd0  giil
+#
+# The digest was then checked against upstream two independent ways, both
+# agreeing: the release's formatted `checksums.sha256` (sha256sum -c reported
+# "giil: OK") and the bare `giil.sha256` sidecar (compared as a string). Note
+# the sidecar is a BARE digest with no "  filename" suffix, so `sha256sum -c
+# giil.sha256` fails with "no properly formatted checksum lines found" — that
+# is the sidecar's format, not a bad download. The formatted checksums.sha256
+# is the one to verify with.
+#
+# Nothing here comes from ACFS. ACFS's checksums.yaml carries one entry for
+# giil and it is 7b9f886b42c593288978983490363c2e3d49ef908903fbd4bd9b25a718
+# 7fe63a — which is the checksum of ACFS's *install.sh*, a different artifact
+# from a different URL (raw.githubusercontent.com/.../giil/main/install.sh),
+# and is not the digest of the release asset AES installs. ACFS installs giil
+# by curl|bash of that script (install.sh:10543,
+# acfs_run_verified_upstream_script_as_target "giil" "bash"); AES installs the
+# verified release asset instead, so the two digests are unrelated by
+# construction. The number above was computed from downloaded bytes.
+#
+# The release tag came from the GitHub API — `gh api
+# repos/Dicklesworthstone/giil/releases/latest --jq .tag_name` returns v3.2.1 —
+# and was cross-checked against the tags list. It was never parsed out of an
+# asset filename, which would have been impossible here anyway: none of the
+# asset names carries a version.
+#
+# The `v` in v3.2.1 is load-bearing. The tag is interpolated verbatim into the
+# releases/download URL (installer.assetURL), so "3.2.1" would 404 and the
+# tool would report as missing with nothing pointing at the manifest.
+#
+# The asset is a RAW EXECUTABLE, not an archive. Measured on the downloaded
+# bytes: the first two bytes are 23 21 ("#!") and the first line is
+# "#!/usr/bin/env bash"; `file` reports "Bourne-Again shell script, Unicode
+# text, UTF-8 text executable". It is not a gzip, an xz or a zip, so
+# internal/installer/archive.go's isExecutable branch is what installs it —
+# content sniffing, not filename. Its executableMagic table has an explicit
+# `#!` entry, and its own comment names giil as one of the tools this exists
+# for. The extractTarGz fallback would have refused this asset with "open
+# gzip: gzip: invalid header", a message that says the download is corrupt
+# when the download is exactly what it said it was.
+#
+# No `binary:` is declared, and that is measured rather than conventional. The
+# asset is itself the program and is named `giil`, which is the tool name, so
+# the installer's fallback (absent `binary` -> the tool name) is correct here.
+# (installRawExecutable copies the asset straight to destDir/<want> without an
+# archive entry to search, so `want` is the only name that matters.)
+#
+# Version probe MEASURED by running the downloaded asset on linux/amd64:
+#
+#   $ ./giil --version
+#   giil version 3.2.1 (Hybrid Edition)
+#   exit 0, stdout only
+#
+# `giil --version` is the probe, and it is a real one: exit 0 AND output.
+# ExtractVersion was run against the real parser with this exact string and
+# returns "3.2.1"; CompareVersions("3.2.1","3.2.1") is 0 and against "3.0.0"
+# is 1. There is no commit= hash on the line to confuse it.
+#
+# THE PROBE COMMAND CARRIES XDG_CACHE_HOME, AND THAT IS LOAD-BEARING. The
+# verifier runs a version probe through `sh -c` with an environment that is
+# PATH ONLY — verifier.probeEnv returns a single element, and exec.Run's
+# comment says "Env replaces the environment. Nil inherits os.Environ()".
+# So the probe does not inherit HOME, and giil's script is `set -euo pipefail`
+# (line 37) with an unguarded reference at line 412:
+#
+#     CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+#
+# Under `set -u` with no HOME that is a hard error, not a default. Measured,
+# reproducing probeEnv's exact shape:
+#
+#   $ env -i PATH="$AES_HOME/bin:/usr/bin:/bin" giil --version
+#   /tmp/aes-giil-e2e/aes/bin/giil: line 412: HOME: unbound variable
+#
+# The binary is fine and the manifest is fine; the probe's environment is what
+# is missing. Setting XDG_CACHE_HOME inline satisfies the same parameter
+# without needing a HOME value at all, and it is the script's own documented
+# knob rather than a workaround invented here. Measured with the same
+# PATH-only environment:
+#
+#   $ env -i PATH="$AES_HOME/bin:/usr/bin:/bin" XDG_CACHE_HOME=/tmp/xc \
+#         sh -c 'giil --version'
+#   giil version 3.2.1 (Hybrid Edition)
+#   exit 0
+#
+# Setting XDG_CACHE_HOME in the SHELL does not work and that distinction is
+# the whole bug: probeEnv replaces the environment, so an ambient variable is
+# discarded before `sh -c` ever runs. It has to be inside the command string.
+# The probe writes nothing — measured by pointing XDG_CACHE_HOME at a fresh
+# temp dir and finding zero files in it afterwards — so it is safe to give it
+# a scratch path on every run.
+#
+# DO NOT USE `giil version` AS THE PROBE. It is not a version subcommand —
+# it falls through to the same dependency check the bare invocation runs, and
+# on this machine it started downloading Playwright's Chromium build v1091,
+# "Installing Playwright + Chromium (~200MB)", and did not return for over
+# 120s. A version probe that pulls 153MB of browser and may not terminate is
+# not a probe: it answers nothing, slowly, while writing to the machine. This
+# is the "exits 0 while printing nothing is a FAILING probe" trap in a
+# different costume — here the failure is the cost, not the emptiness.
+#
+# ONE DEPENDENCY AES CANNOT SATISFY, recorded honestly. ACFS's manifest notes
+# "giil installer auto-installs Node.js + Playwright if needed". giil uses
+# Playwright/Chromium to fetch the actual image bytes from iCloud, Dropbox and
+# Google Photos share links. The AES strategies install the program; they do
+# not provision a browser, and there is no strategy for "download a 200MB
+# browser and wire up a Node runtime". The bare `giil --version` probe above
+# works without any of that — it is why it is the probe and not `version` —
+# so `aes setup` installs and verifies giil correctly, but a user's first real
+# image fetch may still pull Chromium on demand. This is upstream behaviour,
+# not a manifest defect, and it is why the `base.system` dependency ACFS
+# declares is deliberately NOT copied here: AES cannot verify it, and a
+# dependency AES cannot install is worse than an honest omission.
+#
+# END-TO-END, run on 2026-09-29 in an isolated scratch AES_HOME with a PATH
+# that excluded the pre-existing giil on this machine (see below). This is a
+# real `aes setup` against the real pinned release, not a unit test:
+#
+#   $ aes setup --only giil --non-interactive
+#   installed 1 · already present 0 · skipped 0 · failed 0
+#   giil  installed
+#   exit 0
+#   $ aes verify --only giil
+#   giil  ok  3.2.1  /tmp/aes-giil-e2e3/aes/bin/giil
+#
+# The installed binary hashed to 2a1a2b8b...d60bd0, byte-identical to the
+# release asset, and state.json recorded version 3.2.1. A second `aes setup`
+# installed 0 and failed 0 — idempotent, no reinstall storm.
+#
+# The PATH had to be narrowed for a reason worth knowing before the next agent
+# runs this on a normal machine: this machine ALREADY has a giil at
+# ~/.local/bin/giil, dated 2026-06-01, digest 1c93888f60c695a396fc14a9b430e1
+# 074b78ed51677a77e7aed472088f60acab — a DIFFERENT build from the pinned v3.2.1
+# (2a1a2b8b...d60bd0). It also reports "giil version 3.2.1 (Hybrid Edition)",
+# so it is the same version number from different bytes. On a normal PATH the
+# verifier resolves that one first, `aes setup` reports "already present", and
+# the pinned asset is never downloaded — the manifest's checksum is then
+# checked against nothing. That is the brenner-bot trap from its own header
+# (a stale pre-existing binary satisfying the floor forever), and it is why
+# this run used a PATH without ~/.local/bin. On a machine with no giil at all
+# the install path above is what happens; on this machine the pre-existing one
+# wins and the manifest is inert until it is removed.
+#
+# tested: false. The coordinates are measured and the install path was
+# exercised end-to-end, but Layer 1 and Layer 2 have not been run, and a tool
+# may only be `tested: true` once both pass.
+#
+# NOT VERIFIED off linux/amd64. This measurement machine is linux/amd64, so the
+# binary was run for that coordinate only. The other three coordinates need no
+# separate run to be trustworthy — they are the same file, verified by digest
+# above — but no giil was executed as a darwin/arm64 process, and this comment
+# exists so the next agent does not mistake "declared for 4 platforms" for
+# "measured on 4 platforms".
+name: giil
+description: download full-resolution images from cloud share links
+category: utility
+tested: false
+tags:
+  - utility
+  - images
+verify:
+  command: giil
+  version:
+    # No XDG_CACHE_HOME= prefix. This used to read
+    # `XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/aes-giil-cache}" giil --version`,
+    # because giil's `set -euo pipefail` script dies on its unguarded $HOME at
+    # line 412 when the probe environment carries none. The same predictable
+    # path under a world-writable /tmp that made the ru and apr probes
+    # exploitable: a tool writing or reading its cache at a path any local user
+    # can pre-create is a tool another local user can steer. The verifier now
+    # carries HOME into the probe environment, so the workaround is
+    # unnecessary.
+    command: giil --version
+    min: "3.2.1"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/giil
+    release_tag: v3.2.1
+    asset:
+      amd64: giil
+      arm64: giil
+    sha256:
+      amd64: 2a1a2b8b658cd2c112406f4fd8943bffb23ba580b736ba0547d7d57703d60bd0
+      arm64: 2a1a2b8b658cd2c112406f4fd8943bffb23ba580b736ba0547d7d57703d60bd0
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/giil
+    release_tag: v3.2.1
+    asset:
+      amd64: giil
+      arm64: giil
+    sha256:
+      amd64: 2a1a2b8b658cd2c112406f4fd8943bffb23ba580b736ba0547d7d57703d60bd0
+      arm64: 2a1a2b8b658cd2c112406f4fd8943bffb23ba580b736ba0547d7d57703d60bd0

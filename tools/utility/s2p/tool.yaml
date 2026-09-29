@@ -1,0 +1,187 @@
+# AES catalog. github-release for darwin, linux at
+# Dicklesworthstone/source_to_prompt_tui v0.3.4.
+#
+# s2p is a TUI that combines source code into an LLM prompt: interactive file
+# selection, real-time token counting, gitignore-aware filtering, clipboard
+# output. Upstream is TypeScript/Bun/React/Ink, and the release assets are
+# prebuilt native binaries — no runtime dependency to declare.
+#
+# ACFS INSTALLS THIS TOOL BY curl|bash, AND THAT IS NOT A COORDINATE AES CAN
+# USE. acfs.manifest.yaml:3778 (utils.s2p) declares
+#   verified_installer.url: https://raw.githubusercontent.com/Dicklesworthstone/source_to_prompt_tui/main/install.sh
+# run through acfs_run_verified_upstream_script_as_target "s2p" "bash"
+# (install.sh:10604-10609). A manifest may not carry a url: field and may not
+# carry a run: field (I3 — a manifest is data, never a program), and the
+# closed strategy set has no "fetch a script and execute it" member. So the
+# ACFS mechanism is not available here.
+#
+# WHAT AES INSTEADS INSTALLS IS THE UPSTREAM RELEASE ASSET, which is a
+# different and better fact: the same project publishes pinned, checksummed
+# binaries on GitHub releases. That is the github-release strategy, and it is
+# why this tool is expressible despite ACFS needing a shell script. The two
+# mechanisms install the same program by different routes; nothing below was
+# taken from ACFS.
+#
+# ACFS's checksums.yaml:161 carries an s2p entry, and it is the WRONG
+# ARTIFACT. Its url is the raw install.sh and its sha256 is
+# 5b563a0e84277ac81837611bf126c1d4f015055de17330a75670ccc7258d57eb. That
+# digest is real but it is the digest of the installer SCRIPT, not of any
+# binary: upstream's own SHA256SUMS for v0.3.4 lists that same 5b563a0e...
+# value on the `install.sh` line. Copying it into this manifest would pin a
+# checksum for bytes AES never downloads. Every digest below was computed
+# locally from a downloaded asset.
+#
+# THE RELEASE TAG CAME FROM THE API, not from an asset filename. `curl -s
+# https://api.github.com/repos/Dicklesworthstone/source_to_prompt_tui/releases/latest`
+# returns tag_name v0.3.4 (draft false, prerelease false, published
+# 2026-07-03T15:21:21Z), cross-checked against the tags list, where v0.3.4 is
+# the head at commit e7485628e41c. The leading `v` is load-bearing: the tag is
+# interpolated verbatim into the releases/download URL (installer.assetURL), so
+# "0.3.4" would 404 and the tool would report as missing with nothing pointing
+# at the manifest.
+#
+# MEASURED 2026-09-29 by downloading each asset from the tagged release and
+# hashing it locally with sha256sum:
+#
+#   $ curl -sSL -o s2p-linux-x64 \
+#       https://github.com/Dicklesworthstone/source_to_prompt_tui/releases/download/v0.3.4/s2p-linux-x64
+#   http=200 size=105851008
+#   $ sha256sum s2p-linux-x64
+#   179378b7c9cd6151b74a5f062ed1cebef3ad54f698c24610fd5af177e8abd629  s2p-linux-x64
+#
+# All four downloads returned http=200 with byte sizes matching the API's
+# asset listing exactly (105851008 / 104900752 / 80429136 / 74789858), which is
+# the first cross-check: a wrong or truncated asset would not match the
+# content-length the API advertised.
+#
+# Each locally computed digest was then checked against upstream's own
+# SHA256SUMS for the same tag, and all four agree:
+#
+#   179378b7...abd629  s2p-linux-x64      (mine == upstream)
+#   d19f925c...898a74d  s2p-linux-arm64    (mine == upstream)
+#   967c9543...2f47006  s2p-macos-x64      (mine == upstream)
+#   48826a76...612790af  s2p-macos-arm64    (mine == upstream)
+#
+# ASSET NAMES ARE NOT AES ARCH NAMES, AND THAT IS FINE. Upstream spells the
+# platforms linux-x64 / linux-arm64 / macos-x64 / macos-arm64. AES keys the
+# asset and sha256 maps by GOARCH (amd64, arm64) and selects the platform by
+# GOOS, so the map value is a free string and `s2p-linux-x64` is the honest
+# name of the amd64 linux asset. There is no translation layer and none is
+# needed: the key is which machine AES is on, the value is what upstream calls
+# the build for it. The same shape is already shipped in tools/agent/omp
+# (omp-linux-x64) and tools/utility/csctf.
+#
+# THE ASSET IS A RAW EXECUTABLE, NOT AN ARCHIVE. Measured on the downloaded
+# bytes with `file`:
+#
+#   s2p-linux-x64:    ELF 64-bit LSB executable, x86-64, dynamically linked
+#   s2p-linux-arm64:  ELF 64-bit LSB executable, ARM aarch64
+#   s2p-macos-x64:    Mach-O 64-bit x86_64 executable
+#   s2p-macos-arm64:  Mach-O 64-bit arm64 executable
+#
+# There is no .tar.gz, no .zip and no .tar.xz, so internal/installer/archive.go
+# dispatches on content to its isExecutable branch (installRawExecutable), not
+# to extractTarGz. That branch's own comment names s2p as one of the tools it
+# exists for. The extractTarGz fallback would instead have refused these bytes
+# with "open gzip: gzip: invalid header" — a message that says the download is
+# corrupt when the download is exactly what upstream published.
+#
+# NO `binary:` IS DECLARED, and that is measured rather than conventional. A
+# bare executable has no archive member to look up, so the installer's
+# installRawExecutable copies the asset straight to destDir/<want>, and `want`
+# is binaryName() — the tool name when no `binary` map matches. The asset is
+# itself the program and upstream's own CLI name is `s2p` (see --help below),
+# so the fallback is correct here. Declaring `binary: {amd64: s2p-linux-x64}`
+# would name the ASSET, which is a different fact, and would be wrong.
+#
+# VERSION PROBE, MEASURED BY RUNNING THE EXTRACTED BINARY on linux/amd64:
+#
+#   $ ./s2p-linux-x64 --version
+#   0.3.4
+#   exit 0, stdout only (stderr was empty)
+#
+# This is a real probe and not the "exits 0 while prints nothing" trap: it
+# exits 0 AND emits a parseable version on stdout. `--help` confirms the flag
+# is the documented one, not an accident:
+#
+#   $ ./s2p-linux-x64 --help
+#   source2prompt-tui (s2p) - A TUI for combining source code into LLM prompts.
+#   Usage:
+#     s2p [directory]
+#   Options:
+#     -h, --help       Show this help message
+#     -V, --version    Show version and exit
+#
+# ExtractVersion was run against the real parser with this exact output and
+# returns "0.3.4"; CompareVersions("0.3.4","0.3.4") is 0. The probe returns
+# in well under a second against the verifier's 15s VerifyTimeout.
+#
+# DO NOT USE `-v` AS THE PROBE. It is not short for --version here: measured,
+# `s2p -v` ignores the flag and launches the TUI, printing a spinner
+# ("⠋ Scanning project...") and then blocking on the interactive interface. A
+# probe that enters a full-screen TUI is the same class of failure as giil's
+# `version` subcommand — it answers nothing, and it can hang the verifier
+# until its timeout. `--version` (equivalently `-V`) is the probe.
+#
+# NO ENVIRONMENT WORKAROUND IS NEEDED, unlike giil. giil's header records that
+# its probe needs XDG_CACHE_HOME because the verifier probes with a PATH-only
+# environment and its `set -euo pipefail` script dies on an unguarded $HOME.
+# verifier.probeEnv does not strip the environment — it returns the current
+# one with the AES bin dir prepended to PATH — so s2p inherits HOME normally.
+# Measured under a deliberately stripped `env -i` PATH-only environment to
+# confirm the contrast:
+#
+#   $ env -i PATH="$PWD" ./s2p-linux-x64 --version
+#   0.3.4
+#   exit 0
+#
+# s2p is a statically self-contained native binary with no config directory
+# and no cache read at startup, so there is nothing for a bare environment to
+# break.
+#
+# NOT VERIFIED OFF linux/amd64. This measurement machine is linux/amd64, so
+# the binary was executed for that coordinate only. The other three
+# coordinates are trusted by digest, not by execution: each was downloaded,
+# hashed, and matched against upstream's SHA256SUMS, and `file` confirms the
+# Mach-O arm64 / x64 and ELF arm64 bytes are the right architectures. No s2p
+# was run as a darwin or arm64 process, and this comment exists so the next
+# agent does not mistake "declared for 4 platforms" for "measured on 4
+# platforms".
+#
+# tested: false. The coordinates are measured and the probe was exercised
+# against the real binary, but Layer 1 and Layer 2 have not been run, and a
+# tool may only be `tested: true` once both pass.
+name: s2p
+description: TUI that combines source code into an LLM prompt
+category: utility
+tested: false
+tags:
+  - utility
+  - llm
+  - tui
+verify:
+  command: s2p
+  version:
+    command: s2p --version
+    min: "0.3.4"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/source_to_prompt_tui
+    release_tag: v0.3.4
+    asset:
+      amd64: s2p-macos-x64
+      arm64: s2p-macos-arm64
+    sha256:
+      amd64: 967c95435b847f25f09a75b076d1f8ebab2b952c2cedefe23ad9854652f47006
+      arm64: 48826a7696d582fd0acd1f88a929636e5f10ffbce3fb58e31320a64a612790af
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/source_to_prompt_tui
+    release_tag: v0.3.4
+    asset:
+      amd64: s2p-linux-x64
+      arm64: s2p-linux-arm64
+    sha256:
+      amd64: 179378b7c9cd6151b74a5f062ed1cebef3ad54f698c24610fd5af177e8abd629
+      arm64: d19f925c2a106604460b79a816a8fd33a378254bdce77f791afd0f2de898a74d

@@ -336,16 +336,81 @@ func lookPath(tgt Target, bin string) (string, error) { return LookPathIn(tgt, b
 // (a dynamic linker, a config directory, a runtime), and a stripped environment
 // would turn a working tool into a failing one for reasons that have nothing
 // to do with the tool.
+// probeEnv is the environment a version probe runs in: the current one, with
+// the AES bin directory prepended to PATH and HOME carried across.
+//
+// Prepending rather than replacing: the probe may need the rest of the machine
+// (a dynamic linker, a config directory, a runtime), and a stripped environment
+// would turn a working tool into a failing one for reasons that have nothing
+// to do with the tool.
+//
+// HOME is carried because a probe is an ordinary command run on the user's
+// machine, and the tools that insist on one — `ru` aborts under `set -u`
+// without it — are entitled to the user's real HOME rather than a substitute.
+// That entitlement is also a security property, and the substitute was a
+// disaster: the obvious manifest workaround was
+// `HOME="${HOME:-/tmp/aes-ru-home}" ru --version`, and ru's line 249 runs
+// `source "${TOON_SH_PATH:-$HOME/.local/lib/toon.sh}"` at load, before
+// argument dispatch. Because the probe ran with no HOME at all, the fallback
+// fired, /tmp is 1777, and any local user could pre-create
+// /tmp/aes-ru-home/.local/lib/toon.sh and have it execute on every
+// `aes verify`, `aes list` and `aes setup` — while the real version line still
+// printed, so nothing looked wrong. Reproduced 2026-09-30.
+//
+// The fallback when HOME is genuinely unset is the AES_HOME, which aes owns and
+// creates at 0700 under the user's home — never a predictable path in a
+// world-writable directory.
 func probeEnv(tgt Target) []string {
+	env := os.Environ()
+
+	// HOME first, and by REPLACEMENT rather than by append. A process launched
+	// as `env -i` or by a CI runner can have HOME present and empty, and
+	// appending a second HOME to os.Environ() leaves the child to pick one of
+	// two — which is how a probe ends up with an empty home despite the line
+	// that was supposed to give it one. Measured 2026-09-30: with HOME="",
+	// probeEnv returned both "HOME=" and "HOME=<the AES home>".
+	if os.Getenv("HOME") == "" {
+		if home := tgt.home(); home != "" {
+			env = setEnv(env, "HOME", home)
+		}
+	}
+
 	dir := tgt.binDir()
 	if dir == "" {
-		return nil
+		return env
 	}
-	path := os.Getenv("PATH")
-	if path == "" {
-		return []string{"PATH=" + dir}
+	// Prepend rather than replace: the probe may need the rest of the machine
+	// (a dynamic linker, a config directory, a runtime).
+	if old, ok := lookupEnv(env, "PATH"); ok {
+		env = setEnv(env, "PATH", dir+string(os.PathListSeparator)+old)
+	} else {
+		env = append(env, "PATH="+dir)
 	}
-	return []string{"PATH=" + dir + string(os.PathListSeparator) + path}
+	return env
+}
+
+// setEnv replaces key in env, or appends it when absent. The returned slice is
+// mutated in place where it can be, so a caller holding the result does not end
+// up with two entries for one key.
+func setEnv(env []string, key, value string) []string {
+	for i, kv := range env {
+		if strings.HasPrefix(kv, key+"=") {
+			env[i] = key + "=" + value
+			return env
+		}
+	}
+	return append(env, key+"="+value)
+}
+
+// lookupEnv reads key out of an env slice, the same way the shell would: the
+// first entry wins, which is the entry a shell applies last.
+func lookupEnv(env []string, key string) (string, bool) {
+	for _, kv := range env {
+		if strings.HasPrefix(kv, key+"=") {
+			return strings.TrimPrefix(kv, key+"="), true
+		}
+	}
+	return "", false
 }
 
 // Target is the machine a verification is about.

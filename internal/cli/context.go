@@ -10,6 +10,7 @@ import (
 	"github.com/quangdang46/agents_environment_setup/internal/profile"
 	"github.com/quangdang46/agents_environment_setup/internal/resolver"
 	"github.com/quangdang46/agents_environment_setup/internal/selection"
+	"github.com/quangdang46/agents_environment_setup/internal/verifier"
 )
 
 // context is the resolved world a command operates on: a catalog, a host,
@@ -41,6 +42,23 @@ func (a *App) resolve(f *Flags) (*runContext, error) {
 		return nil, err
 	}
 	return &runContext{App: a, Flags: f, Catalog: cat, Host: host}, nil
+}
+
+// target is the machine this run is about, for the verifier.
+//
+// It exists because `report()` is shared by `aes list`, `aes verify` and
+// `aes doctor`, and all three were building the verifier's Target by hand —
+// three copies of the same two fields, and one of them (the first) omitted the
+// Host. That omission was a real bug, not a style complaint: a tool declaring
+// `min: {darwin: 26.0, linux: 18.0}` has no scalar default, so with no host the
+// floor resolved to "" and the tool was reported `ok` on presence alone. A
+// node 16 binary therefore passed `aes verify node` and exited 0, while
+// `aes setup --only node` called the same binary stale and reinstalled it.
+//
+// One construction, at the one place that already knows both values. The Host
+// is load-bearing, not decorative: omitting it here is exactly the bug.
+func (rc *runContext) target() verifier.Target {
+	return verifier.Target{Host: rc.Host, AESHome: rc.App.Home}
 }
 
 // request turns the profile and the --only/--exclude flags into a resolver

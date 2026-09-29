@@ -1,0 +1,183 @@
+# AES catalog. github-release for darwin and linux at
+# Dicklesworthstone/automated_plan_reviser_pro release v1.3.1.
+#
+# WHAT `apr` IS. ACFS ids this tool `stack.automated_plan_reviser`, cli_name
+# "apr", and installs it by curl|bash of
+# https://raw.githubusercontent.com/Dicklesworthstone/automated_plan_reviser_pro/main/install.sh
+# (acfs.manifest.yaml:2210 is the entry; checksums.yaml:10 names exactly that
+# URL for `apr`). That is the shape AES does NOT take, and the reason is not
+# squeamishness: the upstream installer's whole job is to resolve a version,
+# download, verify and cp, and every one of those is a thing the github-release
+# strategy already does with a pinned tag and a checked digest. Fetching
+# install.sh to learn that would hand a mutable script on `main` authority to
+# choose the bytes, and the checksum ACFS records (eb4626cc...) is the checksum
+# OF THAT SCRIPT, not of the artifact AES installs. The two digests are
+# unrelated by construction; nothing below is copied from ACFS.
+#
+# ACFS's PINNED DIGEST IS FOR THE INSTALLER SCRIPT, NOT FOR ANY BINARY, AND
+# THAT WAS CHECKED RATHER THAN ASSUMED. The exact URL ACFS names was downloaded
+# on 2026-09-29 and hashed:
+#
+#   $ curl -sSL -o install.sh https://raw.githubusercontent.com/Dicklesworthstone/automated_plan_reviser_pro/main/install.sh
+#   $ sha256sum install.sh
+#   eb4626ccca58be2a9278c893618b13655c6f0805b7ee98f6a3127cf5f64a6eba  install.sh
+#
+# That is character-for-character the value ACFS's checksums.yaml:11 pins for
+# `apr`. It follows that ACFS's number is the digest of install.sh, an artifact
+# served from a website's live document root — copying it into this manifest
+# would pin a checksum for bytes AES never downloads. Every digest in this
+# manifest is the digest of the `apr` asset, measured above.
+#
+# THE ASSET IS A SINGLE PLATFORM-INDEPENDENT FILE. `apr` is a bash CLI, not a
+# compiled program: the release asset is 251,952 bytes and `file` reports
+# "Bourne-Again shell script, Unicode text, UTF-8 text executable". The v1.3.1
+# release carries seven assets — apr, apr.sha256, CHECKSUMS.sha256,
+# checksums.txt, install.sh, install.sh.sha256, VERSION — and NONE of them
+# carries a platform or arch suffix. There is no `apr-linux-x64` and no
+# `apr-macos-arm64`; there is one file called `apr`.
+#
+# That is why all four coordinates below carry the same asset name and the same
+# digest. It is not a placeholder and not a copy-paste: it is the honest
+# description of a coordinate system with only one point. Upstream is source,
+# so "the darwin/arm64 build" and "the linux/amd64 build" are the same bytes on
+# every machine. (Same shape as ru and giil in this catalog, which are the
+# precedent.)
+#
+# Measured 2026-09-29 by downloading the asset from the tagged release and
+# hashing it locally with sha256sum, twice:
+#
+#   $ gh api repos/Dicklesworthstone/automated_plan_reviser_pro/releases/assets/598541465 \
+#       -H "Accept: application/octet-stream" > apr
+#   $ sha256sum apr
+#   14bb7bbdf43f9da9ed8fb42e580af0f83575c2d50d95703ac3d415f52b4c3e3d  apr
+#   $ sha256sum apr      # a second, independent download
+#   14bb7bbdf43f9da9ed8fb42e580af0f83575c2d50d95703ac3d415f52b4c3e3d  apr
+#
+# Cross-checked against upstream two further ways, both agreeing: the release's
+# bare `apr.sha256` sidecar (compared as a string) and the formatted
+# `CHECKSUMS.sha256` line for the same asset. The sidecar is a BARE digest with
+# no "  filename" suffix, so `sha256sum -c apr.sha256` fails with "no properly
+# formatted checksum lines found" — that is the sidecar's format, not a bad
+# download; CHECKSUMS.sha256 is the one to verify with.
+#
+# The release tag came from the GitHub API and never from an asset filename —
+# which here would have been impossible anyway, since no asset name carries a
+# version. `gh api repos/Dicklesworthstone/automated_plan_reviser_pro/releases/latest
+# --jq .tag_name` returns v1.3.1; it was cross-checked against
+# /releases/tags/v1.3.1 and against the releases list, where v1.3.1
+# (2026-09-29T15:26:32Z) is newer than v1.3.0 and v1.2.2, and is not a
+# prerelease.
+#
+# The `v` in v1.3.1 is load-bearing. The tag is interpolated verbatim into the
+# releases/download URL (installer.assetURL), so "1.3.1" would 404 and the tool
+# would report as missing with nothing pointing at the manifest.
+#
+# The asset is a RAW EXECUTABLE, not an archive. Measured on the downloaded
+# bytes: the first two are 23 21 ("#!") and the first line is
+# "#!/usr/bin/env bash". It is not a gzip, an xz or a zip, so
+# internal/installer/archive.go's isExecutable branch is what installs it —
+# content sniffing, not filename. Its executableMagic table carries explicit
+# `#!` entries. The extractTarGz fallback would have refused this asset with
+# "open gzip: gzip: invalid header", a message that says the download is corrupt
+# when the download is exactly what it said it was.
+#
+# No `binary:` is declared, and that is measured rather than conventional. The
+# asset is itself the program and is named `apr`, which is the tool name, so
+# both Action.installName() and Action.binaryName() fall back to the tool name
+# and are right. The upstream installer agrees independently: it installs the
+# downloaded file under the tool's own name.
+#
+# THE PROBE CARRIES HOME INLINE, AND THAT IS LOAD-BEARING. The verifier runs a
+# version probe through `sh -c` with an environment that is PATH ONLY —
+# probeEnv returns a single element, and exec.Run's Options comment says "Env
+# replaces the environment. Nil inherits os.Environ()". So the probe inherits no
+# HOME, and `apr` is `set -euo pipefail` (line 65) with this at line 148, before
+# any argument dispatch:
+#
+#     APR_HOME="${APR_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/apr}"
+#
+# Measured, reproducing probeEnv's exact shape:
+#
+#   $ env -i PATH="$PWD:/usr/bin:/bin" sh -c 'apr --version'
+#   ./apr: line 148: HOME: unbound variable
+#   exit 1
+#
+# The binary is fine and the manifest is fine; the probe's environment is what
+# is missing. Note the failure mode is exit 1 with a message, NOT the quieter
+# "exits 0 while printing nothing" trap — but it is the same bug class, and it
+# reports as StatusUnknown rather than as a stale tool, so it would not announce
+# itself. Measured with HOME supplied inside the command string:
+#
+#   $ env -i PATH="$PWD:/usr/bin:/bin" sh -c 'HOME="${HOME:-/tmp/aes-apr-home}" apr --version'
+#   apr version 1.3.1
+#   exit 0
+#
+# Setting HOME in the SHELL does not work and that distinction is the whole
+# bug: probeEnv REPLACES the environment, so an ambient HOME is discarded
+# before `sh -c` ever runs. It has to be inside the command string, which is
+# what the `${HOME:-...}` default form does — it is inert on a machine that
+# has a HOME and supplies a harmless one on a machine (like the probe) that
+# does not. Measured to write NOTHING: pointed at a directory that did not
+# exist, the probe still exited 0, printed the version, and left the directory
+# uncreated. So it is safe to hand it a scratch path on every run, and it does
+# not initialise ~/.local/share/apr on the user's behalf.
+#
+# The probe output was run against the real parser, not reasoned about:
+# ExtractVersion("apr version 1.3.1") returns "1.3.1" (checked with a temporary
+# program in /tmp, since removed; `go test ./internal/verifier/` is green and
+# `git status` on internal/ is clean). CompareVersions("1.3.1", "1.3.1") is 0.
+# There is no commit= hash on the line to confuse gitHashRe, and no
+# build-date line that could outrank it.
+#
+# min IS THE PINNED TAG, NOT A LOWER FLOOR. The asset is pinned to v1.3.1, so a
+# machine reporting anything else is reporting a different build — and the
+# failure is silent, because a script that reports an older version still runs.
+#
+# tested: false. Layer 1 and Layer 2 have not been run against this manifest.
+name: automated-plan-reviser
+description: iterative spec refinement with extended AI reasoning
+category: agent
+tested: false
+tags:
+  - agent
+  - planning
+  - prompts
+verify:
+  command: apr
+  version:
+    # No HOME= prefix, and that is a correction rather than a convenience.
+    # This used to read `HOME="${HOME:-/tmp/aes-apr-home}" apr --version`,
+    # because apr's `set -u` guard at line 148 aborts without a HOME —
+    # measured, exit 1, "apr: line 148: HOME: unbound variable".
+    #
+    # The prefix was the same shape of hole as the one in tools/git/ru: a
+    # predictable directory under a world-writable /tmp, which a tool that
+    # sources a file from $HOME at load time would execute. The verifier now
+    # carries HOME into the probe environment, so the tool gets the user's
+    # real HOME and the workaround is unnecessary.
+    command: apr --version
+    min: "1.3.1"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/automated_plan_reviser_pro
+    release_tag: v1.3.1
+    # One asset, no platform or arch variant: apr ships as a bash script, so
+    # every coordinate is the same file. See the header before reading these
+    # four identical entries as a copy-paste error.
+    asset:
+      amd64: apr
+      arm64: apr
+    sha256:
+      amd64: 14bb7bbdf43f9da9ed8fb42e580af0f83575c2d50d95703ac3d415f52b4c3e3d
+      arm64: 14bb7bbdf43f9da9ed8fb42e580af0f83575c2d50d95703ac3d415f52b4c3e3d
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/automated_plan_reviser_pro
+    release_tag: v1.3.1
+    asset:
+      amd64: apr
+      arm64: apr
+    sha256:
+      amd64: 14bb7bbdf43f9da9ed8fb42e580af0f83575c2d50d95703ac3d415f52b4c3e3d
+      arm64: 14bb7bbdf43f9da9ed8fb42e580af0f83575c2d50d95703ac3d415f52b4c3e3d

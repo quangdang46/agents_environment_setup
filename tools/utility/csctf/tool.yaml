@@ -1,0 +1,70 @@
+# AES catalog. github-release for darwin, linux at
+# Dicklesworthstone/chat_shared_conversation_to_file release v0.4.6.
+#
+# Measured 2026-09-29 by downloading all four assets and hashing them locally
+# with sha256sum. Each value below was compared against the digest GitHub
+# reports for that asset and against the release's own `csctf-*.sha256` sidecar
+# for csctf-linux-x64; all four agree. Nothing here is copied from ACFS — ACFS
+# records only a sha256 for its install.sh, never for the binaries, and its
+# checksums.yaml entry for csctf is a script checksum, not an artifact one.
+#
+# The release tag came from the GitHub API (`/releases/latest`, cross-checked
+# against `/releases/tags/v0.4.6` and the tags list), never from parsing an
+# asset filename.
+#
+# The assets are RAW EXECUTABLES, not archives: csctf-linux-x64 is
+# "ELF 64-bit LSB executable, x86-64" and the macOS pair are Mach-O. There is
+# no .tar.gz to unpack, so the format dispatch in internal/installer/archive.go
+# is what makes this installable at all — content sniffing, not filename.
+#
+# No `binary:` is declared, and that is a measured claim rather than a
+# convention. The asset filenames are platform-specific (csctf-linux-x64,
+# csctf-macos-arm64) but the binary is installed under the tool name: the
+# github-release path renames the extracted file to installName(), which is the
+# tool name when `binary` is absent. The upstream install.sh does the same
+# thing independently — `install -m 0755 "$TMP/${ASSET}" "$DEST/${BINARY}"`
+# with BINARY=csctf — so the asset name never becomes the command.
+#
+# Version probe MEASURED, not assumed: on linux/amd64, `csctf --version` exits 0
+# and prints "csctf v0.4.6" on stdout (13 bytes, stderr empty). That is a
+# working probe -- exit 0 AND output. The floor is 0.4 because 0.4.6 is what
+# the pinned tag ships; ExtractVersion("csctf v0.4.6") was run against the real
+# parser and returns "0.4.6".
+#
+# NOT VERIFIED on arm64 or on darwin: this measurement machine is linux/amd64,
+# so `csctf --version` was executed for that coordinate only. The other three
+# assets were downloaded and hashed, and their ELF/Mach-O headers were read with
+# `file` (aarch64 ELF; Mach-O x86_64; Mach-O arm64), but no csctf binary of
+# those architectures was run. That is why tested: false and no tested_on.
+name: csctf
+description: convert AI chat share links to Markdown/HTML archives
+category: utility
+tested: false
+tags:
+  - utility
+verify:
+  command: csctf
+  version:
+    command: csctf --version
+    min: "0.4"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/chat_shared_conversation_to_file
+    release_tag: v0.4.6
+    asset:
+      amd64: csctf-macos-x64
+      arm64: csctf-macos-arm64
+    sha256:
+      amd64: 54b59297a55be14fe0fef45108ad1b88902fe3717776a2973d75c1e564580fc0
+      arm64: 8ec85133b495b932c62b82e005f58d8e270650a4ead17811064a966ebff09183
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/chat_shared_conversation_to_file
+    release_tag: v0.4.6
+    asset:
+      amd64: csctf-linux-x64
+      arm64: csctf-linux-arm64
+    sha256:
+      amd64: 9f60035bee944f65e86ee9789d7dca49269af1036c5cf6d6352dfeb6a13b5091
+      arm64: 88dde8c81e738bec6a9fccd387685366415b254918e4ceb0181a4c1bc05a7566

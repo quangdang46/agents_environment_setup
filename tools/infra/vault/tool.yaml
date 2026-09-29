@@ -1,0 +1,309 @@
+# AES catalog. package for darwin (hashicorp/homebrew-tap) and linux
+# (HashiCorp's own apt repository). Measured 2026-09-29 on linux/amd64.
+# Read the darwin and linux sections before changing either: they are not two
+# spellings of one fact, and the github-release explanation below is the reason
+# neither of them is.
+#
+# GITHUB-RELEASE IS NOT AVAILABLE FOR THIS TOOL, and that is the fact that
+# decides every other choice in this file. `gh api
+# repos/hashicorp/vault/releases/tags/v2.1.1` returns `assets: []` — a release
+# with zero assets. Checked across six releases, newest and old, and the count
+# is zero every time:
+#
+#   $ gh api repos/hashicorp/vault/releases --jq '.[] | "\(.tag_name) \(.assets|length)"'
+#   v2.1.1 0    v2.1.0 0    v2.0.4 0    v2.0.3 0    v2.0.2 0
+#   v1.19.5 0   v1.20.4 0
+#
+# HashiCorp moved Vault's binaries OFF GitHub release assets onto
+# releases.hashicorp.com, and left the tags behind. So there is no `asset:` to
+# name and — the part that actually blocks the strategy — no `sha256:` to pin,
+# which manifest validation treats as a hard error on github-release rather
+# than an unchecked download. A manifest may not carry a `url:` field to reach
+# releases.hashicorp.com either (I9 closes the strategy set; a URL in a
+# manifest would be exactly the fetch-anything-a-catalog-file-names hole the
+# checksum requirement exists to close). The zips are real and reachable — they
+# are just not a GitHub release, and this schema cannot name one.
+#
+# DARWIN IS NOT IN homebrew-core, and the real formula lives in a third-party
+# tap. This is measured, not assumed, and the measurement is what justifies the
+# unusual `package:` value below. Two independent checks:
+#
+#   $ gh api "search/code?q=repo:Homebrew/homebrew-core+%22class+Vault+%3C+Formula%22"
+#   total_count: 0
+#   $ curl -sSL https://formulae.brew.sh/api/formula.json   # 8619 formulas
+#   exact 'vault' present: False
+#   names containing vault: argocd-vault-plugin, aws-vault, msgvault,
+#                           sandvault, ssh-vault, vault-cli, vaulted
+#
+# So `brew install vault` on a stock macOS fails with "No available formula with
+# the name 'vault'". Note `vault-cli` in that list is a red herring worth
+# naming: it is the Apache Jackrabbit FileVault utility, `desc "Subversion-like
+# utility to work with Jackrabbit FileVault"`, an unrelated Java tool that
+# happens to share a word. Installing it would put a different program on PATH
+# under the name this manifest promises.
+#
+# THE DARWIN COORDINATE IS THE TAP-QUALIFIED NAME, and this is the first
+# `package:` in this catalog written that way, which is why it is spelled out.
+# HashiCorp publishes the formula at `Formula/vault.rb` in
+# hashicorp/homebrew-tap (repo neither archived nor disabled, checked via the
+# API), and Homebrew's documented spelling for a formula outside the default
+# tap is `brew install <user>/<tap>/<formula>`, which taps on demand. The
+# package strategy interpolates the field raw into exactly that command:
+#
+#   internal/installer/package.go:164
+#   _, err := p.unprivileged()(ctx, "brew "+verb+" "+pkg)
+#
+# so `package: hashicorp/tap/vault` produces `brew install hashicorp/tap/vault`.
+# `grep -c tap internal/installer/package.go` is 0 — the installer has no tap
+# support of its own, and none is needed, because the tap-qualified name makes
+# brew do it. Worth being precise about what is and is not claimed here: the
+# formula's EXISTENCE and its digest are verified below; the behaviour of
+# `brew install` on a tap-qualified argument is Homebrew's own documented
+# behaviour, and it was NOT executed on this machine, because there is no brew
+# here (`command -v brew` returns nothing). See the "NOT VERIFIED" paragraph
+# below, which says so in those words.
+#
+# THE DARWIN DIGEST WAS CROSS-CHECKED AGAINST UPSTREAM, independently of the
+# formula's own claim. The tap formula pins 2.1.1 with per-platform sha256s,
+# and those values were compared against the SHA256SUMS HashiCorp publishes for
+# the same release. They agree:
+#
+#   formula (darwin/amd64) 1310ccba498a08fa9bfe09c698f54f38b6d9c2ae45bae08cf91f02bc10d295b6
+#   upstream SHA256SUMS    1310ccba498a08fa9bfe09c698f54f38b6d9c2ae45bae08cf91f02bc10d295b6
+#   formula (darwin/arm64) 95d100472b726d889ee380c9335191abdf5b3e6f3108cde48f4f962bfea4f009
+#   upstream SHA256SUMS    95d100472b726d889ee380c9335191abdf5b3e6f3108cde48f4f962bfea4f009
+#
+# The same check covers the two linux zips: 8aa90f9cea46f541fc7baa3d0ec692fc
+# 06afde9a248cc1f2dcac46a567c6f56b for linux/amd64 and c2c74e111ffbc83b3d29c6f
+# 0c0215a5e53d738c9fad045f7797bcdcde3156067 for linux/arm64, both matching. The
+# digests are recorded here as evidence, NOT as manifest fields: the package
+# strategy has no checksum field, and adding one would be inventing schema.
+# They are also the reason this manifest is not `github-release` with these
+# numbers pasted in — HashiCorp moved the binaries to releases.hashicorp.com,
+# and a manifest may not carry a `url:` field to reach them.
+#
+# THE VERSION IS THE SAME ON BOTH PLATFORMS, which is a fact about the formula
+# and not a copy-paste: the tap is pinned at 2.1.1 and the apt repo serves
+# 2.1.1-1, so the `min:` below is right for both and neither entry was adjusted
+# to match the other. The formula's own test block is
+# `system "#{bin}/vault --version"` — upstream chose the same probe this
+# manifest declares, independently.
+#
+# ACFS AGREES, which is corroboration rather than the source of the decision.
+# `grep -n -i vault /tmp/acfs/install.sh | grep -iE 'mac|darwin|osx'` returns
+# nothing: ACFS has no macOS vault path at all. Its linux path is the same
+# HashiCorp apt repository declared below, and its Arch path uses pacman or an
+# AUR helper — neither of which is one of the five closed strategies. ACFS's
+# checksums.yaml has no `vault` entry either (grep -i vault on it returns
+# nothing, despite the install.sh comment at line 9069 describing a "pinned
+# generic Linux binary"), so there was no ACFS checksum to copy even if copying
+# one were allowed. Nothing below comes from ACFS.
+#
+# THE APT REPOSITORY, MEASURED. HashiCorp publishes noble for both arches;
+# the codename is real and the package is real, checked against the repo's own
+# index rather than assumed:
+#
+#   $ curl -sSL https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages \
+#       | grep -A14 '^Package: vault$' | grep -B1 -A13 'Version: 2.1.1-1'
+#   Package: vault      Version: 2.1.1-1     Architecture: amd64
+#   Filename: pool/amd64/main/vault_2.1.1-1_amd64.deb
+#   SHA256: 1a1887a9bc72ebf77cdc045efc08b1f706f50634d56bb86d427ee902aa20f767
+#
+#   ...binary-arm64/Packages gives the same 2.1.1-1 for arm64,
+#   pool/arm64/main/vault_2.1.1-1_arm64.deb,
+#   SHA256 ffa6a72a862f29946f329583742185f1c36af2796da70bbbc2552e6ee6ec3a6b
+#
+# `noble` is declared literally rather than derived from the running host's
+# codename, because apt_source has no substitution mechanism — the URL is
+# written verbatim into /etc/apt/sources.list.d/vault.list. That is a real
+# limitation and it is inherited from the apt_source design (tailscale and
+# postgres18 pin `noble` the same way), not introduced here. ACFS probes for
+# the current codename and falls back to noble when the dist exists but holds
+# no vault package; that fallback is shell logic AES has no home for. Stated
+# plainly: on a non-noble Ubuntu this points at the wrong dist. It is the
+# conservative pin — noble is the newest LTS and the one the fallback picks.
+#
+# THE KEYRING DIGEST WAS MEASURED TWICE, and it is the armored bytes.
+# prepareAptSource calls verifyFile on the file as DOWNLOADED and only
+# afterwards runs dearmorKeyring, so the manifest must pin the armored form.
+# That is the same shape as postgres18, whose keyring_url ends in .asc and
+# whose digest 0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76
+# I re-measured here against the live .asc — so the precedent is real and the
+# convention holds. The value below is the armored key, not the dearmored one;
+# the two differ, and pinning the wrong one would fail verification:
+#
+#   $ curl -sSL https://apt.releases.hashicorp.com/gpg -o k1.gpg && sha256sum k1.gpg
+#   1df7d66b79352bab45348511079f74987568672a8ed6395053a050b61f6c5430  k1.gpg   (1725 bytes)
+#   $ curl -sSL https://apt.releases.hashicorp.com/gpg -o k2.gpg && sha256sum k2.gpg
+#   1df7d66b79352bab45388511079f74987568672a8ed6395053a050b61f6c5430  k2.gpg   (1725 bytes)
+#
+# Two independent downloads, same 64 hex characters, same 1725 bytes. The
+# dearmored file is a DIFFERENT digest (866ebcac7aa40ad5d862fa020665eb4769028d0f
+# 95a7657517aee2612e5ad7c5) and is deliberately not what this field carries.
+#
+# BOTH ARCHITECTURES WERE DOWNLOADED AND CHECKED, and each matches the SHA256
+# the repository's own index publishes — so the coordinates are the upstream
+# ones, not a manifest's say-so:
+#
+#   vault_2.1.1-1_amd64.deb  sha256 1a1887a9bc72ebf77cdc045efc08b1f706f50634d56bb86d427ee902aa20f767
+#   vault_2.1.1-1_arm64.deb  sha256 ffa6a72a862f29946f329583742185f1c36af2796da70bbbc2552e6ee6ec3a6b
+#
+# Note what these digests are NOT: they are not manifest fields. The package
+# strategy has no checksum field — apt verifies the .deb against the signed
+# index it just fetched, and the keyring digest above is what makes that index
+# trustworthy. They are recorded here as the measurement behind the claim that
+# the repo is intact, and they are the numbers to re-check if the install ever
+# misbehaves.
+#
+# THE BINARY IS `vault`, INSIDE the package, so no `binary:` is declared — and
+# for the package strategy that field is rejected anyway (strategySpecs lists
+# it under package's `rejected`), so declaring it would fail validation. Both
+# debs were unpacked and the payload read:
+#
+#   $ dpkg-deb -x vault_2.1.1-1_amd64.deb /tmp/vault-extract && ls /tmp/vault-extract/usr/bin/
+#   vault
+#   $ file /tmp/vault-extract/usr/bin/vault
+#   ELF 64-bit LSB executable, x86-64, statically linked, Go BuildID=..., not stripped
+#   $ file /tmp/vault-arm/usr/bin/vault
+#   ELF 64-bit LSB executable, ARM aarch64, statically linked, ..., not stripped
+#
+# Both unpack to a single static ELF at /usr/bin/vault — the name AES already
+# expects. A .deb is not a tarball or a zip, so no extraction-key question
+# arises here at all; that concern belongs to the github-release path and does
+# not apply.
+#
+# THE PROBE WAS RUN, IN THE SHAPE THE VERIFIER RUNS IT IN. `vault --version`
+# exits 0 and prints to stdout — it is a working probe, exit 0 AND output, not
+# the "exits 0 printing nothing" failure that looks like success:
+#
+#   $ vault --version
+#   Vault v2.1.1 (d78bbbe2d2f3d289c1ec29d431071beb23668212), built 2026-09-15T21:21:56Z
+#   exit 0
+#
+# Re-run through `env -i PATH=… sh -c 'vault --version'` — PATH only, no HOME,
+# no VAULT_ADDR, no VAULT_TOKEN — and it prints the same line and exits 0. That
+# matters because probeEnv replaces the environment (ru's manifest documents
+# the HOME bug this shape causes, where `set -u` aborts with "HOME must be
+# set"); vault is a static Go binary with no such guard, and measuring it under
+# the probe's own environment is the only way to know that in advance.
+#
+# The version line was run through the real parser, not reasoned about. The
+# line carries a 40-char git hash in parens and a build date, both of which
+# have outranked a real version in this catalog before, so this was checked
+# rather than assumed (temporary test in package verifier, since removed;
+# `git status` on internal/ is clean):
+#
+#   ExtractVersion("Vault v2.1.1 (d78bbbe2…), built 2026-09-15T21:21:56Z\n")
+#     = "2.1.1"
+#
+# The hash is not mistaken for the version and the build date does not become
+# 2026. Line 1 is the source and the only line there is.
+#
+# min IS 2.1.1, THE VERSION MEASURED, not a lower floor. This machine already
+# has Vault, at 2.0.1-1 from the same apt repository, and that matters:
+#
+#   $ command -v vault        → /usr/bin/vault
+#   $ vault --version         → Vault v2.0.1 (1a56927a…), built 2026-05-19T17:20:48Z
+#   $ dpkg -l vault           → ii  vault  2.0.1-1  amd64
+#
+# CompareVersions("2.0.1", "2.1.1") = -1, measured against the real comparator,
+# so that existing binary reads STALE and the floor does its job. A floor of
+# "2.0" would call 2.0.1 ok forever, `aes setup` would report "already present",
+# and nothing would ever deliver the 2.1.1 this manifest is measured against —
+# the quiet failure this catalog has already paid for twice (see ru and
+# ultimate_bug_scanner, which hit it independently).
+#
+# NOT VERIFIED end-to-end. Layer 1 and Layer 2 have not been run: the apt
+# install path was never executed on this machine, because it would write
+# /etc/apt/sources.list.d/vault.list and /usr/share/keyrings and reach for
+# sudo, and that is a mutation of a real host this task does not authorise. So
+# what is proven here is narrower and is stated as such: the repository serves
+# vault 2.1.1-1 for amd64 and arm64, both .debs were downloaded and match the
+# index digests, both unpack to a static ELF named `vault`, the probe was run
+# from the unpacked linux/amd64 binary under a PATH-only environment and exits
+# 0 with output, and that output was parsed by the real ExtractVersion. The
+# `apt-get install -y vault` step itself is unexercised.
+#
+# NOT VERIFIED end-to-end, and the two platforms fail for DIFFERENT reasons,
+# which is worth separating because they are easy to blur.
+#
+# linux: the apt install path was never executed. It would write
+# /etc/apt/sources.list.d/vault.list and /usr/share/keyrings and reach for
+# sudo, and that is a mutation of a real host this task does not authorise.
+# What is proven is narrower: the repository serves vault 2.1.1-1 for amd64
+# and arm64, both .debs were downloaded and match the index digests, both
+# unpack to a static ELF named `vault`, and the probe was run from the
+# unpacked linux/amd64 binary under a PATH-only environment, exiting 0 with
+# output that the real ExtractVersion parses to 2.1.1. The
+# `apt-get install -y vault` step itself is unexercised.
+#
+# darwin: nothing was executed at all, because there is no brew on this machine
+# (`command -v brew` returns nothing). The darwin coordinate rests on the
+# formula's existence in hashicorp/homebrew-tap, its version, and its digests
+# agreeing with upstream's SHA256SUMS — all verified — plus Homebrew's
+# documented tap-qualified spelling, which is NOT verified here. So the
+# `brew install hashicorp/tap/vault` command this manifest produces has never
+# been run, and the claim that it would succeed is Homebrew's documented
+# behaviour rather than a measurement.
+#
+# NOT VERIFIED off linux/amd64, and here that is a claim about MEASUREMENT
+# rather than about existence: the arm64 binary was downloaded, hashed against
+# the index and identified as ARM aarch64 by `file`, but never EXECUTED — this
+# is an amd64 host. The linux/arm64 coordinates rest on the repository's index
+# and the binary's ELF header, not on a run.
+#
+# That is why tested: false and no tested_on: a tool may only be `tested: true`
+# once both layers pass, and tested_on would assert a darwin/amd64 and
+# darwin/arm64 proof that does not exist for this file.
+#
+# NOTE FOR THE NEXT AGENT. If Vault ever appears in homebrew-core, the
+# `package:` value below becomes a bare `vault` and nothing else changes —
+# that is the shape tailscale already uses for its own brew formula, and it
+# needs no tap because homebrew-core is tapped by default. The tap-qualified
+# spelling is only correct while homebrew-core has no `vault`, so it is worth
+# re-checking against the formulae API rather than leaving it to rot.
+name: vault
+description: HashiCorp Vault secrets management CLI
+category: infra
+tested: false
+tags:
+  - infra
+  - security
+  - secrets
+verify:
+  command: vault
+  version:
+    # A working probe, measured: exits 0 AND prints. Static Go binary, no HOME
+    # guard, so the verifier's PATH-only probeEnv is enough. See the header for
+    # the run and for the parser check against the real ExtractVersion.
+    command: vault --version
+    # The version this manifest was measured against, not a lower floor. The
+    # 2.0.1 already installed on this machine reads stale against it. See the
+    # header — a floor below the measured version makes the floor check nothing.
+    min: "2.1.1"
+install:
+  darwin:
+    # TAP-QUALIFIED, and that is the whole trick. There is no `vault` formula
+    # in homebrew-core — checked against the formulae API, 8619 formulas, no
+    # exact match — so a bare `package: vault` would fail with "No available
+    # formula". The formula ships in hashicorp/homebrew-tap and Homebrew's
+    # documented spelling for a non-default tap is <user>/<tap>/<formula>,
+    # which taps on demand. See the header for the measurements behind this
+    # and for what was NOT executed.
+    strategy: package
+    manager: brew
+    package: hashicorp/tap/vault
+  linux:
+    strategy: package
+    manager: apt
+    package: vault
+    # Ubuntu's own archives carry no vault at all, so this is where the package
+    # genuinely comes from rather than a workaround for a wrong name. The
+    # keyring digest was measured twice from two independent downloads of the
+    # ARMORED key — the form prepareAptSource verifies before dearmoring, and
+    # the same convention postgres18 uses. The dearmored file has a different
+    # digest and is deliberately not what this field carries.
+    apt_source:
+      url: https://apt.releases.hashicorp.com noble main
+      keyring_url: https://apt.releases.hashicorp.com/gpg
+      keyring_sha256: 1df7d66b79352bab45388511079f74987568672a8ed6395053a050b61f6c5430

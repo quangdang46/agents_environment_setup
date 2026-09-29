@@ -1,0 +1,333 @@
+# AES catalog. github-release for darwin and linux at Dicklesworthstone/
+# meta_skill release v0.2.2.
+#
+# meta_skill ("ms") is a local-first skill manager for AI coding agents: it
+# mines CASS sessions, indexes and searches skills, and exposes them over MCP.
+# Upstream is Rust (repo language=Rust, pushed_at 2026-09-26), and the release
+# assets are prebuilt native binaries, so there is no runtime to declare.
+#
+# THE TOOL NAME IS `meta-skill`, NOT `meta_skill`. ACFS ids this tool
+# `stack.meta_skill` (underscore, matching the GitHub repo), but the AES naming
+# contract is lowercase kebab-case — nameRe, "^[a-z0-9]+(-[a-z0-9]+)*$" — and an
+# underscore is a hard catalog-load error, not a warning. Measured, not
+# assumed: with `name: meta_skill` this file was written and `aes list` reported
+#
+#   aes: .../tools/agent/meta_skill/tool.yaml: tool.yaml: invalid manifest:
+#   name "meta_skill" must be lowercase kebab-case (a-z, 0-9, dashes)
+#
+# and NO tool listed at all, because one bad manifest takes the whole catalog
+# load down by design. So the name is the repo name kebab-cased and the
+# directory keeps the ACFS spelling, so the two projects can be grepped against
+# each other. This is the same split tools/agent/brenner_bot and
+# tools/agent/ultimate_bug_scanner already use. The underscore is only in the
+# path and in `repository:` (where it is upstream's own literal name); the CLI
+# the user types is `ms`, which is what verify.command, the `binary` map and the
+# installed file are all called.
+#
+# ACFS INSTALLS THIS TOOL BY curl|bash, AND THAT IS NOT A COORDINATE AES CAN
+# USE. acfs.manifest.yaml:2167 is `  - id: stack.meta_skill`, and the entry
+# below it declares cli_name "ms" and verified_installer.runner "bash" with args
+# ["--easy-mode"]. checksums.yaml:105 is `  ms:` and line 106 names the thing it
+# pins:
+#
+#   ms:
+#     url: "https://raw.githubusercontent.com/Dicklesworthstone/meta_skill/main/scripts/install.sh"
+#
+# A manifest may not carry a url: field and may not carry a run: field (I3 — a
+# manifest is data, never a program), and the closed strategy set has no
+# "fetch a script and execute it" member. So the ACFS mechanism is unavailable
+# here. WHAT AES INSTALLS IS THE UPSTREAM RELEASE ASSET, which is a different
+# and better fact: the same project publishes checksummed binaries on GitHub
+# releases. Nothing below was taken from ACFS.
+#
+# ACFS's PINNED DIGEST IS FOR THE INSTALLER SCRIPT, NOT FOR ANY BINARY, AND
+# THAT WAS CHECKED RATHER THAN ASSUMED. I downloaded the exact URL ACFS names
+# on 2026-09-29 and hashed it:
+#
+#   $ curl -sSL -o upstream-install.sh \
+#       https://raw.githubusercontent.com/Dicklesworthstone/meta_skill/main/scripts/install.sh
+#   http=200  size=13363
+#   $ sha256sum upstream-install.sh
+#   5233b2130670b8036643ce414d212fa6b610a10ec5e7cf4961df34a7fec58601  upstream-install.sh
+#
+# That is character-for-character the value ACFS's checksums.yaml:107 pins for
+# `ms`. It follows that ACFS's number is the digest of install.sh on main, an
+# artifact from a moving branch that AES never downloads — copying it into this
+# manifest would pin a checksum for bytes AES never fetches. Every digest below
+# was computed from a release asset I downloaded.
+#
+# READING THAT SCRIPT ALSO CONFIRMS THE ASSET NAMES INDEPENDENTLY OF MY OWN
+# LISTING. Line 358 builds `archive_name="ms-${version_for_url}-${platform}.tar.gz"`
+# from detect_platform (line 77), which maps uname -s to one of
+# unknown-linux-gnu / apple-darwin / pc-windows-msvc and uname -m to x86_64 or
+# aarch64, and line 22 sets BINARY_NAME="ms". So upstream itself can only ever
+# ask for four of those combinations — two of which (x86_64-apple-darwin,
+# aarch64-unknown-linux-gnu) exist in older releases. That is the same shape
+# the asset inventory below records, reached by a second route.
+#
+# THE RELEASE TAG CAME FROM THE API, never from an asset filename — and it
+# mattered here, because every asset name in this repo embeds the version:
+#
+#   $ gh api repos/Dicklesworthstone/meta_skill/releases/latest --jq .tag_name
+#   v0.2.2
+#   $ gh api .../releases/tags/v0.2.2 --jq '{draft, prerelease, published_at}'
+#   {"draft":false,"prerelease":false,"published_at":"2026-08-23T07:24:33Z"}
+#   $ gh api repos/Dicklesworthstone/meta_skill/tags --jq '.[0]'
+#   v0.2.2 2a4bc62a...
+#
+# (The tags list is longer than the releases list: v0.1.4, v0.1.2 and v0.1.1
+# have tags but no release, so they are not in the inventory below.)
+#
+# The leading `v` is load-bearing: the tag is interpolated verbatim into the
+# releases/download URL (installer.assetURL), so "0.2.2" would 404 and the tool
+# would report as missing with nothing in this file pointing at the cause. The
+# full tag list is v0.2.2, v0.2.1, v0.2.0, v0.1.5, v0.1.4, v0.1.3, v0.1.2,
+# v0.1.1 — and v0.1.4, v0.1.2 and v0.1.1 have tags but no release, so an
+# unpinned "latest" would also have been a moving target with three of its ten
+# versions missing an asset entirely.
+#
+# MEASURED 2026-09-29: every asset below was downloaded from the tagged release
+# and hashed locally with sha256sum. All returned http=200 with byte sizes
+# matching the API's asset listing exactly, which is the first cross-check — a
+# wrong or truncated asset would not match the advertised content-length.
+#
+#   200  9726278   ms-0.2.2-x86_64-unknown-linux-gnu.tar.gz
+#        12e92d23659ddb8a173f88b297f241d0ae7197c4bdddfdf3c530e1a39c3c59d7
+#   200  7768638   ms-0.2.2-aarch64-apple-darwin.tar.gz
+#        25f1f75b4d1e4377466ca85fe7d9fd9a485c1b6099bd3aa4b40e04b5c8836526
+#
+# Each locally computed digest then agreed with TWO independent upstream
+# sources: the `digest` field the release API reports per asset, and the
+# release's own SHA256SUMS.txt (all six lines, which also covers the bare
+# non-archive assets this manifest does not use).
+#
+#   12e92d23...c59d7  ms-0.2.2-x86_64-unknown-linux-gnu.tar.gz   (mine == API == SHA256SUMS.txt)
+#   25f1f75b...6526  ms-0.2.2-aarch64-apple-darwin.tar.gz        (mine == API == SHA256SUMS.txt)
+#   e80aa0d7...d86a  ms-0.2.2-linux-x86_64        (raw, unused)
+#   e80aa0d7...d86a  ms-0.2.2-x86_64-unknown-linux-gnu  (raw, unused — SAME BYTES)
+#   f0327f97...54fa  ms-0.2.2-aarch64-apple-darwin (raw, unused)
+#   f0327f97...54fa  ms-0.2.2-macos-aarch64        (raw, unused — SAME BYTES)
+#
+# The raw non-archive assets and their .tar.gz twins are byte-identical in each
+# pair (`file`: ELF 64-bit LSB pie x86-64 for the linux pair, Mach-O 64-bit
+# arm64 for the darwin pair — one build, published under two names). The
+# archives are what this manifest pins: they are under half the download
+# (9726278 vs 23206424 bytes on linux) and they are the form upstream's own
+# installer fetches, so the two routes fetch the same artefact by the same name.
+#
+# ONLY TWO OF THE FOUR AES COORDINATES EXIST AT THIS TAG, AND NEITHER GAP IS A
+# MANIFEST DEFECT. The complete asset inventory of every release of this repo,
+# from `gh api .../releases --paginate`, is:
+#
+#   linux/amd64    every release, as -x86_64-unknown-linux-gnu(.tar.gz) and -linux-x86_64
+#   darwin/arm64   every release, as -aarch64-apple-darwin(.tar.gz) and -macos-aarch64
+#   linux/arm64    v0.1.0, v0.1.3, v0.1.5, v0.2.0 ONLY, as -aarch64-unknown-linux-gnu(.tar.gz)
+#                  — DROPPED in v0.2.1 and v0.2.2
+#   darwin/amd64   NEVER, in any release, as -x86_64-apple-darwin
+#
+# (v0.1.4, v0.1.2 and v0.1.1 have tags but no release at all, so they
+# contribute no assets to this inventory.)
+#
+# So the darwin/arm64 target declares only arm64 and the linux target declares
+# only amd64. That is the rch shape (tools/infra/rch, same upstream org): a
+# macOS/Intel or Graviton host gets ErrMissingArch naming the arch rather than
+# a binary it cannot execute, and inventing a hash for a coordinate upstream
+# does not publish is the one thing this file must never do.
+#
+# Worth knowing before someone "fixes" the arm64 gap: v0.2.0 DID publish
+# ms-0.2.0-aarch64-unknown-linux-gnu.tar.gz, so pinning v0.2.0 would cover
+# three of four coordinates at an older version. This manifest deliberately
+# takes the newest release and two coordinates rather than the oldest release
+# and three — a stale pin that satisfies more machines than the tool deserves
+# is the same failure as a wrong one. Repinning to v0.2.0 is a deliberate
+# trade a future bead can make once upstream either restores the arm64 build or
+# the question of who needs it is settled.
+#
+# THE ARCHIVE CONTAINS ONE MEMBER AND IT IS NOT THE TOOL NAME. Measured:
+#
+#   $ tar tzf ms-0.2.2-x86_64-unknown-linux-gnu.tar.gz
+#   ms
+#   $ tar tzf ms-0.2.2-aarch64-apple-darwin.tar.gz
+#   ms
+#
+# (tar also prints "Ignoring unknown extended header keyword
+# 'LIBARCHIVE.xattr.com.apple.provenance'" while listing — an Apple provenance
+# xattr in the header, not a bad download. The digest matches, which settles it.)
+#
+# So `binary` is declared. It has to be: extractTar matches on
+# `filepath.Base(hdr.Name) != want` where want is binaryName(), and
+# binaryName() falls back to the TOOL NAME, which is meta-skill. Without this
+# map the installer would unpack an archive that has never contained a file
+# called meta-skill and report a missing binary. This is the opentofu/ripgrep
+# shape that `binary` exists for, keyed per-arch because validateArchMaps
+# requires it to cover exactly the arches asset does — asset and binary are the
+# same key set here, one entry each.
+#
+# END-TO-END, run on 2026-09-29 in an isolated scratch AES_HOME with a PATH
+# that excluded the pre-existing ms on this machine (see below). This is a real
+# `aes setup` against the real pinned release, not a unit test:
+#
+#   $ aes setup --only meta-skill --non-interactive
+#   installed 1 · already present 0 · skipped 0 · failed 0
+#   meta-skill  installed
+#   exit 0
+#   $ aes verify --only meta-skill
+#   meta-skill  ok  0.2.2  /tmp/aes-ms-e2e/home/.aes/bin/ms
+#
+# The installed binary hashed to e80aa0d7...d86a, byte-identical to the
+# release's raw ms-0.2.2-x86_64 asset and to the `ms` member extracted from
+# the pinned tarball — three routes to the same bytes, which is the point of
+# pinning the archive. state.json recorded version 0.2.2. A second `aes setup`
+# installed 0 and reported "already present 1" — idempotent, no reinstall storm.
+#
+# The PATH had to be narrowed for a reason worth knowing before the next agent
+# runs this on a normal machine: this machine ALREADY has an ms at
+# ~/.local/bin/ms, which reports "ms 0.1.1" — an older build than the pinned
+# v0.2.2. On a normal PATH the verifier resolves that one first, so it is below
+# the 0.2.2 floor, is reported stale, and `aes setup` installs over it; and if a
+# future floor were set at or below 0.1.1, `aes setup` would report "already
+# present" forever and the pinned checksum would be checked against nothing.
+# That is the brenner-bot trap from its own header (a stale pre-existing binary
+# satisfying the floor forever), and it is why this run used a PATH without
+# ~/.local/bin. On a machine with no ms at all, the install path above is the
+# whole story.
+#
+# `verify.command` is `ms`, and that is the same fact reached from the other
+# side: installName() returns Action.Name (set by the CLI from verify.command)
+# before it ever consults binaryName(), so `ms` is both the name inside the
+# archive and the name on PATH. One name, declared once.
+#
+# VERSION PROBE, MEASURED BY RUNNING the downloaded linux/amd64 binary:
+#
+#   $ ./ms-0.2.2-linux-x86_64 --version
+#   ms 0.2.2
+#   REAL_EXIT=0   stdout=[ms 0.2.2]   stderr=[]
+#
+# Exit 0 AND output on stdout AND nothing on stderr. That is a real probe, not
+# the "exits 0 while printing nothing" failure. Streams were captured
+# separately with two redirects rather than a pipe, because CombinedOutput
+# interleaving stderr into stdout is how a valid line gets turned into
+# something unparseable.
+#
+# ExtractVersion was run against the REAL parser (internal/verifier) with this
+# exact string, in a scratch copy of the module so the repo tree was untouched:
+#
+#   ExtractVersion("ms 0.2.2") = "0.2.2"
+#   CompareVersions("0.2.2","0.2.2") = 0     (satisfies the floor)
+#   CompareVersions("0.2.2","0.2.1") = 1
+#   CompareVersions("0.2.2","0.3.0") = -1
+#
+# The leading `ms ` costs nothing: versionRe takes the first dotted-integer run
+# on line 1, and there is no `commit=` token for gitHashRe to strip.
+#
+# DO NOT USE `ms version` — IT IS NOT A SUBCOMMAND. Measured, it exits 2:
+#
+#   error: unrecognized subcommand 'version'
+#     tip: a similar subcommand exists: 'personalize'
+#
+# That is the ntm trap (`ntm version` worked where `ntm --version` errored) with
+# the answer inverted. `--version` is the probe and it is not optional.
+#
+# DO NOT USE A BARE `ms` AS THE PROBE. Measured, bare `ms` exits 2 with the
+# full help text on stderr and NOTHING on stdout — the "exits 0 while printing
+# nothing" trap's sibling: a non-zero exit whose stream the parser never sees.
+# (Note the exit code: the first time I ran this through a pipe the reported
+# status was head's, not ms's, which is why the real status was re-measured
+# with separate redirects.)
+#
+# `ms doctor` IS NOT USABLE AS A CHECK EITHER, and this is worth recording
+# because ACFS's manifest lists it (`verify: [ms --version, ms doctor || true]`).
+# Measured against a binary that has never run `ms init`:
+#
+#   Error: Database error: internal error: no such table: skill_origins
+#
+# The `|| true` in ACFS is load-bearing for the same reason: ms is not useful
+# until it has been initialised against a directory or a HOME, and AES's
+# strategies install the program, they do not run its onboarding. So this
+# manifest asserts version and nothing more. This is upstream behaviour, not a
+# manifest defect, and it is the honest boundary — a check AES cannot make for
+# the user is worse than no check at all.
+#
+# THE PROBE NEEDS NO ENVIRONMENT WORKAROUND. giil's header in this repo records
+# that its probe requires XDG_CACHE_HOME inline because the verifier probes
+# through a PATH-only environment; probeEnv (internal/verifier/verifier.go:339)
+# actually PREPENDS the AES bin dir to the inherited PATH, so a probe inherits
+# HOME normally. Measured under a deliberately stripped environment anyway, to
+# confirm the contrast rather than assume it:
+#
+#   $ env -i PATH=/usr/bin:/bin HOME=<fresh empty dir> sh -c '.../ms --version'
+#   ms 0.2.2
+#   EXIT=0
+#   files written under that HOME: 0
+#
+# Zero files written, so the probe is safe to run on every `aes verify` and
+# will not perturb the idempotence digest.
+#
+# THIS MACHINE ALREADY HAS AN `ms`, AND IT IS THE TRAP THE NEXT AGENT WILL HIT.
+# `which -a ms` resolves to /home/quangdang/.local/bin/ms, which reports
+#
+#   ms 0.1.1
+#
+# — an older build than the pinned v0.2.2, sitting on a normal PATH. On such a
+# PATH the verifier resolves THAT one first, so it is below the 0.2.2 floor, is
+# reported stale, and `aes setup` installs over it; and if a future floor were
+# set at or below 0.1.1, `aes setup` would report "already present" forever and
+# the pinned checksum would be checked against nothing. The end-to-end run
+# above therefore used a PATH without ~/.local/bin. On a machine with no ms at
+# all, the install path is the whole story.
+#
+# tested: false. The coordinates are measured, the probe was executed against
+# the real binary, and the install path was exercised end-to-end, but Layer 1
+# and Layer 2 have not been run, and a tool may only be `tested: true` once
+# both pass.
+#
+# NOT VERIFIED OFF linux/amd64. This measurement machine is linux/amd64, so the
+# binary was RUN for that coordinate only. The darwin/arm64 coordinate is
+# trusted by digest, not by execution: it was downloaded, hashed, matched
+# against the API digest and upstream's SHA256SUMS.txt, and `file` confirms the
+# bytes are Mach-O 64-bit arm64. No ms was run as a darwin or arm64 process,
+# and this comment exists so the next agent does not read "two coordinates
+# declared" as "two coordinates measured".
+name: meta-skill
+description: local-first skill management for AI coding agents (ms)
+category: agent
+tested: false
+tags:
+  - agent
+  - skills
+verify:
+  command: ms
+  version:
+    command: ms --version
+    min: "0.2.2"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/meta_skill
+    release_tag: v0.2.2
+    # darwin/amd64 is absent because upstream has never published an
+    # x86_64-apple-darwin build, in any of the releases this repo has ever
+    # cut. A macOS/Intel host gets ErrMissingArch naming amd64.
+    asset:
+      arm64: ms-0.2.2-aarch64-apple-darwin.tar.gz
+    sha256:
+      arm64: 25f1f75b4d1e4377466ca85fe7d9fd9a485c1b6099bd3aa4b40e04b5c8836526
+    # The archive holds a single member named `ms`; without this map the
+    # installer would search for the tool name and find nothing.
+    binary:
+      arm64: ms
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/meta_skill
+    release_tag: v0.2.2
+    # linux/arm64 is absent because upstream DROPPED the
+    # aarch64-unknown-linux-gnu build in v0.2.1; v0.1.0 through v0.2.0 shipped
+    # it. A Graviton or Apple-Silicon-on-Linux host gets ErrMissingArch
+    # naming arm64. See the header for why the newest tag was taken over the
+    # wider older one.
+    asset:
+      amd64: ms-0.2.2-x86_64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 12e92d23659ddb8a173f88b297f241d0ae7197c4bdddfdf3c530e1a39c3c59d7
+    binary:
+      amd64: ms
