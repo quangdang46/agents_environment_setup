@@ -50,5 +50,5 @@ install:
       amd64: sbh-v0.6.16-x86_64-unknown-linux-gnu.tar.xz
       arm64: sbh-aarch64-unknown-linux-gnu.tar.xz
     sha256:
-      amd64: df446dbd2cde939d9caae552dc49aa5fc3c996d953fdc767ee3bf622b49b064f
+      amd64: 496211015e7b123eb25262ac0580936c89c4dd8c2e10918b2f67f7096334a678
       arm64: 7392776a454f47925ec5f1e491a8da11d3ecd7d166f9a7f2bb92c3ca5499fca1
