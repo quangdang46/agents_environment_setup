@@ -1,0 +1,87 @@
+# AES catalog. github-release for darwin, linux at Dicklesworthstone/frankenterm
+# release v0.15.1. Asset names and sha256 read from the upstream release and
+# re-computed here by downloading each asset and running sha256sum on it; every
+# value below also matches the .sha256 sidecar the release publishes.
+#
+# THE NAME IS A HISTORICAL ALIAS, AND THE BINARY IS NOT `wa`.
+# This project was called `wezterm_automata` and shipped a binary called `wa`.
+# It renamed itself at v0.12.0 (2026-02-10): "Imported WezTerm source ... Renamed
+# the project from `wezterm_automata`/`wa` to `frankenterm`/`ft`" (CHANGELOG.md).
+# `Dicklesworthstone/wezterm_automata` still resolves — GitHub redirects renamed
+# repos — but the redirect resolves to `frankenterm`, and no release since the
+# rename contains a file called `wa`. Verified here: v0.15.1, v0.13.0, v0.12.0,
+# v0.11.0 and v0.10.4 all ship `ft-*` assets only.
+#
+# So `binary:` is declared on every target. Without it the installer falls back
+# to the tool name, hunts for a file called `wezterm-automata`, and fails with
+# "archive does not contain the expected binary" while the verifier reads
+# `command:` below and looks for the same absent name. The catalog keeps the
+# ACFS name so the profile and tag selectors that reference it still resolve;
+# everything that actually touches the filesystem says `ft`.
+#
+# There is no `dependencies: [wezterm]`. `ft` drives a running WezTerm through
+# the `wezterm cli` socket, so WezTerm is a real runtime prerequisite — but
+# wezterm is NOT in this catalog, and a dependency on a name that does not
+# resolve is the failure mode the "parsing is not resolving" trap describes.
+# Declaring it would break `aes setup --dry-run` on a profile that selects this
+# tool. Revisit if a wezterm manifest is ever added.
+name: wezterm-automata
+description: terminal hypervisor for AI agent swarms, shipped as ft
+category: terminal
+tested: false
+tags:
+  - terminal
+  - agent
+verify:
+  command: ft
+  version:
+    # Run, not guessed. `ft --version` prints one clean line to stdout and
+    # exits 0:
+    #
+    #     ft 0.15.1 (ced654de8b1772793a8966e7c3bf67dcd0dd39e8)
+    #
+    # The bare `ft version` subcommand prints the same string but also emits
+    # INFO log lines on stderr ("Logging initialized", "Workspace resolved"),
+    # so the flag form is the one to use. The verifier's line-1 regex
+    # (\d+(?:\.\d+)*(?:[a-z]+)?) takes "0.15.1" from that line; the trailing
+    # commit hash is not labelled `commit=`, so it is never mistaken for one.
+    command: ft --version
+    # v0.13.0 is the first release whose assets are unambiguously the renamed
+    # project with the full Linux + macOS + Windows matrix, and the floor only
+    # has to exclude builds that predate the identity this manifest records.
+    min: "0.13.0"
+install:
+  darwin:
+    strategy: github-release
+    # Pinned, not `latest`: the tags run to v0.15.12 but v0.15.7 and v0.15.12
+    # are tags with NO release attached, so releases/latest is a moving target
+    # that a future release could advance past the checksums recorded here. The
+    # `v` is load-bearing — the tag is interpolated verbatim into the download
+    # URL, so `0.15.1` 404s and the tool reports as missing.
+    release_tag: v0.15.1
+    repository: Dicklesworthstone/frankenterm
+    binary:
+      arm64: ft
+    asset:
+      arm64: ft-darwin-arm64.tar.xz
+    sha256:
+      arm64: 49ae8718d17bedf60573c5194f1505fd214c858ead3951b96eb0a108ae969c21
+  linux:
+    strategy: github-release
+    release_tag: v0.15.1
+    repository: Dicklesworthstone/frankenterm
+    binary:
+      amd64: ft
+      arm64: ft
+    asset:
+      amd64: ft-linux-amd64.tar.xz
+      arm64: ft-linux-arm64.tar.xz
+    sha256:
+      amd64: f063460275836799fa887a2765616c87109b410b9ebef1febbfee106376de12f
+      arm64: 8855a7695f3ebd791191c3e928a9bef8679c7d4072d8656fe379c93b14308f52
+# darwin/amd64 is deliberately absent, not forgotten. v0.15.1 ships exactly one
+# macOS CLI asset — ft-darwin-arm64.tar.xz — and no x86_64 equivalent; the
+# project builds macOS for Apple Silicon only. AES rejects a half-populated
+# asset/sha256 pair, so the arch is omitted from both maps rather than filled
+# with a guess. An Intel Mac is a real gap in this tool's coverage, and adding
+# a darwin/amd64 entry means upstream shipping the asset first.

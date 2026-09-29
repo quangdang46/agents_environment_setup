@@ -18,7 +18,7 @@ verify:
 install:
   darwin:
     strategy: github-release
-    release_tag: 0.2.0
+    release_tag: v0.2.0
     repository: Dicklesworthstone/rano
     asset:
       amd64: rano-x86_64-apple-darwin.tar.xz
@@ -28,7 +28,7 @@ install:
       arm64: 673c4b2f9eed2fad556aaae2dcb4c9ade1bea3c5e6ed910009e50168b85839af
   linux:
     strategy: github-release
-    release_tag: 0.2.0
+    release_tag: v0.2.0
     repository: Dicklesworthstone/rano
     asset:
       amd64: rano-x86_64-unknown-linux-gnu.tar.xz

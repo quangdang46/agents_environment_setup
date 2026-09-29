@@ -1,0 +1,57 @@
+# AES catalog. github-release for darwin, linux at
+# Dicklesworthstone/remote_compilation_helper release v2.1.9.
+#
+# The asset names carry the version (rch-v2.1.9-...), so release_tag is
+# load-bearing rather than documentation: it is interpolated verbatim into the
+# releases/download URL (installer.assetURL), and the tag and the filenames have
+# to move together. Unpinning this tool to releases/latest would not work at all
+# here - there is no unversioned asset for it to fall back to.
+#
+# Upstream v2.1.9 publishes exactly two binary assets: apple-darwin/aarch64 and
+# linux-gnu/x86_64. There is no darwin/amd64 and no linux/arm64 build, so those
+# two combinations are absent from both the asset and sha256 maps. That is a real
+# gap in the upstream release, not a gap in this manifest: a macOS/Intel or
+# Graviton host gets ErrMissingArch naming the arch, rather than a binary it
+# cannot execute.
+#
+# The archive also ships rchd (the daemon) and rch-wkr (the worker side). The
+# github-release strategy installs the single archive member named after the
+# tool, so `rch` is what lands on PATH and what the verifier checks; rchd and
+# rch-wkr are not installed. The CLI is still useful without them, so this is a
+# documented scope rather than a workaround.
+name: rch
+description: remote command helper
+category: infra
+tested: false
+tags:
+  - infra
+  - build
+  - remote
+verify:
+  command: rch
+  # `rch --version` prints "rch 2.1.9 (commit 94e9e14d4f73)" and exits 0,
+  # measured against the v2.1.9 linux/amd64 binary. The `(commit ...)` form has
+  # no `commit=` label, so gitHashRe does not strip it - it does not need to,
+  # because the real version leads the line and versionRe takes the first
+  # dotted-integer run. Bare `rch` is the hook mode and blocks on stdin, so the
+  # flag is not optional here.
+  version:
+    command: rch --version
+    min: "1.0"
+install:
+  darwin:
+    strategy: github-release
+    release_tag: v2.1.9
+    repository: Dicklesworthstone/remote_compilation_helper
+    asset:
+      arm64: rch-v2.1.9-aarch64-apple-darwin.tar.gz
+    sha256:
+      arm64: bac7eb55210d84ed2f7fa37e17f2b48986f1ed6c12928056a4d9eb554fcf0ed6
+  linux:
+    strategy: github-release
+    release_tag: v2.1.9
+    repository: Dicklesworthstone/remote_compilation_helper
+    asset:
+      amd64: rch-v2.1.9-x86_64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 8d9ce4d66e902ad457947f2fc69e7fb35457fb18a4ba979879e9bf3202f8c2d0

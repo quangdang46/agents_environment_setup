@@ -1,0 +1,47 @@
+# AES catalog. github-release at Dicklesworthstone/pi_agent_rust v0.6.1; asset
+# names and sha256 read from the upstream release's SHA256SUMS sidecar, and
+# every checksum re-verified by downloading the artifact and hashing it on this
+# host (2026-09-29).
+#
+# The archive ships a binary called `pi`, not `pi-agent-rust`. Without the
+# `binary` map the installer looks for `pi-agent-rust` inside the tarball, does
+# not find it, and reports "archive does not contain the expected binary".
+# Measured by downloading the release and listing its contents.
+name: pi-agent-rust
+description: Pi agent, a high-performance AI coding agent CLI written in Rust
+category: ai
+tested: false
+tags:
+  - ai
+verify:
+  command: pi
+  version:
+    command: pi --version
+    min: "0.6.0"
+install:
+  darwin:
+    strategy: github-release
+    release_tag: v0.6.1
+    repository: Dicklesworthstone/pi_agent_rust
+    binary:
+      amd64: pi
+      arm64: pi
+    asset:
+      amd64: pi-darwin-amd64.tar.xz
+      arm64: pi-darwin-arm64.tar.xz
+    sha256:
+      amd64: 1b48e91452fea2759efe6f1ea7fec6342c7eb596e40d063c7d1d9625ff131716
+      arm64: 2ddb124a7013a641d41a0820693b0a528ec9bfd7d9d09a8888dc745994739d42
+  linux:
+    strategy: github-release
+    release_tag: v0.6.1
+    repository: Dicklesworthstone/pi_agent_rust
+    binary:
+      amd64: pi
+      arm64: pi
+    asset:
+      amd64: pi-linux-amd64.tar.xz
+      arm64: pi-linux-arm64.tar.xz
+    sha256:
+      amd64: 4c2ee8024936087615b8847e745690d4e6f35ea62542fa8defce2041b8b88622
+      arm64: 8367713f985986b678ae7b7904dfaf79fe5d22843e3d62b3af6de5ac336c7bf6

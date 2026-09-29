@@ -15,17 +15,17 @@ verify:
 install:
   darwin:
     strategy: github-release
-    release_tag: 0.65.1
+    release_tag: v0.65.1
     repository: jesseduffield/lazygit
     asset:
-      amd64: lazygit_0.65.1_Darwin_x86_64.tar.gz
-      arm64: lazygit_0.65.1_Darwin_arm64.tar.gz
+      amd64: lazygit_0.65.1_darwin_x86_64.tar.gz
+      arm64: lazygit_0.65.1_darwin_arm64.tar.gz
     sha256:
       amd64: fde13daf583511aa24c42ca154911643231a5af784c7cdd8117264b2fc035b33
       arm64: 65a367c6ea9a88efebaaf7998a6835eedb987e04916cef677264ff9b31b1b13e
   linux:
     strategy: github-release
-    release_tag: 0.65.1
+    release_tag: v0.65.1
     repository: jesseduffield/lazygit
     asset:
       amd64: lazygit_0.65.1_linux_x86_64.tar.gz

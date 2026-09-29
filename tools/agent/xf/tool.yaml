@@ -41,7 +41,7 @@ verify:
 install:
   darwin:
     strategy: github-release
-    release_tag: v0.4.1
+    release_tag: v0.4.2
     repository: Dicklesworthstone/xf
     # arm64 ONLY, and that is upstream's ceiling, not a gap in the evidence. The
     # release publishes aarch64-apple-darwin and no x86_64-apple-darwin at all,
@@ -58,7 +58,7 @@ install:
       arm64: 68b9c59fe03ea180ae64e26d076d615e9a462c8d27430f8e0a1d010c74199ebc
   linux:
     strategy: github-release
-    release_tag: v0.4.1
+    release_tag: v0.4.2
     repository: Dicklesworthstone/xf
     # Both linux assets are present and both were downloaded and hashed here.
     # These are glibc builds, not musl: the amd64 binary links libssl.so.3,
