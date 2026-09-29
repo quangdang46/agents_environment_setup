@@ -1,0 +1,37 @@
+# AES catalog. github-release at Dicklesworthstone/cass_memory_system v0.3.0.
+# The asset is a RAW executable (ELF on linux, Mach-O on darwin), not an
+# archive — see internal/installer/archive.go for the format dispatch that
+# makes that work. sha256 read from the release's own .sha256 sidecar files.
+name: cm
+description: cass memory CLI
+category: agent
+tested: false
+tags:
+  - agent
+  - coordination
+verify:
+  command: cass-memory
+  version:
+    command: cass-memory --version
+    min: "0.2.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: Dicklesworthstone/cass_memory_system
+    release_tag: v0.3.0
+    asset:
+      amd64: cass-memory-macos-x64
+      arm64: cass-memory-macos-arm64
+    sha256:
+      amd64: eb322abc1613ad2a064c78fe6233b51d1e2995b09dc3cd0b8b58e44aa8830d5c
+      arm64: bb8a22097bfb77e5a710ce89d902c90e7c044af1d8ba46980cb2ff8a7d647995
+  linux:
+    strategy: github-release
+    repository: Dicklesworthstone/cass_memory_system
+    release_tag: v0.3.0
+    asset:
+      amd64: cass-memory-linux-x64
+      arm64: cass-memory-linux-arm64
+    sha256:
+      amd64: 6aa143c3fb872b128c9fc40b6d192c46d87165ecc51b39a0f2a40ca6ba825f57
+      arm64: cee2504ac1c0bf362ba5708170a4389bfdf7faf95472480261f48e0887fd0e42

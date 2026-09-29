@@ -28,7 +28,12 @@
 name: wezterm-automata
 description: terminal hypervisor for AI agent swarms, shipped as ft
 category: terminal
-tested: false
+# Proven on linux/amd64 on 2026-09-29: installed from nothing in a fresh
+# ubuntu:24.04 container and `aes verify` reported StatusOK with a parsed
+# version (frankenterm 0.15.1 (binary `ft`)) on that machine afterwards (bead gj9).
+tested: true
+tested_on:
+  - linux/amd64
 tags:
   - terminal
   - agent

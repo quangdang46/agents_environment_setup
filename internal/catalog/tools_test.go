@@ -188,6 +188,12 @@ var layer1Tools = map[string]bool{
 	// source, so they are verified on the same terms as the other release
 	// tools. gemini is the one AI tool that runs on node 18.
 	"beads": true, "dcg": true, "gemini": true,
+	// The binary names are the ones the archives actually ship: `pi` for
+	// pi-agent-rust and `ft` for wezterm-automata (which renamed itself from
+	// wezterm_automata/wa to frankenterm/ft at v0.12.0). Declaring a name
+	// here that is not in the archive makes the fixture fail on a tool that
+	// installs correctly.
+	"antigravity": true, "pi-agent-rust": true, "wezterm-automata": true,
 	// The rest of the catalog, promoted after the full-catalog run proved both
 	// layers on each. Layer 1 skips a tool the machine does not have, so these
 	// are verified wherever they happen to be installed; their Layer 2 evidence

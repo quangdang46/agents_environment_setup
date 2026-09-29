@@ -1,7 +1,12 @@
 name: antigravity
 description: Antigravity CLI (Google)
 category: ai
-tested: false
+# Proven on linux/amd64 on 2026-09-29: installed from nothing in a fresh
+# ubuntu:24.04 container and `aes verify` reported StatusOK with a parsed
+# version (antigravity 1.2.12) on that machine afterwards (bead gj9).
+tested: true
+tested_on:
+  - linux/amd64
 tags:
   - ai
 verify:
