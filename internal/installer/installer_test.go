@@ -324,9 +324,11 @@ func TestAssetURLPinsVersion(t *testing.T) {
 
 	t.Run("pinned version addresses the tag", func(t *testing.T) {
 		t.Parallel()
-		g := &GithubRelease{Version: "v1.2.3"}
+		g := &GithubRelease{}
+		pinned := a
+		pinned.Target.ReleaseTag = "v1.2.3"
 		want := "https://github.com/owner/repo/releases/download/v1.2.3/aes-linux-amd64.tar.gz"
-		if got := g.assetURL(a, "aes-linux-amd64.tar.gz"); got != want {
+		if got := g.assetURL(pinned, "aes-linux-amd64.tar.gz", pinned.Target.ReleaseTag); got != want {
 			t.Errorf("assetURL = %q, want %q", got, want)
 		}
 	})
@@ -335,7 +337,7 @@ func TestAssetURLPinsVersion(t *testing.T) {
 		t.Parallel()
 		g := &GithubRelease{}
 		want := "https://github.com/owner/repo/releases/latest/download/aes-linux-amd64.tar.gz"
-		if got := g.assetURL(a, "aes-linux-amd64.tar.gz"); got != want {
+		if got := g.assetURL(a, "aes-linux-amd64.tar.gz", a.Target.ReleaseTag); got != want {
 			t.Errorf("assetURL = %q, want %q", got, want)
 		}
 	})
@@ -345,7 +347,7 @@ func TestAssetURLPinsVersion(t *testing.T) {
 		a := a
 		a.Target.Repository = "owner/repo/"
 		g := &GithubRelease{Version: "v1"}
-		if got := g.assetURL(a, "x.tar.gz"); strings.Contains(got, "repo//") {
+		if got := g.assetURL(a, "x.tar.gz", a.Target.ReleaseTag); strings.Contains(got, "repo//") {
 			t.Errorf("assetURL = %q, contains a doubled slash", got)
 		}
 	})
@@ -644,5 +646,38 @@ func TestUninstallRemovesWhatInstallWrote(t *testing.T) {
 				t.Error("the binary is still on disk after a reported removal")
 			}
 		})
+	}
+}
+
+// The leak this field exists to close: the registry holds ONE GithubRelease for
+// every tool, so writing the tag into the struct handed the next tool in the
+// same run a tag belonging to a different repository. Before ReleaseTag, a
+// pinned tool was followed by an unpinned one that still downloaded from the
+// pinned tag — a tool installed from an address the catalog never named.
+func TestReleaseTagDoesNotLeakBetweenInstalls(t *testing.T) {
+	t.Parallel()
+
+	g := &GithubRelease{}
+	mk := func(repo, tag string) Action {
+		return Action{
+			Tool: repo,
+			Target: manifest.Target{
+				Repository: repo, ReleaseTag: tag,
+				Asset:  map[string]string{platform.ArchAMD64: "a.tar.gz"},
+				SHA256: map[string]string{platform.ArchAMD64: "abc"},
+			},
+			Host: linuxHost(),
+		}
+	}
+
+	// Both installs must get far enough to record a version, so the action
+	// carries a host and an asset. Without them Install returns before the
+	// version is ever read, and the assertion below would pass for a reason
+	// that has nothing to do with the leak.
+	g.Install(context.Background(), mk("owner/pinned", "v1.2.3"))
+	g.Install(context.Background(), mk("owner/unpinned", ""))
+
+	if g.Version != "" {
+		t.Errorf("after installing an unpinned tool, Version = %q; the previous tool's tag leaked", g.Version)
 	}
 }

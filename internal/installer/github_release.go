@@ -82,9 +82,13 @@ func (g *GithubRelease) Install(ctx context.Context, a Action) error {
 	// URL itself. Measured on 2026-09-28: sbh was pinned to v0.6.12 while
 	// upstream had moved to v0.6.16, so the download 404'd and the tool
 	// reported as missing.
-	if a.Target.ReleaseTag != "" {
-		g.Version = a.Target.ReleaseTag
-	}
+	//
+	// Local, not assigned back to g. The registry holds ONE GithubRelease for
+	// every tool, so writing the tag into the struct leaked it to the next
+	// tool installed in the same run: bottom, which declares no tag, was
+	// downloaded from another tool's v0.25.0 and 404'd. A per-install value
+	// threaded through the call has no such neighbour to leak to.
+	version := a.Target.ReleaseTag
 
 	asset, err := assetFor(a, a.Host.Arch)
 	if err != nil {
@@ -111,7 +115,7 @@ func (g *GithubRelease) Install(ctx context.Context, a Action) error {
 	defer os.RemoveAll(work)
 
 	archivePath := filepath.Join(work, "asset.tar.gz")
-	if err := g.download(ctx, g.assetURL(a, asset), archivePath); err != nil {
+	if err := g.download(ctx, g.assetURL(a, asset, version), archivePath); err != nil {
 		return err
 	}
 
@@ -180,17 +184,21 @@ func sumFor(a Action, arch string) (string, error) {
 // Pinned versions address the tag directly; "latest" uses the endpoint that
 // redirects to it. The distinction is kept explicit so a caller pinning a
 // version cannot accidentally construct the unpinned form.
-func (g *GithubRelease) assetURL(a Action, asset string) string {
+func (g *GithubRelease) assetURL(a Action, asset, version string) string {
 	base := g.DownloadBase
 	if base == "" {
 		base = DefaultDownloadBase
 	}
 	repo := strings.TrimSuffix(a.Target.Repository, "/")
 
-	if g.Version == "" || g.Version == "latest" {
+	// version is the per-install value threaded from Install. g.Version remains
+	// a test seam, but a production run must not read it: the registry shares
+	// one GithubRelease across every tool, and a tag left on the struct from an
+	// earlier tool in the same run is a tag for the wrong repository.
+	if version == "" || version == "latest" {
 		return fmt.Sprintf("%s/%s/releases/latest/download/%s", base, repo, asset)
 	}
-	return fmt.Sprintf("%s/%s/releases/download/%s/%s", base, repo, g.Version, asset)
+	return fmt.Sprintf("%s/%s/releases/download/%s/%s", base, repo, version, asset)
 }
 
 // download streams a URL to a file, refusing to exceed maxAssetBytes.
