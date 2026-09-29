@@ -1,0 +1,74 @@
+# AES catalog. github-release from Dicklesworthstone/xf v0.4.1, a Rust CLI that
+# full-text searches an X/Twitter archive via Tantivy + SQLite.
+#
+# The release tag is PINNED, and the sha256 below were computed here by
+# downloading each asset and running sha256sum — they agree with upstream's
+# SHA256SUMS, but upstream's file is not what they are copied from. The asset
+# filenames carry no version, so a future `releases/latest` would resolve to a
+# different tarball than the one these sums describe; pinning is what keeps the
+# URL and the checksum describing the same bytes.
+name: xf
+description: ultra-fast full-text search over X/Twitter data archives
+category: agent
+# Not proven yet. A container has to install this from nothing and have
+# `aes verify` report StatusOK with a parsed version before it is promoted, and
+# a version this recent has not been through that.
+tested: false
+tags:
+  - agent
+verify:
+  # The binary is named `xf` inside the archive on every platform, and that is
+  # not an assumption: all three archives were extracted and listed. It is the
+  # only entry in each, so there is no `binary:` map to declare and nothing to
+  # disagree with.
+  command: xf
+  version:
+    # `xf --version`, not `xf version`. The subcommand spelling is rejected with
+    # "error: unrecognized subcommand 'version'" and exits 2 — so a probe using
+    # it reads a tool that works perfectly as broken. Measured by running the
+    # linux/amd64 binary out of the release archive. It prints three lines:
+    #
+    #     xf 0.4.2
+    #       Built: 2026-09-25T21:01:26.804951201Z
+    #       Rustc: 1.100.0-nightly
+    #       Target: x86_64-unknown-linux-gnu
+    #
+    # Line 1 is the source of the parsed version, and that is what saves this
+    # from the build-date trap: the date on line 2 would extract as 2026, and a
+    # tool reported as version 2026 passes every floor forever.
+    command: xf --version
+    min: "0.4.0"
+install:
+  darwin:
+    strategy: github-release
+    release_tag: v0.4.1
+    repository: Dicklesworthstone/xf
+    # arm64 ONLY, and that is upstream's ceiling, not a gap in the evidence. The
+    # release publishes aarch64-apple-darwin and no x86_64-apple-darwin at all,
+    # so there is no amd64 asset to hash. Declaring it would mean a coordinate
+    # nobody has ever verified; leaving it out means aes reports the tool
+    # unavailable on an Intel Mac, which is the truth.
+    #
+    # Rust target triples, not Go arch names, in the asset values. The KEYS are
+    # still Go naming (amd64/arm64) — AES speaks Go naming everywhere, and an
+    # x86_64 key is a hard validation error, never an alias.
+    asset:
+      arm64: xf-aarch64-apple-darwin.tar.gz
+    sha256:
+      arm64: 68b9c59fe03ea180ae64e26d076d615e9a462c8d27430f8e0a1d010c74199ebc
+  linux:
+    strategy: github-release
+    release_tag: v0.4.1
+    repository: Dicklesworthstone/xf
+    # Both linux assets are present and both were downloaded and hashed here.
+    # These are glibc builds, not musl: the amd64 binary links libssl.so.3,
+    # libcrypto.so.3, libstdc++.so.6 and libzstd.so.1, so it wants a glibc host
+    # and a populated lib directory. Nothing declares that in the manifest
+    # because the install map is a closed set of strategies and glibc is a
+    # property of the OS, not of the tool.
+    asset:
+      amd64: xf-x86_64-unknown-linux-gnu.tar.gz
+      arm64: xf-aarch64-unknown-linux-gnu.tar.gz
+    sha256:
+      amd64: 3855142061320cf8669ad0ad698b4762e2002f8fadde6befa717f0eede336e63
+      arm64: f8f4d1b47dbd3752ad536d747dc821fd4c2f770c6f6f1dd2493a7e5aed3edf26

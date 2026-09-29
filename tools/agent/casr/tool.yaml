@@ -4,6 +4,13 @@
 # This was `package`/apt until an audit found the package name does not exist in
 # Debian. The first check that said it did was reading an HTTP 200 from a page
 # whose body said 'No such package' - a check that could not fail.
+#
+# release_tag is `v0.4.1`, not `0.4.1`, and the `v` is load-bearing: the tag is
+# interpolated verbatim into the releases/download URL (installer.assetURL), so
+# the unversioned form 404s and the tool reports as missing with no hint that
+# the manifest is what is wrong. Measured 2026-09-29: download/0.4.1/... ->
+# 404, download/v0.4.1/... -> 200. The asset NAMES are unversioned and stay as
+# they are; only the tag carries the prefix.
 name: casr
 description: resumes a session under a different agent
 category: agent
@@ -18,7 +25,7 @@ verify:
 install:
   darwin:
     strategy: github-release
-    release_tag: 0.4.1
+    release_tag: v0.4.1
     repository: Dicklesworthstone/cross_agent_session_resumer
     asset:
       amd64: casr-x86_64-apple-darwin.tar.xz
@@ -28,7 +35,7 @@ install:
       arm64: 88ed7cd5c575a9eb78e33b5fcee6dd5d8103797aef0fc8477e18fea1168493d0
   linux:
     strategy: github-release
-    release_tag: 0.4.1
+    release_tag: v0.4.1
     repository: Dicklesworthstone/cross_agent_session_resumer
     asset:
       amd64: casr-x86_64-unknown-linux-musl.tar.xz
