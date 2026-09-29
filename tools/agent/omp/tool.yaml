@@ -1,0 +1,35 @@
+# AES catalog. github-release at can1357/oh-my-pi v18.4.2; asset names and
+# sha256 read from the upstream release. The asset is a RAW ELF binary, not
+# an archive — see internal/installer/archive.go for the format dispatch.
+name: omp
+description: oh-my-pi agent runtime
+category: agent
+tested: false
+tags:
+  - agent
+verify:
+  command: omp
+  version:
+    command: omp --version
+    min: "18.0"
+install:
+  darwin:
+    strategy: github-release
+    repository: can1357/oh-my-pi
+    release_tag: v18.4.2
+    asset:
+      amd64: omp-darwin-x64
+      arm64: omp-darwin-arm64
+    sha256:
+      amd64: 2b178ca617f0aee1a6dfce7b500b07d57a348e3418fd0713c810555e576db447
+      arm64: 2b49620ca39d835ff313aadd4ec61931732b5db4251a7781d8a5a2305341c14a
+  linux:
+    strategy: github-release
+    repository: can1357/oh-my-pi
+    release_tag: v18.4.2
+    asset:
+      amd64: omp-linux-x64
+      arm64: omp-linux-arm64
+    sha256:
+      amd64: 55016ef5317af556975f3a3dce02c8db41fc1d05d15b65147814fde019c2e203
+      arm64: 2c16dc4c146bf80d962e88ebefe87c2d5b30b42f0513eba100d7c1b161abd05b

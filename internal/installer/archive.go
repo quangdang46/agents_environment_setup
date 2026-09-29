@@ -3,6 +3,7 @@ package installer
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -49,7 +50,94 @@ func extractArchive(archivePath, destDir, want string) (string, error) {
 	if isXz(archivePath) {
 		return extractTarXz(f, destDir, want)
 	}
+	if isExecutable(archivePath) {
+		return installRawExecutable(archivePath, destDir, want)
+	}
 	return extractTarGz(f, destDir, want)
+}
+
+// executableMagic matches the headers of a native binary, and a shebang marks
+// an interpreted script.
+var executableMagic = [][]byte{
+	{0x7f, 'E', 'L', 'F'},          // ELF (linux, and macOS via Rosetta)
+	{0xfe, 0xed, 0xfa, 0xce},       // Mach-O 32-bit BE
+	{0xfe, 0xed, 0xfa, 0xcf},       // Mach-O 64-bit
+	{0xce, 0xfa, 0xed, 0xfe},       // Mach-O 32-bit LE
+	{0xcf, 0xfa, 0xed, 0xfe},       // Mach-O 64-bit LE
+	{0xca, 0xfe, 0xba, 0xbe},       // Mach-O universal, BE
+	{0xbe, 0xba, 0xfe, 0xca},       // Mach-O universal, LE
+	{'#', '!', '/', 'b', 'i', 'n'}, // #!/bin/...  (also covers /usr/bin/env)
+	{'#', '!', '/', 'u', 's', 'r'}, // #!/usr/...
+	{'#', '!', '/', 'b', 'a', 's'}, // #!/bin/bash
+	{'#', '!', '/', 'b', 'i', 'n', '/', 's', 'h'},
+}
+
+// isExecutable reports whether the file is a raw executable rather than an
+// archive: a native binary or a script with a shebang.
+//
+// Measured across the 19 ACFS tools the catalog could not install, this is
+// what most of them ship. brenner-bot, jeffreysprompts, omp, s2p, csctf and
+// giil all publish a bare ELF/Mach-O or a bash script as the release asset
+// itself — no .tar.gz, no .zip, no .tar.xz — and every one of them was
+// refused with "open gzip: gzip: invalid header", a message that says the
+// download is corrupt when the download is exactly what it said it was.
+//
+// The check is on the CONTENT, never the filename, for the same reason the
+// archive formats are: a manifest can name the asset, but only the bytes say
+// what they are.
+func isExecutable(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	head := make([]byte, 32)
+	n, _ := io.ReadFull(f, head)
+	head = head[:n]
+	for _, magic := range executableMagic {
+		if len(head) >= len(magic) && bytes.Equal(head[:len(magic)], magic) {
+			return true
+		}
+	}
+	return false
+}
+
+// installRawExecutable copies a bare executable into destDir under the name
+// the manifest asked for.
+//
+// It is not extracted, so the traversal check does not apply: there is no
+// entry name to escape with, and the destination is derived from the manifest
+// rather than from anything in the file. The chmod is still applied here rather
+// than trusted from the asset, same as for an archive.
+func installRawExecutable(src, destDir, want string) (string, error) {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return "", fmt.Errorf("create %s: %w", destDir, err)
+	}
+	dst := filepath.Join(destDir, want)
+	if err := copyFile(src, dst); err != nil {
+		return "", fmt.Errorf("install %s: %w", dst, err)
+	}
+	if err := os.Chmod(dst, 0o755); err != nil {
+		return "", fmt.Errorf("chmod %s: %w", dst, err)
+	}
+	return dst, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, io.LimitReader(in, maxArchiveEntryBytes+1)); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // isXz reports whether the file is an xz container.
