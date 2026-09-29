@@ -240,7 +240,7 @@ func addAliasFindings(app *App, rc *runContext, st *state.Store, add func(string
 		if !rc.Host.Supports(t) {
 			continue
 		}
-		r := report(t, st)
+		r := report(t, st, app.Home)
 		if verifier.Status(r.Status) != verifier.StatusOK {
 			// Only a tool that VERIFIES can be shadowed in a way that
 			// misleads: one that is already missing has a bigger problem, and

@@ -147,7 +147,7 @@ func runUninstall(ctx context.Context, app *App, f *Flags, extra any, args []str
 	}
 
 	// Verify before forgetting. This is the whole point of the ordering.
-	after := verifier.Verify(tool)
+	after := verifier.VerifyIn(verifier.Target{Host: rc.Host, AESHome: app.Home}, tool)
 	if after.Status != verifier.StatusMissing {
 		// It claimed success but the binary is still there. Keep the state
 		// entry and report the disagreement rather than hiding it.

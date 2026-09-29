@@ -312,7 +312,7 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 	//
 	// The decision is made from verify, never from state.json. State is a
 	// cache and can disagree with reality in either direction.
-	current := verifier.Verify(tool)
+	current := verifier.VerifyIn(verifier.Target{Host: rc.Host, AESHome: app.Home}, tool)
 	res.Version = current.Version
 	if current.Status == verifier.StatusOK {
 		res.Status = outcomePresent
@@ -406,7 +406,7 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 	// 6: verify AGAIN. This gates the state write: a tool that installed but
 	// does not verify gets no state entry, because a state entry claiming
 	// success is exactly the drift doctor exists to clean up.
-	after := verifier.Verify(tool)
+	after := verifier.VerifyIn(verifier.Target{Host: rc.Host, AESHome: app.Home}, tool)
 	if after.Status != verifier.StatusOK {
 		// A probe that ran and exited non-zero means the binary is BROKEN, not
 		// merely unreadable, and the difference decides what happens to the

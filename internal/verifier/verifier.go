@@ -298,31 +298,36 @@ func leadingInt(s string) int {
 // environment and one who did not, and a tool's status should not depend on
 // which of those is true.
 func LookPathFor(bin string) (string, error) {
+	return LookPathIn(Target{}, bin)
+}
+
+// LookPathIn is LookPathFor against a named machine: PATH first, then the bin
+// directory of the AES_HOME the caller says is in play.
+func LookPathIn(tgt Target, bin string) (string, error) {
 	if p, err := exec.LookPath(bin); err == nil {
 		return p, nil
 	}
-	if aesBin := AESBinDir(); aesBin != "" {
+	if aesBin := tgt.binDir(); aesBin != "" {
 		cand := filepath.Join(aesBin, bin)
 		if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
 			return cand, nil
 		}
 	}
-	return "", fmt.Errorf("verifier: %q is on neither PATH nor %s", bin, AESBinDir())
+	return "", fmt.Errorf("verifier: %q is on neither PATH nor %s", bin, tgt.binDir())
 }
 
 // AESBinDir is the directory AES installs its own binaries into, or "" when it
 // cannot be determined (no home, or HOME is somewhere unreadable).
+//
+// It is the Target{} form — the user's own home. Callers holding an App should
+// use Target{App.Home}.binDir() instead; see Target for why.
 func AESBinDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
-	}
-	return filepath.Join(home, ".aes", "bin")
+	return Target{}.binDir()
 }
 
 // lookPath is the internal spelling used by Verify, kept separate so the
 // exported helper is the one callers outside this package reach for.
-func lookPath(bin string) (string, error) { return LookPathFor(bin) }
+func lookPath(tgt Target, bin string) (string, error) { return LookPathIn(tgt, bin) }
 
 // probeEnv is the environment a version probe runs in: the current one, with
 // the AES bin directory prepended to PATH.
@@ -331,8 +336,8 @@ func lookPath(bin string) (string, error) { return LookPathFor(bin) }
 // (a dynamic linker, a config directory, a runtime), and a stripped environment
 // would turn a working tool into a failing one for reasons that have nothing
 // to do with the tool.
-func probeEnv() []string {
-	dir := AESBinDir()
+func probeEnv(tgt Target) []string {
+	dir := tgt.binDir()
 	if dir == "" {
 		return nil
 	}
@@ -343,38 +348,101 @@ func probeEnv() []string {
 	return []string{"PATH=" + dir + string(os.PathListSeparator) + path}
 }
 
-// Verify reports what is true of t on this machine right now.
+// Target is the machine a verification is about.
+//
+// It exists because the verifier needs two facts that are not in the manifest:
+// which platform's floor applies, and which directory holds the binaries AES
+// installed. A field added to `platform.Host` for the second would be wrong —
+// Host describes the operating system, and where AES puts its own files is a
+// property of the run.
+//
+// The second field is not a convenience. `os.UserHomeDir()` and `App.Home` are
+// the same value in production and DIFFERENT in a test, because App.Home is
+// injected and the user's home is not. Re-deriving AES_HOME inside the verifier
+// therefore made the verifier's answer depend on the developer's real machine:
+// `aes uninstall yq` in a test with a temp AES_HOME found the *developer's*
+// real ~/.aes/bin/yq, decided the removal had failed, and exited 6. The
+// verifier reports the truth about a machine, and which machine is the
+// caller's decision to make — never something the callee re-derives.
+type Target struct {
+	// Host selects the per-platform version floor. Nil means "no host", and a
+	// tool with a per-platform floor then falls back to its default.
+	Host *platform.Host
+	// AESHome is the directory whose bin/ holds the binaries AES installed.
+	// Empty means "use the user's home", which is the right default for a
+	// library caller and the wrong one for anything holding an App.
+	AESHome string
+}
+
+// Home returns AES_HOME, falling back to the user's home when the caller did
+// not say. Callers that hold an App always should.
+func (t Target) home() string {
+	if t.AESHome != "" {
+		return t.AESHome
+	}
+	return DefaultAESHome()
+}
+
+// binDir is where this target's AES-installed binaries live, or "" when it
+// cannot be determined.
+func (t Target) binDir() string {
+	home := t.home()
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "bin")
+}
+
+// DefaultAESHome is the AES_HOME a caller that has none implies: ~/.aes.
+func DefaultAESHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".aes")
+}
+
+// Verify reports what is true of t on this machine right now, using the
+// caller's own home for AES's bin directory.
 //
 // The floor applied is the scalar or the "" entry. Per-platform floors are
-// honoured only by VerifyFor, which knows which platform to ask for — this
-// form keeps the old behaviour for callers that do not have a host.
+// honoured only by VerifyIn, which knows which platform to ask for — this form
+// keeps the old behaviour for callers with no host.
 func Verify(t *manifest.Tool) Result {
-	return VerifyFor(nil, t)
+	return VerifyIn(Target{}, t)
 }
 
-// VerifyFor is Verify with the host the tool is being checked on. A tool
-// with a per-platform floor is compared against that platform's number, not
-// against the scalar: node at min 26 on darwin and 18 on linux is OK at 18
-// on linux, and a scalar compare would call it stale.
+// VerifyIn is Verify against a named machine. Anything holding an App — every
+// command in this binary — should use it, because App.Home is the AES_HOME that
+// run actually installed into.
+func VerifyIn(tgt Target, t *manifest.Tool) Result {
+	return VerifyContextIn(context.Background(), tgt, t)
+}
+
+// VerifyFor is Verify against a named host, for callers that have a platform
+// but no AES_HOME.
 func VerifyFor(h *platform.Host, t *manifest.Tool) Result {
-	return VerifyContextFor(context.Background(), h, t)
+	return VerifyIn(Target{Host: h}, t)
 }
 
-// VerifyContextFor is VerifyContext with the host the tool is checked on.
+// VerifyContextIn is VerifyIn with cancellation, so a run over a whole profile
+// stops when the user interrupts it. This is the form callers should reach for.
+func VerifyContextIn(ctx context.Context, tgt Target, t *manifest.Tool) Result {
+	res, _ := verifyInner(ctx, tgt, t)
+	return res
+}
+
+// VerifyContextFor is VerifyContextIn with a host and no explicit AES_HOME.
 func VerifyContextFor(ctx context.Context, h *platform.Host, t *manifest.Tool) Result {
-	res, _ := verifyInner(ctx, h, t)
-	return res
+	return VerifyContextIn(ctx, Target{Host: h}, t)
 }
 
-// VerifyContext is Verify with cancellation, so a run over a whole profile
-// stops when the user interrupts it. Verify is the form the spec names; this is
-// the one callers should reach for.
+// VerifyContext is Verify with cancellation, using the caller's own home.
 func VerifyContext(ctx context.Context, t *manifest.Tool) Result {
-	res, _ := verifyInner(ctx, nil, t)
-	return res
+	return VerifyContextIn(ctx, Target{}, t)
 }
 
-func verifyInner(ctx context.Context, h *platform.Host, t *manifest.Tool) (Result, error) {
+func verifyInner(ctx context.Context, tgt Target, t *manifest.Tool) (Result, error) {
 	res := Result{Tool: t.Name, Status: StatusMissing}
 
 	// verify.command is the primary binary; provides lists the rest. Every one
@@ -389,7 +457,7 @@ func verifyInner(ctx context.Context, h *platform.Host, t *manifest.Tool) (Resul
 	}
 
 	for _, bin := range required {
-		path, err := lookPath(bin)
+		path, err := lookPath(tgt, bin)
 		if err != nil {
 			return res, nil
 		}
@@ -416,13 +484,13 @@ func verifyInner(ctx context.Context, h *platform.Host, t *manifest.Tool) (Resul
 	// missing-PATH assumption as lookPath, one layer later.
 	run, err := aesexec.Run(ctx, t.Verify.Version.Command, aesexec.Options{
 		Timeout: aesexec.VerifyTimeout,
-		Env:     probeEnv(),
+		Env:     probeEnv(tgt),
 	})
 	// The floor is the one for THIS platform. A tool declaring
 	// min: {darwin: 26, linux: 18} is satisfied by node 18 on linux; reading
 	// the scalar would report it stale, which is the node-18 failure that
 	// started bead 8tv.
-	min := t.Verify.Version.Min.FloorFor(goosOf(h))
+	min := t.Verify.Version.Min.FloorFor(goosOf(tgt.Host))
 	if err != nil {
 		// ErrFailed is the binary running and failing; ErrTimeout is the probe
 		// running out of budget. Only the first says anything about the tool.
