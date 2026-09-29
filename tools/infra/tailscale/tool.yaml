@@ -36,6 +36,10 @@ install:
     # `apt-get install -y <pkg>` and has no way to add a repository, so on a
     # stock Ubuntu image this target fails with "Unable to locate package".
     #
+    # The user can still add the repo by hand, exactly as Tailscale documents,
+    # but that is no longer required — the apt_source below has aes do it, with
+    # the keyring pinned to a digest:
+    #
     # The user adds the repo first, exactly as Tailscale documents:
     #
     #   curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
@@ -50,3 +54,15 @@ install:
     strategy: package
     manager: apt
     package: tailscale
+    # Ubuntu ships no tailscale client at all — only a Go library under
+    # golang-github-tailscale-tscert-dev. The client lives in tailscale's own
+    # repository, so declaring it is the honest description of where the
+    # package comes from rather than a workaround for a wrong name.
+    #
+    # The keyring digest was computed by downloading the key here
+    # (2026-09-29, 2288 bytes). Without a digest this field would be a way
+    # for a manifest to name a key that signs any package on the machine.
+    apt_source:
+      url: https://pkgs.tailscale.com/stable/ubuntu noble main
+      keyring_url: https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg
+      keyring_sha256: 3e03dacf222698c60b8e2f990b809ca1b3e104de127767864284e6c228f1fb39

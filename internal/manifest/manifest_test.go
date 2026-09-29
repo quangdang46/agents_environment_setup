@@ -1060,3 +1060,74 @@ func TestReleaseTagIsRejectedOnANonGithubStrategy(t *testing.T) {
 		t.Errorf("error %q does not name the offending field", err)
 	}
 }
+
+// apt_source is the one place the catalog names a third-party repository, so
+// its rules are the ones that keep that from becoming a silent grant.
+func TestAptSourceValidation(t *testing.T) {
+	t.Parallel()
+
+	base := func() Target {
+		return Target{
+			Strategy: StrategyPackage,
+			Manager:  ManagerApt,
+			Package:  "pkg",
+			AptSource: &AptSource{
+				URL:           "https://example.com/repo",
+				KeyringURL:    "https://example.com/key.asc",
+				KeyringSHA256: strings.Repeat("a", 64),
+			},
+		}
+	}
+
+	t.Run("a complete https source is accepted", func(t *testing.T) {
+		t.Parallel()
+		if err := base().validateAptSource("install.linux"); err != nil {
+			t.Errorf("rejected a well-formed source: %v", err)
+		}
+	})
+
+	t.Run("a missing source is fine", func(t *testing.T) {
+		t.Parallel()
+		s := base()
+		s.AptSource = nil
+		if err := s.validateAptSource("install.linux"); err != nil {
+			t.Errorf("absence should be allowed: %v", err)
+		}
+	})
+
+	t.Run("a source on a brew target is refused", func(t *testing.T) {
+		t.Parallel()
+		s := base()
+		s.Manager = ManagerBrew
+		if err := s.validateAptSource("install.darwin"); err == nil {
+			t.Error("apt_source on a brew target was accepted")
+		}
+	})
+
+	t.Run("an http url is refused", func(t *testing.T) {
+		t.Parallel()
+		s := base()
+		s.AptSource.URL = "http://example.com/repo"
+		if err := s.validateAptSource("install.linux"); err == nil {
+			t.Error("a plaintext repository url was accepted")
+		}
+	})
+
+	t.Run("a keyring with no checksum is refused", func(t *testing.T) {
+		t.Parallel()
+		s := base()
+		s.AptSource.KeyringSHA256 = ""
+		if err := s.validateAptSource("install.linux"); err == nil {
+			t.Error("a keyring that cannot be verified was accepted")
+		}
+	})
+
+	t.Run("a malformed checksum is refused", func(t *testing.T) {
+		t.Parallel()
+		s := base()
+		s.AptSource.KeyringSHA256 = "deadbeef"
+		if err := s.validateAptSource("install.linux"); err == nil {
+			t.Error("a short checksum was accepted")
+		}
+	})
+}

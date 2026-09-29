@@ -3,14 +3,23 @@ package installer
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	osexec "os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
 )
+
+// shaRe is a 64-character hex digest, lowercase.
+var shaRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // PackageInstaller installs a tool through a system package manager.
 //
@@ -168,6 +177,17 @@ func (p *PackageInstaller) Install(ctx context.Context, a Action) error {
 func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	pkg := a.Target.Package
 
+	// A declared apt source must exist BEFORE apt is asked for the package.
+	//
+	// postgresql-18 is absent from noble's index and only present if the PGDG
+	// repository has been added. Skipping this step produced the exact bug the
+	// comment above warns about, one layer up: `apt-get install -y
+	// postgresql-18` said "Unable to locate package", and because that came out
+	// of the privileged path it was reported as a privileged failure — an
+	// escalation the user had no reason to expect for a package that simply
+	// had not been declared.
+	p.prepareAptSource(ctx, a)
+
 	// --reinstall is what makes a forced run a repair rather than a no-op.
 	//
 	// dpkg's idea of what is installed comes from its own database, not from
@@ -282,4 +302,193 @@ func (p *PackageInstaller) authorize(command string) error {
 
 func (p *PackageInstaller) printf(format string, args ...any) {
 	fmt.Fprintf(p.out(), format, args...)
+}
+
+// prepareAptSource installs a tool's declared apt source, if it declares one.
+//
+// The keyring and the sources list are written to the standard system
+// locations, which requires root. That is fine: this only runs when a manifest
+// has explicitly declared a third-party repository, and the caller is already
+// on the privileged path by the time it matters. A manifest that declares no
+// source is a no-op, so ordinary distro packages are untouched.
+//
+// The key is verified against the digest in the manifest before it is trusted.
+// A keyring is what makes apt accept packages from a repository at all, so an
+// unverified one is not a lesser risk than an unverified binary — it is the
+// thing that decides which binaries are acceptable.
+// dearmorKeyring converts an armored (ASCII) GPG keyring to the binary form
+// apt's signed-by= expects. It returns the input unchanged if gpg is not
+// available or the input is already binary, so a repository that publishes a
+// binary keyring keeps working and a missing gpg degrades to the previous
+// behaviour rather than failing the install.
+func dearmorKeyring(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	// A binary keyring starts with the OpenPGP packet tag 0x99 (secret key
+	// packet, long form). An armored one starts with "-----BEGIN PGP".
+	if len(data) > 0 && data[0] == 0x99 {
+		return data, nil
+	}
+	if _, err := osexec.LookPath("gpg"); err != nil {
+		return data, nil
+	}
+	// gpg does not write the dearmored keyring to stdout in a way a caller can
+	// capture reliably, so it is written to a file and read back. Measured on
+	// gpg 2.4.4: `--dearmor --output -` produced an empty stdout, and
+	// `--to-stdout` (the more memorable spelling) is not an option at all — gpg
+	// answers "invalid option". Both failures surface as a zero-length keyring,
+	// which reads as a corrupt download rather than a wrong flag.
+	dearmored := path + ".dearmored"
+	if err := osexec.Command("gpg", "--batch", "--yes",
+		"--dearmor", "--output", dearmored, path).Run(); err != nil {
+		return nil, fmt.Errorf("gpg --dearmor: %w", err)
+	}
+	out, err := os.ReadFile(dearmored)
+	os.Remove(dearmored)
+	if err != nil {
+		return nil, fmt.Errorf("read dearmored keyring: %w", err)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("gpg --dearmor produced no output")
+	}
+	return out, nil
+}
+
+func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action) {
+	src := a.Target.AptSource
+	if src == nil {
+		return
+	}
+	if strings.TrimSpace(src.KeyringURL) == "" {
+		return
+	}
+	if !shaRe.MatchString(src.KeyringSHA256) {
+		// A malformed digest is a manifest error, not a runtime one. Refuse
+		// rather than fetch a key we cannot check.
+		fmt.Fprintf(os.Stderr, "aes: %s declares apt_source.keyring_sha256 %q, which is not 64 hex characters\n",
+			a.Tool, src.KeyringSHA256)
+		return
+	}
+
+	dir := "/usr/share/keyrings"
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "aes: create %s: %v\n", dir, err)
+		return
+	}
+	dst := filepath.Join(dir, a.Tool+"-archive-keyring.gpg")
+
+	// Fetch to a temp file beside the destination, verify, then rename. A
+	// partial download must never become the keyring apt reads.
+	tmp, err := os.CreateTemp(dir, ".keyring-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aes: temp keyring: %v\n", err)
+		return
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if err := downloadFile(ctx, src.KeyringURL, tmp); err != nil {
+		tmp.Close()
+		fmt.Fprintf(os.Stderr, "aes: fetch apt keyring for %s: %v\n", a.Tool, err)
+		return
+	}
+	tmp.Close()
+
+	// The digest is checked against the bytes as DOWNLOADED, before any
+	// conversion. The manifest pins what came off the wire; a keyring rewritten
+	// into a different encoding on the way in would be a manifest claim about
+	// bytes the user never saw.
+	if err := verifyFile(tmpName, src.KeyringSHA256); err != nil {
+		fmt.Fprintf(os.Stderr, "aes: apt keyring for %s: %v\n", a.Tool, err)
+		return
+	}
+	// apt's signed-by= needs a BINARY keyring. A repository that publishes
+	// the armored form (postgresql.org does: ACCC4CF8.asc) is written
+	// verbatim to the file apt reads, and apt then reports NO_PUBKEY for a key
+	// that is right there in the file — the failure looks like a missing key
+	// rather than a format mismatch. gpg --dearmor converts; the key material
+	// is the same, only the envelope changes.
+	dearmored, err := dearmorKeyring(tmpName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aes: apt keyring for %s: %v\n", a.Tool, err)
+		return
+	}
+	if err := os.WriteFile(tmpName, dearmored, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "aes: write dearmored keyring: %v\n", err)
+		return
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "aes: chmod keyring: %v\n", err)
+		return
+	}
+	if err := os.Rename(tmpName, dst); err != nil {
+		fmt.Fprintf(os.Stderr, "aes: install keyring to %s: %v\n", dst, err)
+		return
+	}
+
+	// The sources list is written last, so a failure above leaves apt
+	// configured for repositories it cannot verify rather than the reverse.
+	line := fmt.Sprintf("deb [signed-by=%s] %s\n", dst, src.URL)
+	if err := os.WriteFile("/etc/apt/sources.list.d/"+a.Tool+".list",
+		[]byte(line), 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "aes: write apt sources for %s: %v\n", a.Tool, err)
+		return
+	}
+
+	// The index refresh uses the same root/unprivileged choice installApt
+	// makes, for the same reason: a command that needs no elevation must not
+	// go down the privileged path, or the gate stops meaning anything the
+	// first time something true is passed to it.
+	update := func(ctx context.Context, cmd string) (exec.Result, error) {
+		if p.root() {
+			return p.unprivileged()(ctx, cmd)
+		}
+		return p.privileged()(ctx, cmd, exec.Authorization{
+			Confirmed:      true,
+			NonInteractive: p.NonInteractive,
+			Reason:         "apt-get update after adding a declared source",
+		})
+	}
+	if out, err := update(ctx, "apt-get update -qq"); err != nil {
+		fmt.Fprintf(os.Stderr, "aes: apt-get update after adding source for %s: %v\n%s",
+			a.Tool, err, out.Stdout)
+	}
+}
+
+// downloadFile streams url to dest, refusing to write more than maxAssetBytes.
+func downloadFile(ctx context.Context, url string, dest *os.File) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %s", resp.Status)
+	}
+	_, err = io.Copy(dest, io.LimitReader(resp.Body, maxAssetBytes+1))
+	return err
+}
+
+// verifyFile checks the sha256 of path against want, which must be lowercase hex.
+func verifyFile(path, want string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if got != want {
+		return fmt.Errorf("sha256 mismatch: expected %s, got %s", want, got)
+	}
+	return nil
 }

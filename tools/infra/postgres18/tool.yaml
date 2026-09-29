@@ -1,87 +1,15 @@
-# AES catalog. package+apt on linux only, deliberately — see the darwin note below.
 name: postgres18
 description: PostgreSQL 18 relational database server and client
 category: infra
 tested: false
 tags:
-  - infra
-  - database
-# The verify command is `psql`, NOT `postgres`, and the distinction is the whole
-# manifest.
-#
-# The server and the client are different binaries installed by different
-# packages, and only one of them is on PATH. Measured in a fresh ubuntu:26.04
-# container on 2026-09-29 after `apt-get install -y postgresql-18`:
-#
-#   /usr/bin/psql                      -> present (a pg_wrapper shim)
-#   /usr/bin/postgres                  -> ABSENT
-#   /usr/lib/postgresql/18/bin/postgres-> present, but under /usr/lib, not PATH
-#
-# The verifier resolves `command:` with exec.LookPath against PATH and
-# ~/.aes/bin (internal/verifier LookPathFor), neither of which contains
-# /usr/lib/postgresql/18/bin. So `command: postgres` would report StatusMissing
-# on a machine where PostgreSQL 18 is installed and running — the "verified a
-# working install as missing" failure LookPathFor's own comment warns about,
-# reached a different way.
-#
-# `psql` is the right witness because it is the only one of the two the schema
-# can actually check, and because the server package hard-depends on the client:
-# `postgresql-18` Depends: postgresql-client-18 (= <same version>). Installing
-# the server alone therefore always yields a matching psql on PATH, so a green
-# `psql` is evidence the server came with it.
-#
-# The version floor is 18, and the check is deliberately coarse. `psql --version`
-# prints:
-#
-#   psql (PostgreSQL) 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
-#
-# The trailing "(Ubuntu 18.6-0ubuntu0.26.04.1)" is a packaging suffix whose
-# shape changes with every point release, so pinning it would make this manifest
-# fail on the next security update. ExtractVersion was run against this exact
-# string using the real regexes copied from internal/verifier/verifier.go: it
-# returns "18.6", and CompareVersions("18.6", "18") is 1. A floor of "18"
-# therefore admits 18.x and rejects 17 and 19-as-in-18's-place, which is what
-# the tool name promises.
+- infra
+- database
 verify:
   command: psql
   version:
     command: psql --version
-    min: "18"
-# No dependencies. This is a server, not a client library, and nothing else in
-# the catalog declares postgres as a dependency — verified across every
-# tools/*/*/tool.yaml and profiles/*.yaml. A dependency here would be a
-# reference to nothing, and the resolver would fail the whole profile over it.
-#
-# No darwin target, and the absence is a measured decision rather than an
-# oversight. The tool is expressible on macOS — `postgresql@18` exists in
-# homebrew-core at 18.6 — but that formula is `keg_only :versioned_formula`
-# (read from the formula source on 2026-09-29). A keg-only formula is
-# deliberately NOT symlinked into the Homebrew prefix's bin, so `brew install
-# postgresql@18` leaves psql at
-# `$(brew --prefix)/opt/postgresql@18/bin/psql`, off PATH.
-#
-# The package strategy runs exactly `brew install <pkg>` — no `brew link`, no
-# PATH setup, and the schema has no field to express either. So a darwin target
-# would install cleanly and then fail `verify` with the same false StatusMissing
-# described above, on every machine, forever. Declaring linux alone is the
-# honest coordinate: AES installs PostgreSQL 18 where it can, and does not
-# claim macOS.
-#
-# On linux the coordinate is plain `postgresql-18` from the Ubuntu archive,
-# measured on ubuntu:26.04 (resolute), which carries 18.6-0ubuntu0.26.04.1 in
-# its own main/updates archives. Ubuntu 24.04 (noble) does NOT: it ships
-# PostgreSQL 16, and reaching 18 there needs the PGDG apt repository added
-# first (apt.postgresql.org, confirmed reachable — noble-pgdg returns HTTP 200).
-# The package strategy cannot add a repository — it runs a single
-# `apt-get install -y <pkg>` with no `apt-get update` and no sources.list
-# handling — so on noble this target fails honestly at install rather than
-# silently installing 16 under a name that says 18. That is the correct failure
-# and the reason the manifest does not try to work around it.
-#
-# apt is also the one strategy here that escalates: package+apt is the only
-# combination in the matrix that needs privilege, so AES prints the command and
-# asks (or uses `sudo -n` and exits 5 when non-interactive). That is derived
-# from the strategy, not declared here — I2 forbids a `needs_sudo` field.
+    min: '18'
 install:
   darwin:
     strategy: package
@@ -91,3 +19,7 @@ install:
     strategy: package
     manager: apt
     package: postgresql-18
+    apt_source:
+      url: https://apt.postgresql.org/pub/repos/apt noble-pgdg main
+      keyring_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+      keyring_sha256: 0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76

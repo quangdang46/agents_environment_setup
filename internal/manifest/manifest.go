@@ -152,6 +152,22 @@ type Target struct {
 	Strategy string `yaml:"strategy"`
 	Manager  string `yaml:"manager,omitempty"` // brew|apt — only for strategy=package
 	Package  string `yaml:"package,omitempty"` // only for strategy=package
+	// AptSource is a third-party apt repository, installed before the
+	// package. Only for strategy=package with manager=apt.
+	//
+	// It exists because some real tools are simply not in a distro index:
+	// tailscale ships no client package for Ubuntu at all, and postgresql-18
+	// is not in noble's index (noble has 16). Refusing them would be a
+	// smaller product than the manifest can honestly describe.
+	//
+	// The keyring is fetched from a URL and MUST carry a checksum. That is
+	// the whole safety property: without it, `keyring_url` would be a way for
+	// any manifest to name a key that signs any package, which is more power
+	// than the closed strategy set was built to keep out of the catalog's
+	// hands. With it, the bytes are pinned by a value a reviewer can check,
+	// and the failure mode is a checksum mismatch rather than a silent
+	// substitution.
+	AptSource *AptSource `yaml:"apt_source,omitempty"`
 	// Repository, Binary and the arch-keyed maps apply only to
 	// github-release.
 	Repository string `yaml:"repository,omitempty"`
@@ -193,6 +209,18 @@ type Target struct {
 	NPMPackage string `yaml:"npm_package,omitempty"`
 	CargoName  string `yaml:"cargo_name,omitempty"`
 	UVPackage  string `yaml:"uv_package,omitempty"`
+}
+
+// AptSource is a third-party apt repository.
+type AptSource struct {
+	// URL is the repository line, e.g.
+	// "https://pkgs.tailscale.com/stable/ubuntu noble main".
+	URL string `yaml:"url"`
+	// KeyringURL is where the signing key is fetched from. Required.
+	KeyringURL string `yaml:"keyring_url"`
+	// KeyringSHA256 pins the keyring bytes. Required — see Target.AptSource
+	// for why this is the safety property.
+	KeyringSHA256 string `yaml:"keyring_sha256"`
 }
 
 // Verify describes how to tell whether the tool is present and new enough.
@@ -357,6 +385,9 @@ var nameRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // minRe is a version floor: dotted integers, optionally v-prefixed. Anything
 // else is a catalog-load error rather than a runtime surprise.
 var minRe = regexp.MustCompile(`^v?\d+(\.\d+)*$`)
+
+// shaRe is a 64-character hex digest.
+var shaRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // aliasNameRe is the alias naming contract: a bare shell word. It is emitted
 // as `alias NAME=...` and the shell re-evaluates it, so the rule is the
@@ -620,6 +651,7 @@ func (t *Tool) validateVerify() error {
 func (t Target) present() map[string]bool {
 	return map[string]bool{
 		"manager":     t.Manager != "",
+		"apt_source":  t.AptSource != nil,
 		"package":     t.Package != "",
 		"repository":  t.Repository != "",
 		"release_tag": t.ReleaseTag != "",
@@ -658,6 +690,9 @@ func (t Target) validate(osName string) error {
 		if err := t.validateManager(where); err != nil {
 			return err
 		}
+		if err := t.validateAptSource(where); err != nil {
+			return err
+		}
 	}
 	// Every strategy that can carry an arch-keyed map gets its keys checked.
 	// This used to run only for github-release, which left `binary` — added
@@ -685,6 +720,42 @@ func (t Target) validate(osName string) error {
 // time. A missing pin is a property of the declaration: catching it when the
 // catalog loads means an author finds out before a user's machine does, and
 // no installer is ever tempted to substitute @latest on its own.
+// validateAptSource enforces that a third-party apt repo is complete and
+// trusted.
+//
+// The checksum is the point. A keyring fetched from a URL with nothing to
+// check it against is a key that can sign any package on the machine, named
+// by a file in the catalog — which is a wider grant than the closed strategy
+// set exists to withhold. Requiring the digest makes the manifest's claim
+// reviewable and turns a substitution into a loud mismatch.
+func (t Target) validateAptSource(where string) error {
+	if t.AptSource == nil {
+		return nil
+	}
+	if t.Manager != ManagerApt {
+		return fmt.Errorf("%s: apt_source requires manager apt; %q is %q", where, t.Manager, t.Manager)
+	}
+	s := t.AptSource
+	if strings.TrimSpace(s.URL) == "" {
+		return fmt.Errorf("%s: apt_source requires a url", where)
+	}
+	if !strings.HasPrefix(s.URL, "https://") {
+		return fmt.Errorf("%s: apt_source url must be https, got %q", where, s.URL)
+	}
+	if strings.TrimSpace(s.KeyringURL) == "" {
+		return fmt.Errorf("%s: apt_source requires a keyring_url", where)
+	}
+	if !strings.HasPrefix(s.KeyringURL, "https://") {
+		return fmt.Errorf("%s: apt_source keyring_url must be https, got %q", where, s.KeyringURL)
+	}
+	if !shaRe.MatchString(s.KeyringSHA256) {
+		return fmt.Errorf("%s: apt_source keyring_sha256 %q must be 64 hex characters; "+
+			"a keyring fetched with nothing to check it against can sign any package",
+			where, s.KeyringSHA256)
+	}
+	return nil
+}
+
 func (t Target) validatePinned(where, field string) error {
 	coord := t.PackageCoordinate()
 	version, ok := splitPinnedVersion(coord)
