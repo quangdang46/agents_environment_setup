@@ -150,3 +150,41 @@ func TestMalformedKeyringDigestIsRefusedBeforeAnyFetch(t *testing.T) {
 		t.Errorf("a command ran despite the refusal: %v %v", rec.unprivileged, rec.privileged)
 	}
 }
+
+// An armored keyring with no gpg available must be an error, not a pass-through.
+//
+// The bytes are ARMORED and apt's signed-by= needs the binary form. Writing the
+// armored bytes anyway produced the one failure the dearmor step exists to
+// prevent — apt reports NO_PUBKEY for a key that is sitting in the file, and
+// the message points at the key rather than at the format. Measured 2026-09-30
+// in a clean ubuntu:24.04 with only ca-certificates, curl and git: gpg is not
+// installed, and `vault` reported NO_PUBKEY for a key the manifest had already
+// verified byte for byte.
+//
+// A test that only checked "the file has the right bytes" passes either way,
+// because the armored bytes ARE the right bytes. The assertion is about what
+// the caller is told.
+func TestArmoredKeyringWithoutGpgIsAnError(t *testing.T) {
+	// Not parallel: it narrows PATH, and t.Setenv is incompatible with
+	// t.Parallel by construction.
+	dir := t.TempDir()
+	armored := "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmQINBF0000000\n-----END PGP PUBLIC KEY BLOCK-----\n"
+	path := filepath.Join(dir, "repo.gpg")
+	if err := os.WriteFile(path, []byte(armored), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// A PATH with no gpg on it, and nothing else either — LookPath must fail
+	// rather than find a system copy.
+	empty := t.TempDir()
+	t.Setenv("PATH", empty)
+
+	_, err := dearmorKeyring(path)
+	if err == nil {
+		t.Fatal("an armored keyring was accepted with no gpg available; the file " +
+			"apt reads would hold a keyring it cannot use")
+	}
+	if !strings.Contains(err.Error(), "gnupg") {
+		t.Errorf("error = %v, want it to name the package that provides the converter", err)
+	}
+}

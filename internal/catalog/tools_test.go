@@ -200,7 +200,7 @@ var layer1Tools = map[string]bool{
 	"postgres18": true, "rano": true, "rch": true, "ru": true, "s2p": true,
 	"sbh": true, "slb": true, "starship": true, "tailscale": true,
 	"ultimate-bug-scanner": true, "vault": true, "xf": true, "yq": true,
-	"aadc": true, "age": true, "bun": true, "csctf": true, "giil": true, "srps": true,
+	"aadc": true, "age": true, "bun": true, "csctf": true, "giil": true, "srps": true, "gnupg": true,
 	// The binary names are the ones the archives actually ship: `pi` for
 	// pi-agent-rust and `ft` for wezterm-automata (which renamed itself from
 	// wezterm_automata/wa to frankenterm/ft at v0.12.0). Declaring a name

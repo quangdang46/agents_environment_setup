@@ -6,6 +6,16 @@
 # `tailscale version` exits 0 printing "1.98.4" on line 1 followed by commit
 # lines. The verifier reads line 1 only, so those trailing lines are harmless.
 name: tailscale
+dependencies:
+  # gnupg is not optional for these three. A declared apt source
+  # publishes its key in the armored form, and apt's signed-by= needs
+  # the binary form, so the installer shells out to gpg to convert it.
+  # Without it the keyring is written armored, apt reports NO_PUBKEY
+  # for a key that is sitting in the file, and the message points at
+  # the key rather than at the format. Measured 2026-09-30 in a clean
+  # ubuntu:24.04 with only ca-certificates, curl and git.
+  - gnupg
+
 description: WireGuard mesh VPN client and admin CLI
 category: infra
 tested: true

@@ -1,4 +1,14 @@
 name: postgres18
+dependencies:
+  # gnupg is not optional for these three. A declared apt source
+  # publishes its key in the armored form, and apt's signed-by= needs
+  # the binary form, so the installer shells out to gpg to convert it.
+  # Without it the keyring is written armored, apt reports NO_PUBKEY
+  # for a key that is sitting in the file, and the message points at
+  # the key rather than at the format. Measured 2026-09-30 in a clean
+  # ubuntu:24.04 with only ca-certificates, curl and git.
+  - gnupg
+
 description: PostgreSQL 18 relational database server and client
 category: infra
 tested: true

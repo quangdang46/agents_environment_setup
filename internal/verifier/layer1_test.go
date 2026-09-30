@@ -133,6 +133,10 @@ var layer1Fixtures = []layer1Fixture{
 	{"bun", "bun", "bun --version", "1.3.0"},
 	{"csctf", "csctf", "csctf --version", "0.4"},
 	{"giil", "giil", "giil --version", "3.2.1"},
+	// gnupg is here because vault, postgres18 and tailscale cannot install
+	// without it — their apt_source keys are armored and the conversion
+	// shells out to gpg.
+	{"gnupg", "gpg", "gpg --version", "2.2"},
 }
 
 // presentOnThisMachine reports whether every binary a tool declares resolves

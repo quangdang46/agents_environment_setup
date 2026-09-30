@@ -373,7 +373,23 @@ func dearmorKeyring(path string) ([]byte, error) {
 		return data, nil
 	}
 	if _, err := osexec.LookPath("gpg"); err != nil {
-		return data, nil
+		// The bytes are ARMORED and apt's signed-by= needs the binary form.
+		// Writing the armored bytes anyway produces the one failure this
+		// whole function exists to prevent: apt reports
+		//
+		//   NO_PUBKEY FC9CA96ACA026560 ... is not signed
+		//
+		// for a key that is sitting in the file, and the message points at the
+		// key rather than at the format. Measured 2026-09-30 in a clean
+		// ubuntu:24.04 with only ca-certificates, curl and git: gpg is not
+		// installed, the keyring was written armored, and `vault` reported
+		// NO_PUBKEY for a key the manifest had already verified.
+		//
+		// So this is an error, not a best-effort pass-through. The remedy is
+		// one package, and saying so is more use than a keyring that cannot
+		// work.
+		return nil, fmt.Errorf("the repository key is armored and needs gpg to convert it, "+
+			"and gpg is not installed (apt-get install -y gnupg): %w", err)
 	}
 	// gpg does not write the dearmored keyring to stdout in a way a caller can
 	// capture reliably, so it is written to a file and read back. Measured on

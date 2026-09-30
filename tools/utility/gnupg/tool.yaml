@@ -1,0 +1,38 @@
+# AES catalog. package/apt on linux, package/brew on darwin.
+#
+# gnupg is here because three tools need it and none of them says so.
+# vault, postgres18 and tailscale all declare an `apt_source`, whose key is
+# published in the armored form; apt's signed-by= needs the binary form, and
+# the conversion shells out to gpg. A clean ubuntu:24.04 with only
+# ca-certificates, curl and git does not have it, and the failure is
+# misleading: apt reports NO_PUBKEY for a key that is sitting in the file,
+# so the message points at the key rather than at the format.
+#
+# Measured 2026-09-30 in exactly that container, before this tool existed.
+# With `apt-get install -y gnupg` and nothing else changed, `vault` installed
+# and verified at 2.1.1.
+name: gnupg
+description: OpenPGP tools, needed to convert an apt repository key
+category: utility
+tested: true
+# Layer 1 and Layer 2 both passed on linux/amd64, 2026-09-30. What the
+# flag means, and why there is no darwin/* entry, is in AGENTS.md under
+# "tested: true".
+tested_on:
+  - linux/amd64
+tags:
+  - utility
+verify:
+  command: gpg
+  version:
+    command: gpg --version
+    min: "2.2"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: gnupg
+  linux:
+    strategy: package
+    manager: apt
+    package: gnupg
