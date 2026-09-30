@@ -70,6 +70,48 @@ have checked that they would actually fail if the contract were broken.
 
 A tool may only be `tested: true` once **both** pass. Layer 1 alone is not sufficient.
 
+### What `tested: true` means
+
+It is a record of **where** a tool was proven, not a promise that every machine carries it. A
+manifest that says `tested: true` with `tested_on: [linux/amd64]` is telling the truth about
+linux/amd64 and nothing about darwin — and the resolver will skip it on a Mac, which is the
+flag working rather than failing.
+
+**Do not add a `tested_on` entry for a platform that has not run both layers.** The failure mode
+is not a wrong number, it is a claim that outruns the evidence: the resolver trusts the flag, so
+on that platform `aes setup` will install a tool that has never been verified there and report
+the run as done. That is the exact thing the flag exists to prevent, arriving through the flag
+itself.
+
+**Do not lower a floor to make a tool verify.** A floor below the measured version makes the
+floor check nothing, and the next person to read the manifest cannot tell a real constraint from
+a number that was moved to make a test pass. If the tool on the machine is older than the floor,
+the honest answer is `tested: false` and a note saying why.
+
+**A version probe must print a version and exit 0.** The wrong spelling is the ordinary failure
+here and it is *silent*: `slb --version` prints `Error: unknown flag: --version` and exits 0,
+`fsfs --version` prints `"ok": false` and exits 0, `k9s --version` errors. A probe that exits 0
+having printed nothing reports the tool as `unknown`, which reads as a broken tool rather than a
+broken probe and sends the next person to the manifest for a fault that is not there. Run the
+binary and paste what it printed.
+
+**A probe must not name a directory any local user can write to.** Four manifests carried
+`HOME="${HOME:-/tmp/aes-<tool>-home}" <tool> --version` as a workaround for a tool that aborts
+without a HOME, and it was a code-execution path: `/tmp` is 1777, `ru` sources
+`$HOME/.local/lib/toon.sh` at load, so any local user could pre-create that file and have it
+execute on every `aes verify`, `aes list` and `aes setup` — while the tool still printed its
+real version line, so nothing looked wrong. The verifier now carries HOME into the probe
+environment, so no manifest needs the workaround. `internal/catalog/tools_test.go` refuses a
+probe that names `/tmp`, `/var/tmp` or `/dev/shm`.
+
+**A checksum is checked against the bytes the URL serves today, not against a file the
+publisher wrote.** `scripts/release_probe.py` reads the release's own `.sha256` sidecar, and a
+re-uploaded asset leaves that sidecar describing bytes that are no longer there. Eight of 198
+coordinates were wrong on 2026-09-30, three of them on `tested: true` tools in the default
+profile. `scripts/audit_catalog.py` checks every coordinate against the digest GitHub reports
+at the tag the manifest **pins**, and exits 1 on a mismatch. Run it before believing a catalog
+change.
+
 ---
 
 ## Traps
