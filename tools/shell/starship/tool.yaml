@@ -2,7 +2,12 @@
 name: starship
 description: cross-shell prompt
 category: shell
-tested: false
+tested: true
+# Layer 1 and Layer 2 both passed on linux/amd64, 2026-09-30. What the
+# flag means, and why there is no darwin/* entry, is in AGENTS.md under
+# "tested: true".
+tested_on:
+  - linux/amd64
 tags:
   - shell
 verify:

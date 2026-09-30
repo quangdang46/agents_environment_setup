@@ -13,7 +13,12 @@ category: agent
 # Not proven yet. A container has to install this from nothing and have
 # `aes verify` report StatusOK with a parsed version before it is promoted, and
 # a version this recent has not been through that.
-tested: false
+tested: true
+# Not proven yet. A container has to install this from nothing and have
+# `aes verify` report StatusOK with a parsed version before it is promoted, and
+# a version this recent has not been through that.
+tested_on:
+  - linux/amd64
 tags:
   - agent
 verify:
