@@ -18,6 +18,10 @@ import (
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
 )
 
+// defaultKeyringsDir is where apt reads installed repository keys from. It is
+// a constant because it is not a choice: `signed-by=` points at it.
+const defaultKeyringsDir = "/usr/share/keyrings"
+
 // shaRe is a 64-character hex digest, lowercase.
 var shaRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -75,6 +79,13 @@ type PackageInstaller struct {
 	// NonInteractive suppresses prompting. The command is attempted with
 	// sudo -n so it can never block on a password.
 	NonInteractive bool
+
+	// KeyringsDir is where a declared apt source's keyring is installed.
+	// Defaults to /usr/share/keyrings, which is the path apt reads and the
+	// one a non-root machine cannot write to. It is a field rather than a
+	// constant so a test can point it at a read-only directory and observe the
+	// failure the way a non-root user would, without needing root to do it.
+	KeyringsDir string
 
 	// In is read for the interactive confirmation. Defaults to os.Stdin.
 	// EOF or a non-affirmative answer means no.
@@ -186,7 +197,18 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	// of the privileged path it was reported as a privileged failure — an
 	// escalation the user had no reason to expect for a package that simply
 	// had not been declared.
-	p.prepareAptSource(ctx, a)
+	//
+	// It is also a privileged step, and it used to run before the privilege
+	// check below. On a non-root machine every write to /usr/share/keyrings
+	// failed with EACCES, the failure was discarded, and the run then reported
+	// "installed but verification says stale" — a wrong diagnosis for a
+	// package that was never installed, and one that sends the user to look at
+	// the version floor. Measured 2026-09-30 on vault: the keyring was never
+	// written, apt served 2.0.1 from the distro index, and the tool reported
+	// stale against a 2.1.1 floor.
+	//
+	// So it is routed through the same privilege decision as the install it
+	// exists to prepare for.
 
 	// --reinstall is what makes a forced run a repair rather than a no-op.
 	//
@@ -205,6 +227,25 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 		base += " --reinstall"
 	}
 	base += " " + pkg
+
+	// The apt source has to exist before apt is asked for the package, and
+	// preparing it is itself a privileged step: it writes a keyring to
+	// /usr/share/keyrings and a line to /etc/apt/sources.list.d. It used to run
+	// before the privilege check below, with its failures printed and
+	// discarded, so on a non-root machine the repository was never added and
+	// apt served whatever the distro index happened to carry. Measured
+	// 2026-09-30 on vault: the tool then reported "installed but verification
+	// says stale" against a 2.1.1 floor, which sends the user to look at a
+	// version number when the real fact is that nothing was installed.
+	//
+	// `base` is computed first so the failure can name a command the user can
+	// actually run. A PrivilegeError whose Command is "create a temp keyring
+	// in /usr/share/keyrings" is a worse message than none: it is a sentence
+	// in the position where a command belongs, and the user who runs it gets a
+	// usage error.
+	if err := p.prepareAptSourcePrivileged(ctx, a, base); err != nil {
+		return err
+	}
 
 	// Already root: no escalation question arises. Containers and CI images
 	// land here, and it is why `aes test` needs no password.
@@ -356,26 +397,49 @@ func dearmorKeyring(path string) ([]byte, error) {
 	return out, nil
 }
 
-func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action) {
+// prepareAptSourcePrivileged adds a declared third-party apt repository, on the
+// same footing as the install it exists to prepare for.
+//
+// Every step it performs writes to a root-owned path — /usr/share/keyrings and
+// /etc/apt/sources.list.d — so on a machine that is not root it cannot succeed.
+// It used to be called before the privilege check and its failures were
+// printed and discarded, which is how `vault` came to report "installed but
+// verification says stale" on 2026-09-30: the keyring was never written, apt
+// served the distro's 2.0.1, and the tool was called stale against a 2.1.1
+// floor. The user is sent to look at a version number when the real fact is
+// that nothing was installed.
+//
+// So the write failures are RETURNED, and the caller turns them into the same
+// exit-5 "run this yourself" it uses for any other privileged step.
+func (p *PackageInstaller) prepareAptSourcePrivileged(ctx context.Context, a Action, installCmd string) error {
 	src := a.Target.AptSource
 	if src == nil {
-		return
+		return nil
 	}
 	if strings.TrimSpace(src.KeyringURL) == "" {
-		return
+		return nil
 	}
 	if !shaRe.MatchString(src.KeyringSHA256) {
 		// A malformed digest is a manifest error, not a runtime one. Refuse
 		// rather than fetch a key we cannot check.
-		fmt.Fprintf(os.Stderr, "aes: %s declares apt_source.keyring_sha256 %q, which is not 64 hex characters\n",
+		return fmt.Errorf("aes: %s declares apt_source.keyring_sha256 %q, which is not 64 hex characters",
 			a.Tool, src.KeyringSHA256)
-		return
 	}
+	return p.prepareAptSource(ctx, a, installCmd)
+}
 
-	dir := "/usr/share/keyrings"
+// prepareAptSource performs the writes. It returns the FIRST failure rather
+// than printing and continuing, so a caller can tell a completed step from an
+// abandoned one.
+func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action, installCmd string) error {
+	src := a.Target.AptSource
+
+	dir := p.KeyringsDir
+	if dir == "" {
+		dir = defaultKeyringsDir
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Fprintf(os.Stderr, "aes: create %s: %v\n", dir, err)
-		return
+		return p.aptSourceFailed(a, installCmd, "create "+dir, err)
 	}
 	dst := filepath.Join(dir, a.Tool+"-archive-keyring.gpg")
 
@@ -383,16 +447,14 @@ func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action) {
 	// partial download must never become the keyring apt reads.
 	tmp, err := os.CreateTemp(dir, ".keyring-*")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "aes: temp keyring: %v\n", err)
-		return
+		return p.aptSourceFailed(a, installCmd, "create a temp keyring in "+dir, err)
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
 	if err := downloadFile(ctx, src.KeyringURL, tmp); err != nil {
 		tmp.Close()
-		fmt.Fprintf(os.Stderr, "aes: fetch apt keyring for %s: %v\n", a.Tool, err)
-		return
+		return p.aptSourceFailed(a, installCmd, "fetch the apt keyring", err)
 	}
 	tmp.Close()
 
@@ -401,8 +463,7 @@ func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action) {
 	// into a different encoding on the way in would be a manifest claim about
 	// bytes the user never saw.
 	if err := verifyFile(tmpName, src.KeyringSHA256); err != nil {
-		fmt.Fprintf(os.Stderr, "aes: apt keyring for %s: %v\n", a.Tool, err)
-		return
+		return p.aptSourceFailed(a, installCmd, "verify the apt keyring", err)
 	}
 	// apt's signed-by= needs a BINARY keyring. A repository that publishes
 	// the armored form (postgresql.org does: ACCC4CF8.asc) is written
@@ -412,20 +473,16 @@ func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action) {
 	// is the same, only the envelope changes.
 	dearmored, err := dearmorKeyring(tmpName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "aes: apt keyring for %s: %v\n", a.Tool, err)
-		return
+		return p.aptSourceFailed(a, installCmd, "dearmor the apt keyring", err)
 	}
 	if err := os.WriteFile(tmpName, dearmored, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "aes: write dearmored keyring: %v\n", err)
-		return
+		return p.aptSourceFailed(a, installCmd, "write the dearmored keyring", err)
 	}
 	if err := os.Chmod(tmpName, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "aes: chmod keyring: %v\n", err)
-		return
+		return p.aptSourceFailed(a, installCmd, "chmod the keyring", err)
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
-		fmt.Fprintf(os.Stderr, "aes: install keyring to %s: %v\n", dst, err)
-		return
+		return p.aptSourceFailed(a, installCmd, "install the keyring to "+dst, err)
 	}
 
 	// The sources list is written last, so a failure above leaves apt
@@ -433,8 +490,7 @@ func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action) {
 	line := fmt.Sprintf("deb [signed-by=%s] %s\n", dst, src.URL)
 	if err := os.WriteFile("/etc/apt/sources.list.d/"+a.Tool+".list",
 		[]byte(line), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "aes: write apt sources for %s: %v\n", a.Tool, err)
-		return
+		return p.aptSourceFailed(a, installCmd, "write the apt sources list", err)
 	}
 
 	// The index refresh uses the same root/unprivileged choice installApt
@@ -451,10 +507,27 @@ func (p *PackageInstaller) prepareAptSource(ctx context.Context, a Action) {
 			Reason:         "apt-get update after adding a declared source",
 		})
 	}
-	if out, err := update(ctx, "apt-get update -qq"); err != nil {
-		fmt.Fprintf(os.Stderr, "aes: apt-get update after adding source for %s: %v\n%s",
-			a.Tool, err, out.Stdout)
+	if _, err := update(ctx, "apt-get update -qq"); err != nil {
+		return p.aptSourceFailed(a, installCmd, "refresh the apt index after adding the source", err)
 	}
+	return nil
+}
+
+// aptSourceFailed reports a failed apt-source step as a PrivilegeError when the
+// caller is not root, and as an ordinary error otherwise.
+//
+// The distinction is the whole point. A non-root machine cannot write to
+// /usr/share/keyrings, and reporting that as a plain failure produced the
+// worst possible diagnosis: `vault` reported "installed but verification says
+// stale", sending the user to look at a version floor, when in fact nothing had
+// been installed and the real fact was that a privileged step was needed. A
+// PrivilegeError is what makes the CLI print the command and exit 5.
+func (p *PackageInstaller) aptSourceFailed(a Action, installCmd, what string, err error) error {
+	msg := fmt.Errorf("aes: %s: %w", what, err)
+	if p.root() {
+		return msg
+	}
+	return &exec.PrivilegeError{Command: "sudo " + installCmd, NonInteractive: p.NonInteractive}
 }
 
 // downloadFile streams url to dest, refusing to write more than maxAssetBytes.
