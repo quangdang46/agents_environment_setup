@@ -20,6 +20,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: v0.45.1
     repository: zellij-org/zellij
     asset:
       amd64: zellij-no-web-x86_64-apple-darwin.tar.gz
@@ -29,6 +30,7 @@ install:
       arm64: c029ba4fe1927b79ad9f0cdd59155c4dff80777863c85857d4d09b88b56f9891
   linux:
     strategy: github-release
+    release_tag: v0.45.1
     repository: zellij-org/zellij
     asset:
       amd64: zellij-no-web-x86_64-unknown-linux-musl.tar.gz

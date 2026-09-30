@@ -22,6 +22,7 @@ install:
     package: btop
   linux:
     strategy: github-release
+    release_tag: v1.4.7
     repository: aristocratos/btop
     asset:
       amd64: btop-x86_64-unknown-linux-musl.tar.gz

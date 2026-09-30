@@ -44,6 +44,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: bun-v1.4.2
     repository: oven-sh/bun
     asset:
       amd64: bun-darwin-x64.zip
@@ -53,6 +54,7 @@ install:
       arm64: 90987a3a16d7db556d886ac3d551e7b6d3edf0a1cf43acaed622e8676be1d12f
   linux:
     strategy: github-release
+    release_tag: bun-v1.4.2
     repository: oven-sh/bun
     asset:
       # The plain x64/aarch64 builds, not the `-baseline` ones. Baseline

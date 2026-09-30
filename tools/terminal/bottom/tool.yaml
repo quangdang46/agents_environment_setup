@@ -26,6 +26,7 @@ verify:
 install:
   darwin:
     strategy: github-release
+    release_tag: 0.14.9
     repository: ClementTsang/bottom
     binary:
       amd64: btm
@@ -38,6 +39,7 @@ install:
       arm64: 28358e19a3d62b3778fc0d1778b0028a682059145c9ac38ac5076bf124d77714
   linux:
     strategy: github-release
+    release_tag: 0.14.9
     repository: ClementTsang/bottom
     binary:
       amd64: btm

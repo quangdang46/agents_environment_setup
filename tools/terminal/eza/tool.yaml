@@ -22,6 +22,7 @@ install:
     package: eza
   linux:
     strategy: github-release
+    release_tag: v0.23.5
     repository: eza-community/eza
     asset:
       amd64: eza_x86_64-unknown-linux-gnu.tar.gz
