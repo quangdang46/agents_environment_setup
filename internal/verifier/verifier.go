@@ -304,14 +304,26 @@ func LookPathFor(bin string) (string, error) {
 // LookPathIn is LookPathFor against a named machine: PATH first, then the bin
 // directory of the AES_HOME the caller says is in play.
 func LookPathIn(tgt Target, bin string) (string, error) {
-	if p, err := exec.LookPath(bin); err == nil {
-		return p, nil
-	}
+	// The AES bin directory first, then PATH.
+	//
+	// It was the other way round, and the order is load-bearing. A developer
+	// with ripgrep 15 installed by aes at ~/.aes/bin/ripgrep and ripgrep 13 at
+	// /usr/bin/ripgrep got whichever came first on PATH — the old one. A tool
+	// below its floor then reads as stale, `aes setup` reinstalls it, and the
+	// next run reads the same old binary again. The install never converges.
+	//
+	// AES-first also matches what the user sees after `source ~/.aes/env.sh`,
+	// which prepends exactly this directory. In a shell that has sourced it the
+	// two orders agree; in one that has not, AES-first is the answer that
+	// describes the copy aes is responsible for.
 	if aesBin := tgt.binDir(); aesBin != "" {
 		cand := filepath.Join(aesBin, bin)
 		if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
 			return cand, nil
 		}
+	}
+	if p, err := exec.LookPath(bin); err == nil {
+		return p, nil
 	}
 	return "", fmt.Errorf("verifier: %q is on neither PATH nor %s", bin, tgt.binDir())
 }

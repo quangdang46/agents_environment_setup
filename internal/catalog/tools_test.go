@@ -188,6 +188,19 @@ var layer1Tools = map[string]bool{
 	// source, so they are verified on the same terms as the other release
 	// tools. gemini is the one AI tool that runs on node 18.
 	"beads": true, "dcg": true, "gemini": true,
+	// The rest of the catalog, added 2026-09-30. Every version command was run
+	// against the binary on this host; the binary name is the one the archive
+	// ships, which differs from the tool name in five cases (cm→cass-memory,
+	// opentofu→tofu, jeffreysprompts→jfp, ultimate-bug-scanner→ubs,
+	// brenner-bot→brenner, srps→sysmoni).
+	"agent-settings-backup": true, "automated-plan-reviser": true,
+	"brenner-bot": true, "casr": true, "cm": true, "delta": true, "ee": true,
+	"fmd": true, "fsfs": true, "go": true, "jeffreysprompts": true,
+	"k9s": true, "meta-skill": true, "omp": true, "opentofu": true,
+	"postgres18": true, "rano": true, "rch": true, "ru": true, "s2p": true,
+	"sbh": true, "slb": true, "starship": true, "tailscale": true,
+	"ultimate-bug-scanner": true, "vault": true, "xf": true, "yq": true,
+	"aadc": true, "age": true, "bun": true, "csctf": true, "giil": true, "srps": true,
 	// The binary names are the ones the archives actually ship: `pi` for
 	// pi-agent-rust and `ft` for wezterm-automata (which renamed itself from
 	// wezterm_automata/wa to frankenterm/ft at v0.12.0). Declaring a name

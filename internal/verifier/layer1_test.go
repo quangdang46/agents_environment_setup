@@ -80,6 +80,59 @@ var layer1Fixtures = []layer1Fixture{
 	{"vercel", "vercel", "vercel --version", "30.0"},
 	{"supabase", "supabase", "supabase --version", "1.0"},
 	{"wrangler", "wrangler", "wrangler --version", "3.0"},
+
+	// The rest of the catalog, added 2026-09-30 to take `tested: true` across
+	// every tool. Every version command below was RUN against the binary on
+	// this host and the output pasted into the comment, because the wrong
+	// spelling is the ordinary failure here and it is silent: `slb --version`
+	// prints "Error: unknown flag" and exits 0, `fsfs --version` prints
+	// `"ok": false` and exits 0, and `k9s --version` errors. A probe that
+	// exits 0 while printing nothing reports the tool as UNKNOWN — which looks
+	// like a broken tool rather than a broken probe, and sends the next
+	// person to the manifest for a fault that is not there.
+	//
+	// The binary column is the name in the archive, not the tool name, because
+	// the two differ in five cases: cm ships `cass-memory`, opentofu ships
+	// `tofu`, jeffreysprompts ships `jfp`, ultimate-bug-scanner ships `ubs`,
+	// brenner-bot ships `brenner`, and srps ships `sysmoni`.
+	{"agent-settings-backup", "asb", "asb --version", "0.3.2"},
+	{"automated-plan-reviser", "apr", "apr --version", "1.3.1"},
+	{"brenner-bot", "brenner", "brenner --version", "0.4.1"},
+	{"casr", "casr", "casr --version", "0.3.0"},
+	{"cm", "cass-memory", "cass-memory --version", "0.2.0"},
+	{"delta", "delta", "delta --version", "0.15"},
+	{"ee", "ee", "ee --version", "0.15.0"},
+	{"fmd", "fmd", "fmd --version", "0.4.0"},
+	// `fsfs version`, not `fsfs --version`: the dashed spelling exits 0 having
+	// printed a JSON object with "ok": false. Measured on 1.10.0, which
+	// prints `fsfs 1.10.0 (frankensearch 1.10.0)`.
+	{"fsfs", "fsfs", "fsfs version", "1.10.0"},
+	{"go", "go", "go version", "1.22"},
+	{"jeffreysprompts", "jfp", "jfp --version", "1.0.3"},
+	{"k9s", "k9s", "k9s version", "0.32"},
+	{"meta-skill", "ms", "ms --version", "0.2.2"},
+	{"omp", "omp", "omp --version", "18.0"},
+	{"opentofu", "tofu", "tofu version", "1.6"},
+	{"postgres18", "psql", "psql --version", "18"},
+	{"rano", "rano", "rano --version", "0.2.0"},
+	{"rch", "rch", "rch --version", "1.0"},
+	{"ru", "ru", "ru --version", "1.4.0"},
+	{"s2p", "s2p", "s2p --version", "0.3.4"},
+	{"sbh", "sbh", "sbh --version", "0.6.16"},
+	// `slb version`, not `slb --version`: the dashed spelling prints
+	// "Error: unknown flag: --version" and exits 0. Measured on 0.5.2.
+	{"slb", "slb", "slb version", "0.5.0"},
+	{"starship", "starship", "starship --version", "1.0"},
+	{"tailscale", "tailscale", "tailscale version", "1.0"},
+	{"ultimate-bug-scanner", "ubs", "ubs --version", "5.4.9"},
+	{"vault", "vault", "vault --version", "2.1.1"},
+	{"xf", "xf", "xf --version", "0.4.0"},
+	{"yq", "yq", "yq --version", "4.0"},
+	{"aadc", "aadc", "aadc --version", "0.1"},
+	{"age", "age", "age --version", "1.1"},
+	{"bun", "bun", "bun --version", "1.3.0"},
+	{"csctf", "csctf", "csctf --version", "0.4"},
+	{"giil", "giil", "giil --version", "3.2.1"},
 }
 
 // presentOnThisMachine reports whether every binary a tool declares resolves
@@ -141,16 +194,39 @@ func TestLayer1VerifyFixtures(t *testing.T) {
 // Every fixture's version string must actually parse. This is the check that
 // caught tmux 3.6b being read as "3", which made a tmux with a 3.x minimum
 // report stale on every single run.
+// versionArgs splits "<binary> <args...>" into just the arguments, so the
+// command can be run against an absolute path. Every fixture's versionCmd is a
+// bare command with flags and none is a shell pipeline, so splitting on
+// whitespace is the whole job — which is worth saying, because the day one
+// needs a pipeline this stops being true and the split quietly mangles it.
+func versionArgs(cmd string) []string {
+	fields := strings.Fields(cmd)
+	if len(fields) < 2 {
+		return nil
+	}
+	return fields[1:]
+}
+
 func TestLayer1FixturesParseRealVersionOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("layer 1 fixtures exercise the real machine; skipped under -short")
 	}
 	for _, f := range layer1Fixtures {
 		t.Run(f.name, func(t *testing.T) {
-			if _, err := exec.LookPath(f.bin); err != nil {
+			path, err := LookPathFor(f.bin)
+			if err != nil {
 				t.Skipf("%s is not installed on this machine", f.bin)
 			}
-			run, err := exec.Command("sh", "-c", f.versionCmd).Output()
+			// Run the resolved PATH, not the bare name through a shell.
+			//
+			// Resolving by name is how this test found three stale binaries
+			// on 2026-09-30: aes had installed asb 0.3.2, apr 1.3.1 and
+			// brenner 0.4.1 into ~/.aes/bin, and older copies in
+			// ~/.local/bin came first on PATH. The fixture then asserted its
+			// floor against the OLD binary and failed on a machine where the
+			// tool was correctly installed and verifying. The test was
+			// measuring the developer's PATH, not the tool.
+			run, err := exec.Command(path, versionArgs(f.versionCmd)...).Output()
 			if err != nil {
 				t.Skipf("%s %q failed: %v", f.bin, f.versionCmd, err)
 			}
