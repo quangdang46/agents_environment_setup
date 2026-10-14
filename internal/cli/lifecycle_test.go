@@ -356,8 +356,15 @@ func TestUninstallListsDependents(t *testing.T) {
 // This asserts the CLI half: the Action uninstall builds carries the same Name
 // setup would have used.
 func TestUninstallResolvesTheSameBinaryNameAsSetup(t *testing.T) {
-	h := newLifeHarness(t, toolSpec{name: "yq", category: "utility", provides: "yq"})
-	h.track(t, "yq", manifest.StrategyGo)
+	// The fixture name must not name a binary the host happens to carry.
+	// Written with yq, whose /usr/bin/yq is present on the ubuntu and macOS
+	// runners, so `aes uninstall` correctly refused to claim a removal the
+	// filesystem disputed — and the test failed on the runner's binaries
+	// rather than on the behaviour it was named for. The behaviour (uninstall
+	// resolving verify.command) is a property of the derivation, not of that
+	// one upstream's real-world layout.
+	h := newLifeHarness(t, toolSpec{name: "aes-yq-fixture", category: "utility", provides: "aes-yq-fixture"})
+	h.track(t, "aes-yq-fixture", manifest.StrategyGo)
 
 	var seen installer.Action
 	rec := removerFunc(func(_ context.Context, a installer.Action) (installer.Outcome, error) {
@@ -368,13 +375,13 @@ func TestUninstallResolvesTheSameBinaryNameAsSetup(t *testing.T) {
 	r.Register(manifest.StrategyGo, removerInstaller{inner: installer.NewGoInstaller(), rem: rec})
 	h.app.Registry = r
 
-	if code := h.run(t, "uninstall", "yq", "--confirm"); code != ExitOK {
+	if code := h.run(t, "uninstall", "aes-yq-fixture", "--confirm"); code != ExitOK {
 		t.Fatalf("exit = %d, want 0\n%s", code, h.stderr.String())
 	}
 
-	if seen.Name != "yq" {
+	if seen.Name != "aes-yq-fixture" {
 		t.Errorf("uninstall resolved the binary to %q, want %q (the manifest's verify.command); "+
-			"the two paths must not derive the name independently", seen.Name, "yq")
+			"the two paths must not derive the name independently", seen.Name, "aes-yq-fixture")
 	}
 	// And the fallback that hides this bug: with Name empty, binaryName() is
 	// used instead, which for yq is yq_darwin_arm64 — a file install never wrote.

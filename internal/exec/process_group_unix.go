@@ -28,6 +28,15 @@ func isolate(cmd *exec.Cmd) {
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 			return cmd.Process.Kill()
 		}
+		// A nil error from a group kill is not proof it landed. Measured in
+		// Docker under a restrictive seccomp profile: Kill(-pid, SIGKILL)
+		// returns nil and the group keeps running, so a timeout on
+		// `sh -c "sleep 30 & wait"` returned while its grandchild held the
+		// pipe open. Verify the leader is gone; if it is not, kill it
+		// directly, which the same environment honours.
+		if syscall.Kill(cmd.Process.Pid, 0) == nil {
+			return cmd.Process.Kill()
+		}
 		return nil
 	}
 }

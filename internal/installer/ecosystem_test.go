@@ -104,6 +104,11 @@ func TestEcosystemCommandLine(t *testing.T) {
 
 			e := tc.build()
 			e.Host = presentHost()
+			// The gate reads the runner's real PATH, so a machine without uv
+			// fails a test that is about command construction. The subject
+			// here is the constructed command, not the runner, so the gate
+			// is pinned present exactly like the runner is pinned to echo.
+			e.HasToolchain = func(string) bool { return true }
 			rec := &echoRunner{}
 			e.Run = rec.run
 

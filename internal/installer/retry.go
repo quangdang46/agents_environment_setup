@@ -14,24 +14,21 @@ import (
 	"time"
 )
 
-// retryDelays is the fixed retry schedule for transient download failures,
-// mirroring acfs_curl_with_retry's (0 5 15): the first attempt runs
-// immediately, then waits of 5 and 15 seconds. Fixed rather than
+// retrySchedule is the fixed retry schedule for transient download
+// failures, mirroring acfs_curl_with_retry's (0 5 15): the first attempt
+// runs immediately, then waits of 5 and 15 seconds. Fixed rather than
 // exponential because the schedule is a property of the remote — a CDN or a
-// rate limiter recovering — not of the retry count. A var so tests can
-// substitute a zero schedule without waiting.
+// rate limiter recovering — not of the retry count.
 //
-// Retry never touches a privilege path by construction: the retried unit is
-// http.Client.Do plus a body copy. There is no sudo, no Authorize, no
-// exec.RunAuthorized in this file. A reader tempted to "extend" retry to
-// apt-get update or brew install must not: a second attempt there is how a
-// tool ends up waiting on a prompt that nobody is there to answer (see the
-// NO-RETRY rationale on PackageInstaller).
-var retryDelays = []time.Duration{0, 5 * time.Second, 15 * time.Second}
+// It is a const-shaped value passed into retrier, not a package var: the
+// earlier version was a var so tests could substitute a zero schedule, and
+// two parallel tests writing it tripped the race detector. A schedule the
+// tests can change without touching a shared variable is the same thing as
+// a global without the sharing.
+var retrySchedule = []time.Duration{0, 5 * time.Second, 15 * time.Second}
 
-// sleepFn suspends a backoff wait. A var so tests record the delays without
-// sleeping, and so cancellation is honoured through ctx in production.
-var sleepFn = func(ctx context.Context, d time.Duration) error {
+// sleepContext suspends a backoff wait, honouring cancellation.
+func sleepContext(ctx context.Context, d time.Duration) error {
 	if d <= 0 {
 		return nil
 	}
@@ -41,6 +38,25 @@ var sleepFn = func(ctx context.Context, d time.Duration) error {
 	case <-time.After(d):
 		return nil
 	}
+}
+
+// retrier carries a schedule and a sleeper so tests build their own without
+// touching shared state. The zero value is not usable: NewRetrier fills in
+// the production defaults for call sites, and tests name what they need.
+//
+// Retry never touches a privilege path by construction: the retried unit is
+// http.Client.Do plus a body copy. There is no sudo, no Authorize, no
+// exec.RunAuthorized in this file. A reader tempted to "extend" retry to
+// apt-get update or brew install must not: a second attempt there is how a
+// tool ends up waiting on a prompt that nobody is there to answer (see the
+// NO-RETRY rationale on PackageInstaller).
+type retrier struct {
+	delays []time.Duration
+	sleep  func(ctx context.Context, d time.Duration) error
+}
+
+func newRetrier() retrier {
+	return retrier{delays: retrySchedule, sleep: sleepContext}
 }
 
 // maxRetryAfter caps an upstream Retry-After header: a CDN may ask for
@@ -69,11 +85,18 @@ func (e *statusError) Error() string { return "unexpected status " + e.status }
 // error is returned immediately, wrapped once with the URL. A nil log
 // disables the retry lines, and the log is written before the wait so a
 // long backoff explains itself.
+// doDownloadWithRetry is the production entry point: it runs the shared
+// schedule with the shared sleeper. Tests that need a different schedule
+// use retrier directly, which is the whole reason the type exists.
 func doDownloadWithRetry(ctx context.Context, client *http.Client, url string, dst *os.File, log io.Writer) error {
+	return newRetrier().download(ctx, client, url, dst, log)
+}
+
+func (r retrier) download(ctx context.Context, client *http.Client, url string, dst *os.File, log io.Writer) error {
 	var lastErr error
-	for i := range retryDelays {
+	for i := range r.delays {
 		if i > 0 {
-			if err := sleepFn(ctx, retryDelays[i]); err != nil {
+			if err := r.sleep(ctx, r.delays[i]); err != nil {
 				return fmt.Errorf("download %s: %w", url, err)
 			}
 		}
@@ -84,8 +107,8 @@ func doDownloadWithRetry(ctx context.Context, client *http.Client, url string, d
 		}
 		lastErr = err
 
-		retryable, after := classifyDownloadErr(err, status)
-		if !retryable || i == len(retryDelays)-1 {
+		retryable, after := r.classify(err, status)
+		if !retryable || i == len(r.delays)-1 {
 			break
 		}
 
@@ -94,8 +117,8 @@ func doDownloadWithRetry(ctx context.Context, client *http.Client, url string, d
 		if se, ok := lastErr.(*statusError); ok && se.after > 0 {
 			after = se.after
 		}
-		logRetry(log, i+1, len(retryDelays), err, after)
-		if err := sleepFn(ctx, after); err != nil {
+		logRetry(log, i+1, len(r.delays), err, after)
+		if err := r.sleep(ctx, after); err != nil {
 			return fmt.Errorf("download %s: %w", url, err)
 		}
 	}
@@ -162,7 +185,11 @@ func rewind(f *os.File) error {
 // retrying is the wrong reflex when a certificate did not validate, because
 // the second answer may be the attacker's.
 func classifyDownloadErr(err error, status int) (retryable bool, after time.Duration) {
-	def := defaultRetryDelay()
+	return newRetrier().classify(err, status)
+}
+
+func (r retrier) classify(err error, status int) (retryable bool, after time.Duration) {
+	def := r.defaultDelay()
 	if err == nil {
 		return false, 0
 	}
@@ -204,9 +231,9 @@ func classifyDownloadErr(err error, status int) (retryable bool, after time.Dura
 	return false, 0
 }
 
-func defaultRetryDelay() time.Duration {
-	if len(retryDelays) > 1 {
-		return retryDelays[1]
+func (r retrier) defaultDelay() time.Duration {
+	if len(r.delays) > 1 {
+		return r.delays[1]
 	}
 	return 0
 }

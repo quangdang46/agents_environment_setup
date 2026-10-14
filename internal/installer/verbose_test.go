@@ -65,10 +65,10 @@ func TestGithubReleaseSilentByDefault(t *testing.T) {
 func TestVerboseRetryLineRidesTheSameWriter(t *testing.T) {
 	t.Parallel()
 
-	origDelays, origSleep := retryDelays, sleepFn
-	retryDelays = []time.Duration{0, 0}
-	sleepFn = func(_ context.Context, d time.Duration) error { return nil }
-	t.Cleanup(func() { retryDelays, sleepFn = origDelays, origSleep })
+	fast := &retrier{
+		delays: []time.Duration{0, 0},
+		sleep:  func(_ context.Context, d time.Duration) error { return nil },
+	}
 
 	body := tgz(t, map[string]string{"aes": "#!/bin/sh\necho aes\n"})
 	fixture := &serverFixture{URL: "", Digest: sumOf(body), Asset: body}
@@ -87,6 +87,7 @@ func TestVerboseRetryLineRidesTheSameWriter(t *testing.T) {
 
 	var log bytes.Buffer
 	g := newInstaller(srv.URL, t.TempDir())
+	g.retry = fast
 	g.SetVerboseLog(true, &log)
 
 	if err := g.Install(context.Background(), actionFor(fixture)); err != nil {

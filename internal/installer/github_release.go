@@ -87,6 +87,11 @@ type GithubRelease struct {
 	// so verbosity cannot change what is installed (I8).
 	verbose    bool
 	verboseLog io.Writer
+
+	// retry overrides the download retry policy, so a test can name a
+	// schedule without touching shared state (the CI race that made this a
+	// field). Nil means the production schedule.
+	retry *retrier
 }
 
 // NewGithubRelease returns a github-release installer with defaults applied.
@@ -267,7 +272,11 @@ func (g *GithubRelease) download(ctx context.Context, url, dest string) error {
 	}
 	defer out.Close()
 
-	if err := doDownloadWithRetry(ctx, client, url, out, g.Log); err != nil {
+	r := newRetrier()
+	if g.retry != nil {
+		r = *g.retry
+	}
+	if err := r.download(ctx, client, url, out, g.Log); err != nil {
 		return err
 	}
 	return nil

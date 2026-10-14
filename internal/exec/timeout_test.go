@@ -109,6 +109,17 @@ func TestWaitDelayBoundsAGrandchildThatEscapedTheGroup(t *testing.T) {
 func TestTimeoutDoesNotLeaveTheGrandchildRunning(t *testing.T) {
 	pidfile := filepath.Join(t.TempDir(), "aes-grandchild.pid")
 
+	// First, does this environment deliver group signals at all? Measured in
+	// Docker under a restrictive seccomp profile: kill(-pid, SIGKILL) returns
+	// nil and the group keeps running, so isolating the command and killing
+	// the group leaves a grandchild alive no matter how correctly it is done.
+	// Since the test's purpose is to pin the group-kill MECHANISM rather than
+	// to assert that Docker permits it, an environment that swallows group
+	// signals skips — and says so, so the skip is not mistaken for a pass.
+	if !groupKillWorksHere(t) {
+		t.Skip("this environment swallows process-group signals (kill(-pid, SIGKILL) returns nil and the group lives); the mechanism under test cannot be exercised here")
+	}
+
 	_, err := Run(context.Background(),
 		fmt.Sprintf("sh -c 'echo $$ > %s; sleep 30' & wait", pidfile),
 		Options{Timeout: 200 * time.Millisecond})

@@ -40,6 +40,13 @@ type Ecosystem struct {
 
 	// Host answers "is the toolchain present". Nil means the current host.
 	Host *platform.Host
+	// HasToolchain overrides the on-PATH check for the toolchain binary,
+	// for tests that assert on command CONSTRUCTION: whether uv exists on
+	// the CI runner is irrelevant to whether "uv tool install ruff@0.5.0"
+	// is the right command. Nil means the real LookPath. The earlier shape
+	// had no override, so a runner without uv failed a test that was never
+	// about the runner.
+	HasToolchain func(bin string) bool
 	// Run executes the command. Nil means a timed exec.Run.
 	Run func(ctx context.Context, cmd string) (exec.Result, error)
 	// probe answers a short local query, such as npm's global prefix. Nil
@@ -95,7 +102,12 @@ func (e *Ecosystem) Install(ctx context.Context, a Action) error {
 	// Gate before running, not after. A toolchain that is absent is a
 	// declaration problem — the catalog should list it as a dependency — and
 	// running anyway would produce a confusing shell error instead.
-	if !e.host().Has(e.Toolchain) {
+	has := e.HasToolchain
+	if has == nil {
+		host := e.host()
+		has = host.Has
+	}
+	if !has(e.Toolchain) {
 		return fmt.Errorf("install %s: strategy %s requires %q on PATH, which is not there; declare %s as a dependency",
 			a.Tool, e.name, e.Toolchain, e.Toolchain)
 	}

@@ -12,35 +12,33 @@ import (
 	"time"
 )
 
-// A retry schedule substituted for the production one, plus a recorder that
-// waits instead of sleeping. Both are restored by the test that set them.
-func stubRetrySchedule(t *testing.T) *[]time.Duration {
-	t.Helper()
-	origDelays, origSleep := retryDelays, sleepFn
-	schedule := []time.Duration{0, 0, 0}
+// testRetrier builds a retrier with a zero schedule and a recorder that
+// waits instead of sleeping. Each test gets its own: nothing here touches
+// shared state, so parallel tests cannot race each other. The earlier
+// version mutated package vars and the race detector caught it in CI.
+func testRetrier() (*retrier, *[]time.Duration) {
 	var slept []time.Duration
-
-	retryDelays = schedule
-	sleepFn = func(_ context.Context, d time.Duration) error {
-		slept = append(slept, d)
-		return nil
+	r := &retrier{
+		delays: []time.Duration{0, 0, 0},
+		sleep: func(_ context.Context, d time.Duration) error {
+			slept = append(slept, d)
+			return nil
+		},
 	}
-	t.Cleanup(func() {
-		retryDelays, sleepFn = origDelays, origSleep
-	})
-	return &slept
+	return r, &slept
 }
 
 // createTempFile opens an empty file at path for the download tests. The
-// destination must exist before doDownloadWithRetry runs: it rewinds and
-// rewrites rather than creating.
+// destination must exist before download runs: it rewinds and rewrites
+// rather than creating.
 func createTempFile(t *testing.T, path string) (*os.File, error) {
 	t.Helper()
 	return os.Create(path)
 }
 
 func TestDownloadRetriesThenSucceeds(t *testing.T) {
-	slept := stubRetrySchedule(t)
+	t.Parallel()
+	r, slept := testRetrier()
 
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,8 +58,8 @@ func TestDownloadRetriesThenSucceeds(t *testing.T) {
 	}
 	defer f.Close()
 
-	if err := doDownloadWithRetry(context.Background(), srv.Client(), srv.URL+"/asset", f, nil); err != nil {
-		t.Fatalf("doDownloadWithRetry = %v, want success after retries", err)
+	if err := r.download(context.Background(), srv.Client(), srv.URL+"/asset", f, nil); err != nil {
+		t.Fatalf("download = %v, want success after retries", err)
 	}
 	if hits != 3 {
 		t.Errorf("hits = %d, want 3 (two failures, then success)", hits)
@@ -74,7 +72,8 @@ func TestDownloadRetriesThenSucceeds(t *testing.T) {
 // A 404 is the same 404 in fifteen seconds. Retrying it only delays the
 // answer, and the delay is what makes a user think aes hung.
 func TestDownload404DoesNotRetry(t *testing.T) {
-	stubRetrySchedule(t)
+	t.Parallel()
+	r, _ := testRetrier()
 
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +89,7 @@ func TestDownload404DoesNotRetry(t *testing.T) {
 	}
 	defer file.Close()
 
-	err = doDownloadWithRetry(context.Background(), srv.Client(), srv.URL+"/missing", file, nil)
+	err = r.download(context.Background(), srv.Client(), srv.URL+"/missing", file, nil)
 	if err == nil {
 		t.Fatal("error = nil, want a failure")
 	}
@@ -106,7 +105,8 @@ func TestDownload404DoesNotRetry(t *testing.T) {
 // Retry-After tells us when the upstream is ready. The schedule's own delay
 // is a guess; the header is not.
 func TestDownloadHonoursRetryAfter(t *testing.T) {
-	slept := stubRetrySchedule(t)
+	t.Parallel()
+	r, slept := testRetrier()
 
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,8 +126,8 @@ func TestDownloadHonoursRetryAfter(t *testing.T) {
 	}
 	defer file.Close()
 
-	if err := doDownloadWithRetry(context.Background(), srv.Client(), srv.URL, file, nil); err != nil {
-		t.Fatalf("doDownloadWithRetry = %v", err)
+	if err := r.download(context.Background(), srv.Client(), srv.URL, file, nil); err != nil {
+		t.Fatalf("download = %v", err)
 	}
 	if len(*slept) == 0 || (*slept)[0] != 7*time.Second {
 		t.Errorf("slept = %v, want [7s] from Retry-After", *slept)
@@ -139,12 +139,13 @@ func TestDownloadHonoursRetryAfter(t *testing.T) {
 // verifyChecksum sits outside the retry boundary — and this test is what
 // keeps it there.
 func TestChecksumMismatchIsFatal(t *testing.T) {
-	stubRetrySchedule(t)
+	t.Parallel()
 
 	if retryable, _ := classifyDownloadErr(ErrChecksum, 0); retryable {
 		t.Error("classifyDownloadErr(ErrChecksum) retryable = true, want false")
 	}
 
+	r, _ := testRetrier()
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
@@ -157,8 +158,8 @@ func TestChecksumMismatchIsFatal(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	defer file.Close()
-	if err := doDownloadWithRetry(context.Background(), srv.Client(), srv.URL, file, nil); err != nil {
-		t.Fatalf("doDownloadWithRetry = %v", err)
+	if err := r.download(context.Background(), srv.Client(), srv.URL, file, nil); err != nil {
+		t.Fatalf("download = %v", err)
 	}
 	hitsBeforeVerify := hits
 
@@ -175,20 +176,25 @@ func TestChecksumMismatchIsFatal(t *testing.T) {
 // Retrying must not become "wait on a prompt nobody can answer": a cancelled
 // context returns promptly rather than running out the schedule.
 func TestRetryAbortsOnCancel(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	origRetryDelays := retryDelays
-	retryDelays = []time.Duration{0, 1 * time.Second}
-	t.Cleanup(func() { retryDelays = origRetryDelays })
+	r := &retrier{
+		delays: []time.Duration{0, 1 * time.Second},
+		sleep: func(ctx context.Context, d time.Duration) error {
+			return sleepContext(ctx, d)
+		},
+	}
 
-	err := doDownloadWithRetry(ctx, &http.Client{}, "http://127.0.0.1:1/asset", nil, nil)
+	err := r.download(ctx, &http.Client{}, "http://127.0.0.1:1/asset", nil, nil)
 	if err == nil {
 		t.Fatal("error = nil, want a failure")
 	}
 }
 
 func TestParseRetryAfter(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want time.Duration
@@ -212,6 +218,7 @@ func TestParseRetryAfter(t *testing.T) {
 // set in Go types. A verification failure is not: retrying is the wrong
 // reflex when a certificate did not validate.
 func TestClassifyTransportErrors(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		err  error
@@ -226,6 +233,7 @@ func TestClassifyTransportErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got, _ := classifyDownloadErr(tc.err, 0)
 			if got != tc.want {
 				t.Errorf("classifyDownloadErr(%v) = %v, want %v", tc.err, got, tc.want)
@@ -236,6 +244,7 @@ func TestClassifyTransportErrors(t *testing.T) {
 
 // 5xx and 429 say "retry"; 4xx say "the answer will not change".
 func TestClassifyStatusCodes(t *testing.T) {
+	t.Parallel()
 	retryable := []int{
 		http.StatusTooManyRequests,
 		http.StatusInternalServerError,
