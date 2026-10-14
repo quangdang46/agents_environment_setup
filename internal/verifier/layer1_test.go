@@ -170,11 +170,20 @@ func TestLayer1VerifyFixtures(t *testing.T) {
 			// LookPath, not a shell: `command -v` in zsh reports function and
 			// alias definitions, and this machine aliases tmux to a plugin
 			// wrapper. A shell check would pass a tool that has no binary.
-			if _, err := exec.LookPath(f.bin); err != nil {
+			path, err := exec.LookPath(f.bin)
+			if err != nil {
 				t.Skipf("%s is not installed on this machine", f.bin)
 			}
 
 			got := Verify(f.tool())
+			if got.Status == StatusStale && !resolvesUnderAESBin(path) {
+				// Same rule as the tested:true check below: a host build
+				// below the fixture floor is the host's version, not a
+				// broken fixture. The ubuntu runners carry psql 16 from
+				// their own service while postgres18's floor is 18.
+				t.Skipf("%s resolves to a host build at %s reporting %q, below the floor %q",
+					f.name, path, got.Version, f.min)
+			}
 
 			if got.Status != StatusOK {
 				t.Errorf("Status = %q, want %q (version %q, stderr from the probe may explain it)",
@@ -238,7 +247,14 @@ func TestLayer1FixturesParseRealVersionOutput(t *testing.T) {
 					f.versionCmd, strings.TrimSpace(string(run)))
 			}
 			if c := CompareVersions(got, f.min); c < 0 {
-				t.Errorf("%s reports %q, below the asserted floor %q", f.name, got, f.min)
+				// A host build below the fixture floor is the host's version,
+				// not a broken fixture — see the same rule two tests down.
+				if resolvesUnderAESBin(path) {
+					t.Errorf("%s reports %q, below the asserted floor %q", f.name, got, f.min)
+				} else {
+					t.Skipf("%s resolves to a host build at %s reporting %q, below the floor %q",
+						f.name, path, got, f.min)
+				}
 			}
 		})
 	}
