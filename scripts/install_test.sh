@@ -182,14 +182,14 @@ mkdir -p "$LOOP_HOME"
 # working tree. env -i is deliberate: a fixture that inherits the caller's
 # environment is not testing a clean machine.
 (
-  cd "$TMPDIR" || exit 1
+  cd "${TMPDIR:-/tmp}" || exit 1
   env -i PATH="/usr/bin:/bin" HOME="$LOOP_HOME" \
     sh "$INSTALL_SH" --base-url "file://$SERVE" --version test \
     --prefix "$LOOP_HOME/.aes" >/dev/null 2>&1
 ) || true
 if [ -x "$LOOP_HOME/.aes/bin/aes" ]; then
   # From a directory that is not the checkout, with a clean environment.
-  LIST=$(cd "$TMPDIR" && env -i PATH="$LOOP_HOME/.aes/bin:/usr/bin:/bin" HOME="$LOOP_HOME" \
+  LIST=$(cd "${TMPDIR:-/tmp}" && env -i PATH="$LOOP_HOME/.aes/bin:/usr/bin:/bin" HOME="$LOOP_HOME" \
     "$LOOP_HOME/.aes/bin/aes" list --json 2>/dev/null)
   COUNT=$(printf '%s' "$LIST" | grep -o '"name"' | wc -l | tr -d ' ')
   if [ "$COUNT" -gt 0 ]; then

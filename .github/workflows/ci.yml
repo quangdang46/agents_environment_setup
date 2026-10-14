@@ -145,4 +145,5 @@ jobs:
             echo "::error::the built binary produced no catalog — it would fail for every user"
             exit 1
           fi
-          echo "binary is self-contained: $(python3 -c 'import json;print(len(json.load(open("/tmp/aes-list.json"))["tools"]),"tools")'
+          tool_count=$(python3 -c 'import json; print(len(json.load(open("/tmp/aes-list.json"))["tools"]))')
+          echo "binary is self-contained: $tool_count tools"
