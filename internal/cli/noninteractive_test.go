@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -198,13 +199,21 @@ func TestNonInteractiveNeverCallsAuthorize(t *testing.T) {
 func TestEmptySelectionIsAFailureNotAUsageError(t *testing.T) {
 
 	// A tool marked tested for a platform this test is definitely not on.
+	//
+	// The platform is DERIVED from the host rather than written as a literal,
+	// because CI runs both macos/arm64 and linux/amd64 and a literal was
+	// wrong on half of them: `darwin/arm64` is a foreign platform on Ubuntu
+	// and the host's own on macOS, where the run succeeded and the assertion
+	// for exit 1 saw 0. Deriving the other one keeps the test's meaning
+	// — "proven only elsewhere" — on every host.
+	other := otherTestedOn()
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 	dir := filepath.Join(h.catRoot, "utility", "demo")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	content := "name: demo\ndescription: fixture demo\ncategory: utility\n" +
-		"tested: true\ntested_on:\n  - darwin/arm64\n" +
+		"tested: true\ntested_on:\n  - " + other + "\n" +
 		"verify:\n  command: demo\n" +
 		"install:\n  darwin:\n    strategy: go\n    go_package: example.com/demo@v1.0.0\n" +
 		"  linux:\n    strategy: go\n    go_package: example.com/demo@v1.0.0\n"
@@ -219,10 +228,21 @@ func TestEmptySelectionIsAFailureNotAUsageError(t *testing.T) {
 	if got != ExitFailure {
 		t.Errorf("exit = %d, want %d (a failure to proceed)", got, ExitFailure)
 	}
-	for _, want := range []string{"demo", "darwin/arm64", "--allow-unproven"} {
+	for _, want := range []string{"demo", other, "--allow-unproven"} {
 		if !strings.Contains(h.stderr.String(), want) {
 			t.Errorf("the message does not mention %q, so the user cannot tell "+
 				"what was refused or what to do: %q", want, h.stderr.String())
 		}
 	}
+}
+
+// otherTestedOn returns a GOOS/GOARCH pair that is not the host's.
+//
+// The host's own pair is derived, not compared, so the helper works on every
+// machine and never asserts what the host is — only what it is not.
+func otherTestedOn() string {
+	if runtime.GOOS == "darwin" {
+		return "linux/amd64"
+	}
+	return "darwin/arm64"
 }

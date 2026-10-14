@@ -134,6 +134,22 @@ func presentOnThisMachine(tool *manifest.Tool) bool {
 	return true
 }
 
+// resolvesUnderAESBin reports whether a resolved binary path sits in the
+// bin directory AES installs into ($AES_HOME/bin, conventionally ~/.aes/bin).
+//
+// It is how the tested:true check tells an install AES owns from one the
+// host happens to carry. A distro's own postgres client (/usr/bin/psql,
+// version 16 on the ubuntu runners) is not AES's claim to verify, while
+// ~/.aes/bin/psql is — so a stale reading from the first is the host's
+// version, and from the second it is a broken floor.
+func resolvesUnderAESBin(resolved string) bool {
+	if resolved == "" {
+		return false
+	}
+	clean := filepath.ToSlash(resolved)
+	return strings.Contains(clean, "/.aes/bin/")
+}
+
 // toolFor builds the manifest a real tool.yaml would carry for this fixture.
 func (f layer1Fixture) tool() *manifest.Tool {
 	return &manifest.Tool{
@@ -258,6 +274,20 @@ func TestTestedToolsPassLayer1(t *testing.T) {
 				t.Skipf("%s is not installed on this machine", tool.Name)
 			}
 			got := Verify(tool)
+			if got.Status == StatusStale && !resolvesUnderAESBin(got.Path) {
+				// A binary AES did not install is the host's, not AES's claim.
+				//
+				// Measured on the ubuntu runners, which ship psql 16 from
+				// their own PostgreSQL service while postgres18's floor is
+				// 18: the tool is proven, and the host happens to carry a
+				// different, older build. `tested: true` records what AES
+				// installed and verified, so a binary it did not put there
+				// cannot falsify it — and a test that reads one as a failure
+				// makes the flag depend on what the runner ships.
+				t.Skipf("%s resolves to a host build at %s reporting %q, below the floor; "+
+					"the flag records what AES installs, not what the host ships",
+					tool.Name, got.Path, got.Version)
+			}
 			// Unknown is the honest failure here: a tested:true tool whose
 			// version cannot be read has not had its minimum verified, which is
 			// the whole claim the flag makes.
