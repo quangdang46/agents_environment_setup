@@ -591,7 +591,23 @@ func verifyInner(ctx context.Context, tgt Target, t *manifest.Tool) (Result, err
 	if err != nil {
 		// ErrFailed is the binary running and failing; ErrTimeout is the probe
 		// running out of budget. Only the first says anything about the tool.
-		probeErr := oneLine(err.Error())
+		//
+		// The error's one line is not enough on its own: "command failed
+		// with exit code 1" names the failure but not its content, and the
+		// content is where an interpreter announces itself. The probe's
+		// stderr tail is carried alongside, because the runtime check below
+		// reads it — and without it every refusal looked like a seccomp
+		// block. One line here only in the sense that the tail is bounded:
+		// the refusal's wording is the whole point of keeping it.
+		// Eight lines, kept and then filtered: an interpreter's cause hides
+		// above its own stack noise. Measured against node 18.19.1 running
+		// pi 1.2.0: the last three lines are frames (`at
+		// Function.executeUserEntryPoint`, `Node.js v18.19.1`) and the
+		// SyntaxError naming `enableCompileCache` is four lines up. A tail of
+		// three classified every such refusal as a seccomp block, and eight
+		// unfiltered lines buried the cause under a stack. Filtering the
+		// frames leaves the cause and drops the noise.
+		probeErr := oneLine(err.Error()) + "\n" + refusalCause(run.Stderr)
 		// A runtime that cannot parse the bundle is a refusal of the
 		// environment, not a defect of the install, and the difference
 		// decides whether the binary should be rolled back.
@@ -689,4 +705,48 @@ func LooksLikeRuntimeRefusal(probeErr string) bool {
 		}
 	}
 	return false
+}
+
+// refusalCause extracts the one line that explains a failed probe: the
+// interpreter's error, minus its stack.
+//
+// node announces a refusal with an error class line (SyntaxError,
+// ReferenceError, TypeError) that carries the cause, and then frames (`at
+// ...`, `Node.js vNN`) that carry nothing for this purpose. Keeping the
+// error-class line and dropping the frames leaves a refusal that reads as
+// "enableCompileCache is missing" rather than seven lines of module paths.
+// Lines are scanned newest-first so a late error wins; anything else is the
+// failure with no explanation attached, which is returned whole rather than
+// guessed at.
+func refusalCause(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		for _, cls := range []string{
+			"SyntaxError", "ReferenceError", "TypeError",
+			"Error:", "error:", "Error ",
+		} {
+			if strings.Contains(line, cls) {
+				return line
+			}
+		}
+	}
+	return lastLines(s, 2)
+}
+
+// lastLines returns the last n non-empty lines of s, for the fallback in
+// refusalCause and anywhere a probe's recent output is the diagnosis.
+func lastLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	kept := make([]string, 0, n)
+	for i := len(lines) - 1; i >= 0 && len(kept) < n; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		kept = append([]string{lines[i]}, kept...)
+	}
+	return strings.Join(kept, "\n")
 }
