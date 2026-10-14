@@ -3,6 +3,7 @@ package installer
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -45,6 +46,13 @@ type Ecosystem struct {
 	// means run it directly. It is separate from Run because it returns
 	// stdout as a value rather than a full Result.
 	probe func(ctx context.Context, cmd string) (string, error)
+
+	// verbose makes Install log the constructed command before running it.
+	// verboseLog receives the line; nil means discard. Both are set from the
+	// CLI's --verbose via SetVerboseLog, never from the manifest, so they
+	// cannot change what is installed (I8).
+	verbose    bool
+	verboseLog io.Writer
 
 	once   sync.Once
 	cached string
@@ -91,8 +99,55 @@ func (e *Ecosystem) Install(ctx context.Context, a Action) error {
 		return fmt.Errorf("install %s: strategy %s requires %q on PATH, which is not there; declare %s as a dependency",
 			a.Tool, e.name, e.Toolchain, e.Toolchain)
 	}
-	_, err = e.run()(ctx, e.Command(coord))
+	cmd := e.Command(coord)
+	if e.verbose {
+		fmt.Fprintf(e.log(), "    → %s\n", cmd)
+	}
+	res, err := e.run()(ctx, cmd)
+	if err != nil {
+		// The captured tail goes into the ERROR, not just the log. A bare
+		// "command failed with exit code 1" tells a reader nothing they can
+		// act on — npm and cargo bury the reason at the end, so "nothing to
+		// see" and "cannot find node" arrive as the same one line.
+		//
+		// This was measured on a from-scratch container run: opencode's
+		// install failed transiently and the log recorded only the exit
+		// code, so the failure could not be diagnosed or re-checked from it.
+		if tail := lastLines(res.Stdout+"\n"+res.Stderr, 20); tail != "" {
+			return fmt.Errorf("%w\n%s%s", err, e.failureIndent(), tail)
+		}
+	}
 	return err
+}
+
+func (e *Ecosystem) failureIndent() string { return "    " }
+
+// SetVerboseLog enables command logging for --verbose. It satisfies the
+// CLI's verboseLogger seam so verbosity is set post-resolution and cannot
+// change the resolved actions (I8).
+func (e *Ecosystem) SetVerboseLog(verbose bool, w io.Writer) {
+	e.verbose = verbose
+	e.verboseLog = w
+}
+
+func (e *Ecosystem) log() io.Writer {
+	if e.verboseLog == nil {
+		return io.Discard
+	}
+	return e.verboseLog
+}
+
+// lastLines returns the last n non-empty lines of s, for failure detail.
+func lastLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	kept := make([]string, 0, n)
+	for i := len(lines) - 1; i >= 0 && len(kept) < n; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		kept = append([]string{lines[i]}, kept...)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // coordinate returns the pinned package coordinate for the action.

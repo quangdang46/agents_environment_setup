@@ -59,9 +59,6 @@ var layer1Fixtures = []layer1Fixture{
 	// fails to verify for a reason that has nothing to do with the installer.
 	{"bottom", "btm", "btm --version", "0.14"},
 	{"zellij", "zellij", "zellij --version", "0.45"},
-	// The probe is `ntm version`, not `ntm --version` — see the manifest. The
-	// dashed spelling is rejected by every ntm older than 1.35.
-	{"ntm", "ntm", "ntm version", "1.0"},
 	// node is the runtime every npm-strategy tool depends on, so its presence
 	// is a precondition for three of the tools above. The floor is the lowest
 	// number either supported platform can supply: darwin has 26, ubuntu
@@ -92,32 +89,19 @@ var layer1Fixtures = []layer1Fixture{
 	// person to the manifest for a fault that is not there.
 	//
 	// The binary column is the name in the archive, not the tool name, because
-	// the two differ in five cases: cm ships `cass-memory`, opentofu ships
-	// `tofu`, jeffreysprompts ships `jfp`, ultimate-bug-scanner ships `ubs`,
-	// brenner-bot ships `brenner`, and srps ships `sysmoni`.
-	{"agent-settings-backup", "asb", "asb --version", "0.3.2"},
-	{"automated-plan-reviser", "apr", "apr --version", "1.3.1"},
-	{"brenner-bot", "brenner", "brenner --version", "0.4.1"},
+	// the two differ for a few: cm ships `cass-memory`, opentofu ships
+	// `tofu`, ultimate-bug-scanner ships `ubs`, and srps ships `sysmoni`.
 	{"casr", "casr", "casr --version", "0.3.0"},
 	{"cm", "cass-memory", "cass-memory --version", "0.2.0"},
 	{"delta", "delta", "delta --version", "0.15"},
-	{"ee", "ee", "ee --version", "0.15.0"},
-	{"fmd", "fmd", "fmd --version", "0.4.0"},
-	// `fsfs version`, not `fsfs --version`: the dashed spelling exits 0 having
-	// printed a JSON object with "ok": false. Measured on 1.10.0, which
-	// prints `fsfs 1.10.0 (frankensearch 1.10.0)`.
-	{"fsfs", "fsfs", "fsfs version", "1.10.0"},
 	{"go", "go", "go version", "1.22"},
-	{"jeffreysprompts", "jfp", "jfp --version", "1.0.3"},
 	{"k9s", "k9s", "k9s version", "0.32"},
-	{"meta-skill", "ms", "ms --version", "0.2.2"},
 	{"omp", "omp", "omp --version", "18.0"},
 	{"opentofu", "tofu", "tofu version", "1.6"},
 	{"postgres18", "psql", "psql --version", "18"},
 	{"rano", "rano", "rano --version", "0.2.0"},
 	{"rch", "rch", "rch --version", "1.0"},
 	{"ru", "ru", "ru --version", "1.4.0"},
-	{"s2p", "s2p", "s2p --version", "0.3.4"},
 	{"sbh", "sbh", "sbh --version", "0.6.16"},
 	// `slb version`, not `slb --version`: the dashed spelling prints
 	// "Error: unknown flag: --version" and exits 0. Measured on 0.5.2.
@@ -126,12 +110,10 @@ var layer1Fixtures = []layer1Fixture{
 	{"tailscale", "tailscale", "tailscale version", "1.0"},
 	{"ultimate-bug-scanner", "ubs", "ubs --version", "5.4.9"},
 	{"vault", "vault", "vault --version", "2.1.1"},
-	{"xf", "xf", "xf --version", "0.4.0"},
 	{"yq", "yq", "yq --version", "4.0"},
 	{"aadc", "aadc", "aadc --version", "0.1"},
 	{"age", "age", "age --version", "1.1"},
 	{"bun", "bun", "bun --version", "1.3.0"},
-	{"csctf", "csctf", "csctf --version", "0.4"},
 	{"giil", "giil", "giil --version", "3.2.1"},
 	// gnupg is here because vault, postgres18 and tailscale cannot install
 	// without it — their apt_source keys are armored and the conversion

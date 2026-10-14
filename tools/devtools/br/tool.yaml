@@ -1,0 +1,38 @@
+name: br
+description: beads_rust task manager for AI coding agents
+category: agent
+tested: false
+tags:
+  - agent
+verify:
+  command: br
+  version:
+    command: br --version
+    min: "0.2.0"
+install:
+  darwin:
+    strategy: github-release
+    release_tag: v0.2.0
+    repository: quangdang46/beads_rust
+    binary:
+      amd64: br
+      arm64: br
+    asset:
+      amd64: br-macos-x64.tar.gz
+      arm64: br-macos-arm64.tar.gz
+    sha256:
+      amd64: 02bfff637bfe49ade735f4b007ad1741e76fad5b47f57083218fbb08489b09e9
+      arm64: 4eb17a608c253e32eb940e62ec3e6d48fc1a9f388aa790d350559fb4ef99c16c
+  linux:
+    strategy: github-release
+    release_tag: v0.2.0
+    repository: quangdang46/beads_rust
+    binary:
+      amd64: br
+      arm64: br
+    asset:
+      amd64: br-linux-x64.tar.gz
+      arm64: br-linux-arm64.tar.gz
+    sha256:
+      amd64: 952b82f260aa6f6010c06903054ac52b40dc081a92af1007baf332afe183c5dd
+      arm64: fd2b37adf4e7b30c3b7ab7c453431365f0357a9f3e61bcd8421ad73ce6b7be8c

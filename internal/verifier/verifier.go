@@ -77,6 +77,16 @@ type Result struct {
 	// a slow binary is not a broken one, and rolling a working install back
 	// over a slow probe is how a repair becomes damage.
 	ProbeFailed bool
+	// ProbeError is why the probe did not produce a version, verbatim from
+	// the exec layer. Discarding it left `aes setup` saying "installed but
+	// verification says unknown", which is true and useless: the refusal a
+	// container's seccomp profile produces (EPERM on a syscall the binary
+	// needs) reads identically to a tool printing garbage.
+	//
+	// It is a string rather than an error because Result is a value copied
+	// into tables and JSON, and because the message is for a human reading a
+	// failure report — the error's type is not the interesting part.
+	ProbeError string
 }
 
 // versionRe finds the first dotted-integer run in a line, plus any trailing
@@ -194,6 +204,16 @@ var dottedRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)*(?:[a-z]+)?`)
 // contain digits — because a real version can be short and a real tool can
 // print one. `versionRe` is then applied to the remainder, which is where
 // `version=0.65.1` lives.
+// oneLine collapses a multi-line error to its first line, for a field that
+// ends up in a table cell or a failure report. An exec error may carry a
+// shell traceback; the first line is the cause.
+func oneLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
+}
+
 func ExtractVersion(output string) string {
 	lines := strings.Split(ansiRe.ReplaceAllString(output, ""), "\n")
 	// Line 1 is the source, and the lenient rule applies to it: a bare "3" is a
@@ -571,7 +591,25 @@ func verifyInner(ctx context.Context, tgt Target, t *manifest.Tool) (Result, err
 	if err != nil {
 		// ErrFailed is the binary running and failing; ErrTimeout is the probe
 		// running out of budget. Only the first says anything about the tool.
-		res.ProbeFailed = errors.Is(err, aesexec.ErrFailed)
+		probeErr := oneLine(err.Error())
+		// A runtime that cannot parse the bundle is a refusal of the
+		// environment, not a defect of the install, and the difference
+		// decides whether the binary should be rolled back.
+		//
+		// Measured on ubuntu:24.04 with node 18.19.1: pi 1.2.0 installs
+		// cleanly and then the probe exits 1 with
+		// "node:module does not provide an export named 'enableCompileCache'".
+		// Treating that as a broken binary discarded a correct install and
+		// restored whatever was there before, so a run reported "the
+		// installed binary does not run; the previous one has been restored"
+		// when the truth was "this host's node is 18 and this needs 22".
+		// Rolling back cannot fix an interpreter, so the rollback is skipped
+		// and the caller's runtime-version message gets to say why.
+		res.ProbeFailed = errors.Is(err, aesexec.ErrFailed) && !LooksLikeRuntimeRefusal(probeErr)
+		// The exec error is kept: it is the difference between "this tool is
+		// broken" and "your environment will not run this binary", and only
+		// the refusal names the second.
+		res.ProbeError = probeErr
 		if min != "" {
 			res.Status = StatusUnknown
 		}
@@ -620,4 +658,35 @@ func binaries(t *manifest.Tool) []string {
 		add(p)
 	}
 	return out
+}
+
+// looksLikeRuntimeRefusal reports whether a probe failure names a missing
+// export, an unparsable token, or otherwise an interpreter too old to parse
+// the bundle it was handed.
+//
+// This is the same decision the CLI makes when it words a failure, and it is
+// deliberately one function in one place: two copies of "is this an
+// interpreter problem" will eventually disagree, and the symptom is a message
+// that contradicts the action taken beside it. The verifier owns it because
+// its answer decides a rollback; the CLI reads the same predicate rather than
+// re-deriving it.
+func LooksLikeRuntimeRefusal(probeErr string) bool {
+	low := strings.ToLower(probeErr)
+	for _, sub := range []string{
+		"does not provide an export",
+		"unexpected token",
+		"invalid or unexpected token",
+		"cannot use import statement",
+		"unexpected identifier",
+		"is not defined:",
+		"not syntactically valid",
+		"unsupported target",
+		"requires a newer",
+		"node:module",
+	} {
+		if strings.Contains(low, sub) {
+			return true
+		}
+	}
+	return false
 }

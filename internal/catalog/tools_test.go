@@ -177,46 +177,40 @@ var layer1Tools = map[string]bool{
 	// the two from drifting apart, so update them together.
 	"bat": true, "btop": true, "dust": true,
 	"eza": true, "codex": true, "opencode": true,
-	"bottom": true, "zellij": true, "ntm": true,
+	"bottom": true, "zellij": true,
 	// node and npm are the runtimes every npm-strategy tool depends on, so
 	// they are verified on the same terms as the tools that need them. The
 	// cloud CLIs are here for the same reason: Layer 1 skips a tool the
 	// machine does not have, and runs it wherever npm put it.
 	"node": true, "npm": true,
 	"vercel": true, "supabase": true, "wrangler": true,
-	// beads, dcg and gemini ship prebuilt binaries rather than building from
-	// source, so they are verified on the same terms as the other release
-	// tools. gemini is the one AI tool that runs on node 18.
-	"beads": true, "dcg": true, "gemini": true,
+	// dcg ships prebuilt binaries rather than building from source, so it is
+	// verified on the same terms as the other release tools.
+	"dcg": true,
 	// The rest of the catalog, added 2026-09-30. Every version command was run
 	// against the binary on this host; the binary name is the one the archive
-	// ships, which differs from the tool name in five cases (cm→cass-memory,
-	// opentofu→tofu, jeffreysprompts→jfp, ultimate-bug-scanner→ubs,
-	// brenner-bot→brenner, srps→sysmoni).
-	"agent-settings-backup": true, "automated-plan-reviser": true,
-	"brenner-bot": true, "casr": true, "cm": true, "delta": true, "ee": true,
-	"fmd": true, "fsfs": true, "go": true, "jeffreysprompts": true,
-	"k9s": true, "meta-skill": true, "omp": true, "opentofu": true,
-	"postgres18": true, "rano": true, "rch": true, "ru": true, "s2p": true,
+	// ships, which differs from the tool name in a few cases (cm→cass-memory,
+	// opentofu→tofu, ultimate-bug-scanner→ubs, srps→sysmoni).
+	"cm": true, "delta": true,
+	"go": true, "k9s": true, "omp": true, "opentofu": true,
+	"postgres18": true, "rano": true, "rch": true, "ru": true,
 	"sbh": true, "slb": true, "starship": true, "tailscale": true,
-	"ultimate-bug-scanner": true, "vault": true, "xf": true, "yq": true,
-	"aadc": true, "age": true, "bun": true, "csctf": true, "giil": true, "srps": true, "gnupg": true,
-	// The binary names are the ones the archives actually ship: `pi` for
-	// pi-agent-rust and `ft` for wezterm-automata (which renamed itself from
-	// wezterm_automata/wa to frankenterm/ft at v0.12.0). Declaring a name
-	// here that is not in the archive makes the fixture fail on a tool that
-	// installs correctly.
-	"antigravity": true, "pi-agent-rust": true, "wezterm-automata": true,
+	"ultimate-bug-scanner": true, "vault": true, "yq": true,
+	"aadc": true, "age": true, "bun": true, "giil": true, "srps": true, "gnupg": true,
 	// The rest of the catalog, promoted after the full-catalog run proved both
 	// layers on each. Layer 1 skips a tool the machine does not have, so these
 	// are verified wherever they happen to be installed; their Layer 2 evidence
 	// is a fresh container, recorded in each manifest.
-	"agent-mail": true, "ast-grep": true, "atuin": true, "bash": true,
-	"beads-viewer": true, "caam": true, "direnv": true, "docker": true,
+	"ast-grep": true, "atuin": true, "bash": true,
+	"direnv": true, "docker": true,
 	"fd": true, "git-lfs": true, "httpie": true, "hyperfine": true,
 	"lazydocker": true, "lazygit": true, "ncdu": true, "pi": true,
 	"python": true, "rust": true, "toon": true, "tree": true, "uv": true,
 	"zsh": true,
+	// quangdang46's tools. `bvr` verifies as `bv` — the binary the release
+	// actually ships — and `discord-cli` as `discord`; the mismatch is the
+	// point of the fixture, not an error.
+	"br": true, "bvr": true, "discord-cli": true, "hashline": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the

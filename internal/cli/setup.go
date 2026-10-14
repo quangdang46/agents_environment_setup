@@ -15,6 +15,7 @@ import (
 	"github.com/quangdang46/agents_environment_setup/internal/exec"
 	"github.com/quangdang46/agents_environment_setup/internal/installer"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
+	"github.com/quangdang46/agents_environment_setup/internal/progress"
 	"github.com/quangdang46/agents_environment_setup/internal/resolver"
 	"github.com/quangdang46/agents_environment_setup/internal/state"
 	"github.com/quangdang46/agents_environment_setup/internal/verifier"
@@ -42,12 +43,28 @@ type toolResult struct {
 	// Command is the exact command a human should run, when one is known.
 	Command string `json:"command,omitempty"`
 	Version string `json:"version,omitempty"`
+	// Strategy is the install strategy that produced this result. It feeds
+	// the failure buckets and the dry-run plan, never the resolver.
+	Strategy string `json:"strategy,omitempty"`
+	// DurationMs is how long setupOne spent on this tool, in milliseconds.
+	// It exists so a slow profile can say which tools dominate the run
+	// rather than guessing.
+	DurationMs int64 `json:"duration_ms,omitempty"`
 	// Warnings are things that went wrong without making the tool's outcome
 	// wrong: a backup that could not be taken, a restore that could not
 	// complete. They are reported rather than swallowed because each one is
 	// the reason a future failure will have nothing to roll back to — silent
 	// here means discovered during an outage.
 	Warning []string `json:"warnings,omitempty"`
+}
+
+// smokeCheck records one tool's post-install line. It is confirmation, not a
+// verdict: install already decided the tool's status, and a smoke line that
+// disagrees is at most a warning.
+type smokeCheck struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // summaryOutput is what `aes setup` prints. It is the last thing a user
@@ -62,9 +79,19 @@ type summaryOutput struct {
 	// EnvPath is where env.sh landed, or "" when none was written.
 	EnvPath string `json:"env_path,omitempty"`
 	// NeedsPrivilege is true when a manual privileged step is outstanding.
-	NeedsPrivilege bool          `json:"needs_privilege,omitempty"`
-	OK             bool          `json:"ok"`
-	Error          *errorPayload `json:"error,omitempty"`
+	NeedsPrivilege bool `json:"needs_privilege,omitempty"`
+	// ResumeCommand is the exact command that reinstalls only what failed,
+	// derived from the failure set. Present only when something failed.
+	ResumeCommand string `json:"resume_command,omitempty"`
+	// Smoke holds the post-install pass, one line per tool.
+	Smoke []smokeCheck `json:"smoke,omitempty"`
+	// LogPath is where the run log landed, or "" when none was written
+	// (dry-run never writes one).
+	LogPath string `json:"log_path,omitempty"`
+	// ElapsedMs is the run's wall time in milliseconds.
+	ElapsedMs int64         `json:"elapsed_ms,omitempty"`
+	OK        bool          `json:"ok"`
+	Error     *errorPayload `json:"error,omitempty"`
 }
 
 // setupError carries the exit code a finished run should return.
@@ -147,13 +174,64 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 		return err
 	}
 
+	// The run log is observability, never state: it is opened after the
+	// state so a corrupt state aborts before anything is created, and it is
+	// never read back. A dry run creates no log at all.
+	var logPath string
+	restoreErr, restoreErrOK := openRunLog(app, f, &logPath)
+	if restoreErrOK {
+		defer restoreErr()
+	}
+
+	pr := progress.New(app.Err, progress.Options{Verbose: f.Verbose, TTY: app.tty(), Quiet: f.Quiet})
+	setInstallerVerbosity(app, rc, actions, f, pr)
+
+	profileName := f.Profile
+	if profileName == "" {
+		profileName = "default"
+	}
+	pr.Section("aes setup %s — %d tools (profile: %s)", Version, len(actions), profileName)
+	if logPath != "" {
+		pr.Info("→ logging to %s", logPath)
+	}
+
+	if f.DryRun {
+		printDryRunPlan(app, actions, rc, f.JSON)
+	}
+	pr.Section("Installing %d tools", len(actions))
+
+	runStart := time.Now()
 	results := make([]toolResult, 0, len(actions))
-	for _, a := range actions {
-		results = append(results, setupOne(ctx, app, rc, store, a, f))
+	for i, a := range actions {
+		pr.Step(i+1, len(actions), "Installing %s", a.Tool)
+		// The spinner announces work that is actually about to start. It is
+		// raised by onInstallStart from inside setupOneInner, immediately
+		// before the installer runs, so a tool that is already present —
+		// which is most of a re-run — never gets told it is being
+		// installed.
+		results = append(results, setupOneTimed(ctx, app, rc, store, a, f, pr))
 	}
 
 	sum := summarise(results)
 	sum.DryRun = f.DryRun
+	sum.ElapsedMs = time.Since(runStart).Milliseconds()
+	sum.LogPath = logPath
+
+	// The smoke pass re-verifies every installed-or-present tool and prints
+	// one styled line each. It is confirmation, never a second verdict: a
+	// failure here cannot change a status the install already decided, and
+	// is at most a warning (doctor will surface it as drift next run).
+	if !f.DryRun && !f.NoSmokeTest {
+		pr.Section("Smoke test")
+		sum.Smoke = runSmoke(ctx, app, rc, pr, results)
+	}
+
+	// The resume command is derived here, once, and consumed by both the
+	// JSON envelope and the human report — a value computed in two places
+	// will eventually disagree with itself.
+	if sum.Failed > 0 {
+		sum.ResumeCommand = buildResumeCmd(f, failedToolNames(sum.Results), sum.NeedsPrivilege)
+	}
 
 	// Persist the cache. This is easy to forget and the symptom is subtle:
 	// within a single run the in-memory store still knows everything, so
@@ -287,9 +365,85 @@ func provenElsewhere(rc *runContext, names []string) []string {
 	return out
 }
 
-// setupOne runs the install half of the pipeline for a single action and
-// returns its outcome. It never aborts the run: containment is the point.
-func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store, a resolver.Action, f *Flags) toolResult {
+// setupOneTimed wraps setupOneInner with wall-clock timing and progress
+// reporting. The body keeps its return sites untouched: timing and
+// presentation are the wrapper's job, threaded at the boundary rather than
+// through every exit. The line a user sees is derived from the outcome, so a
+// new outcome tomorrow gets some line rather than silence.
+func setupOneTimed(ctx context.Context, app *App, rc *runContext, store *state.Store, a resolver.Action, f *Flags, pr *progress.Printer) toolResult {
+	start := time.Now()
+	res := setupOneInner(ctx, app, rc, store, a, f, func() {
+		pr.Spin("installing %s", a.Tool)
+	})
+	res.DurationMs = time.Since(start).Milliseconds()
+	reportToolOutcome(pr, res)
+	return res
+}
+
+// reportToolOutcome prints the one line a tool's outcome deserves. The
+// detail stays in the summary: this line answers "what happened", the table
+// answers "why".
+func reportToolOutcome(pr *progress.Printer, res toolResult) {
+	elapsed := formatDuration(time.Duration(res.DurationMs) * time.Millisecond)
+	switch res.Status {
+	case outcomePresent:
+		pr.Success("%s already present (%s)", res.Name, displayVersion(res.Version))
+	case outcomeInstalled:
+		pr.Success("%s installed (%s, %s)", res.Name, displayVersion(res.Version), elapsed)
+	case outcomeSkipped:
+		pr.Success("%s skipped (not supported here)", res.Name)
+	case outcomeDryRun:
+		// The dry-run plan already named this tool; the loop stays silent so
+		// the preview is the thing a reader remembers.
+	case outcomeFailed:
+		if res.NeedsPrivilege {
+			pr.Fail("%s failed: needs a privileged step", res.Name)
+		} else if res.Error != "" {
+			pr.Fail("%s failed: %s", res.Name, firstLine(res.Error))
+		} else {
+			pr.Fail("%s failed", res.Name)
+		}
+	}
+	for _, w := range res.Warning {
+		pr.Warn("%s: %s", res.Name, w)
+	}
+}
+
+// formatDuration renders a duration the way a human reads a run: seconds
+// with one decimal below a minute, minutes above.
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm%ds", m, s)
+}
+
+// displayVersion guards against an empty version reading as "(..)".
+func displayVersion(v string) string {
+	if v == "" {
+		return "unknown version"
+	}
+	return "v" + strings.TrimPrefix(v, "v")
+}
+
+// firstLine keeps a failure line to its first sentence: the full error is in
+// the summary table, where wrapping is expected.
+func firstLine(s string) string {
+	if i := strings.Index(s, "\n"); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 120 {
+		s = s[:117] + "..."
+	}
+	return s
+}
+
+// setupOneInner runs the install half of the pipeline for a single action
+// and returns its outcome. It never aborts the run: containment is the point.
+func setupOneInner(ctx context.Context, app *App, rc *runContext, store *state.Store, a resolver.Action, f *Flags, onStart func()) toolResult {
 	res := toolResult{Name: a.Tool}
 
 	// An action whose tool does not apply to this host is skipped, which is
@@ -305,6 +459,10 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 		res.Status = outcomeSkipped
 		return res
 	}
+	// The strategy is recorded for the failure buckets and the dry-run plan.
+	// It is reporting, read from the same Target the installer receives, and
+	// never branches on a tool name.
+	res.Strategy = target.Strategy
 
 	// 4: verify the CURRENT state, before installing anything. This is what
 	// makes a re-run resume: a tool that already verifies is not an install
@@ -367,6 +525,12 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 		}
 	}
 
+	// Announce real work, immediately before it starts. Everything above is
+	// verification, which is fast and not worth a spinner; a tool that is
+	// already present returns before ever reaching here.
+	if onStart != nil {
+		onStart()
+	}
 	installErr := inst.Install(ctx, installer.Action{
 		Tool: a.Tool,
 		// The installed filename comes from the manifest's own verify.command,
@@ -421,6 +585,11 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 			if after.ProbeFailed {
 				if restored, rerr := installer.Restore(prevPath); rerr != nil {
 					res.Warning = append(res.Warning, "could not restore the previous binary: "+rerr.Error())
+					// Nothing came back, so the report says so rather than
+					// implying a rollback that did not happen. A failure that
+					// claims a restore sends the next reader looking for a
+					// backup that was never written.
+					res.Error = "the installed binary does not run, and the previous one could not be restored"
 				} else if restored {
 					res.Error = "the installed binary does not run; the previous one has been restored"
 					// Deliberately not "working": the predecessor may well be a
@@ -446,7 +615,40 @@ func setupOne(ctx context.Context, app *App, rc *runContext, store *state.Store,
 		res.Status = outcomeFailed
 		res.Version = after.Version
 		if res.Error == "" {
-			res.Error = fmt.Sprintf("installed but verification says %s", after.Status)
+			// A binary that cannot be executed at all is a different fact
+			// from one that runs and prints the wrong version, and the
+			// difference decides what the user does next.
+			//
+			// Measured on ubuntu:24.04 under Docker Desktop's default seccomp
+			// profile: vault 2.1.x installs cleanly through apt and then
+			// fails to exec with EPERM ("Operation not permitted", rc 126),
+			// because v2's static binary makes a syscall the profile blocks.
+			// "installed but verification says unknown" names none of that.
+			// The binary is real, the environment is the refusal, and
+			// `aes doctor` will keep reporting it until the profile changes.
+			switch {
+			case after.ProbeError != "" && after.Path != "":
+				hint := "the refusal is from the environment (a seccomp profile blocking a syscall this binary needs is the usual cause)"
+				// A runtime the binary cannot parse is a different refusal
+				// from a runtime that refuses to run it, and the interpreter's
+				// version is the one thing a reader can act on.
+				//
+				// Measured on ubuntu:24.04: pi 1.2.0 installs fine and then
+				// dies with "node:module does not provide an export named
+				// 'enableCompileCache'" — a node 22 symbol on a node 18 host,
+				// because apt's nodejs is what AES's node tool installs. The
+				// generic text would have blamed the machine; naming the
+				// runtime sends the reader to the real constraint.
+				if verifier.LooksLikeRuntimeRefusal(after.ProbeError) {
+					hint = "this binary needs a newer interpreter than the one on PATH " +
+						"(node/rust/python versions are checked by `aes verify <tool> --json`)"
+				}
+				res.Error = fmt.Sprintf(
+					"installed to %s but it could not be run (%s) — the binary is present, so %s",
+					after.Path, after.ProbeError, hint)
+			default:
+				res.Error = fmt.Sprintf("installed but verification says %s", after.Status)
+			}
 		}
 		return res
 	}
@@ -768,8 +970,11 @@ func printSummary(app *App, sum summaryOutput) {
 	if sum.DryRun {
 		fmt.Fprintln(app.Out, "dry run — nothing was installed and nothing was changed")
 	} else {
-		fmt.Fprintf(app.Out, "installed %d · already present %d · skipped %d · failed %d\n",
-			sum.Installed, sum.Present, sum.Skipped, sum.Failed)
+		// Elapsed goes in the counts line rather than its own footer: a slow
+		// run is a number a reader looks for first, and one line saying
+		// everything beats two lines half-saying it.
+		fmt.Fprintf(app.Out, "installed %d · already present %d · skipped %d · failed %d  (%s)\n",
+			sum.Installed, sum.Present, sum.Skipped, sum.Failed, formatDuration(time.Duration(sum.ElapsedMs)*time.Millisecond))
 	}
 
 	cells := make([][]string, 0, len(sum.Results))
@@ -787,9 +992,9 @@ func printSummary(app *App, sum summaryOutput) {
 			}
 			detail += "(" + strings.Join(r.Warning, "; ") + ")"
 		}
-		cells = append(cells, []string{r.Name, string(r.Status), detail})
+		cells = append(cells, []string{r.Name, string(r.Status), formatDuration(time.Duration(r.DurationMs) * time.Millisecond), detail})
 	}
-	_ = table(app.Out, []string{"TOOL", "STATUS", "DETAIL"}, cells)
+	_ = table(app.Out, []string{"TOOL", "STATUS", "TIME", "DETAIL"}, cells)
 
 	if sum.EnvPath != "" {
 		fmt.Fprintf(app.Out, "\nenvironment: %s\n", sum.EnvPath)
@@ -806,6 +1011,24 @@ func printSummary(app *App, sum summaryOutput) {
 
 	if sum.Failed > 0 {
 		fmt.Fprintf(app.Out, "\n%d tool(s) did not verify. Run 'aes doctor' for detail.\n", sum.Failed)
+		printFailureReport(app, sum)
+	}
+	if sum.LogPath != "" {
+		fmt.Fprintf(app.Out, "\nfull run log: %s\n", sum.LogPath)
+	}
+}
+
+// printFailureReport says what kind of failure each tool hit and the exact
+// command that reinstalls just those. Both are derived from the same results
+// the summary printed, and the resume command's --only names come from the
+// failed set alone — never widened, so the hint cannot install something the
+// run did not resolve.
+func printFailureReport(app *App, sum summaryOutput) {
+	for _, b := range failureBuckets(sum.Results) {
+		fmt.Fprintf(app.Out, "\n  %s (%d): %s\n", b.Name, len(b.Tools), strings.Join(b.Tools, ", "))
+	}
+	if sum.ResumeCommand != "" {
+		fmt.Fprintf(app.Out, "\nto resume only what failed (re-verifies everything, reinstalls just these):\n\n    %s\n", sum.ResumeCommand)
 	}
 }
 

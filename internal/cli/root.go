@@ -221,6 +221,14 @@ type Flags struct {
 	AllowUnproven bool
 	// Verbose raises log detail.
 	Verbose bool
+	// Quiet suppresses all progress output on stderr. Stdout (the table or
+	// the JSON envelope) is unchanged, and the final "aes: <error>" line at
+	// the end of a failed run is outside the printer, so agents still see
+	// why a run failed.
+	Quiet bool
+	// NoSmokeTest skips the post-install smoke pass for air-gapped or
+	// time-sensitive runs.
+	NoSmokeTest bool
 
 	// Profile names the profile to resolve.
 	Profile string
@@ -407,6 +415,8 @@ func parseFlags(cmd *Command, args []string, errOut io.Writer) (*Flags, any, []s
 	fs.BoolVar(&f.JSON, "json", false, "machine-parseable output")
 	fs.BoolVar(&f.Force, "force", false, "repair tools whose state disagrees with reality")
 	fs.BoolVar(&f.Verbose, "verbose", false, "more detail")
+	fs.BoolVar(&f.Quiet, "quiet", false, "suppress progress output on stderr")
+	fs.BoolVar(&f.NoSmokeTest, "no-smoke-test", false, "skip the post-install smoke pass")
 	fs.StringVar(&f.Profile, "profile", "", "profile to resolve")
 	fs.Var(&f.Only, "only", "install only this tool (repeatable)")
 	fs.Var(&f.Exclude, "exclude", "skip this tool (repeatable)")
@@ -480,6 +490,8 @@ func (a *App) writeHelp(w io.Writer) {
 	fmt.Fprintf(w, "  --exclude <tool>   skip this tool (repeatable)\n")
 	fmt.Fprintf(w, "  --allow-unproven  proceed with tools proven only on another platform\n")
 	fmt.Fprintf(w, "  --verbose          more detail\n")
+	fmt.Fprintf(w, "  --quiet            suppress progress output on stderr\n")
+	fmt.Fprintf(w, "  --no-smoke-test    skip the post-install smoke pass\n")
 	fmt.Fprintf(w, "\nEXIT CODES\n")
 	fmt.Fprintf(w, "  0 ok   1 failure   2 usage   3 invalid catalog   4 unsupported platform\n")
 	fmt.Fprintf(w, "  5 manual privileged step required   6 verification failed\n")

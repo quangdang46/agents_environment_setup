@@ -1,0 +1,38 @@
+name: discord-cli
+description: Discord CLI and MCP server running as your own user account
+category: agent
+tested: false
+tags:
+  - agent
+verify:
+  command: discord
+  version:
+    command: discord --version
+    min: "0.1.2"
+install:
+  darwin:
+    strategy: github-release
+    release_tag: v0.1.2
+    repository: quangdang46/discord_cli
+    binary:
+      amd64: discord
+      arm64: discord
+    asset:
+      amd64: discord-macos-x86_64.tar.gz
+      arm64: discord-macos-aarch64.tar.gz
+    sha256:
+      amd64: d4fb78f4d36a0276f8752871df66affc835a5fe736a4b2cae5681a9a086c38f7
+      arm64: 9f4561a3d6fb739e1ad876e7403baeca159e4ba7979cf11065d40c41f5a2f30c
+  linux:
+    strategy: github-release
+    release_tag: v0.1.2
+    repository: quangdang46/discord_cli
+    binary:
+      amd64: discord
+      arm64: discord
+    asset:
+      amd64: discord-linux-x86_64.tar.gz
+      arm64: discord-linux-aarch64.tar.gz
+    sha256:
+      amd64: 3ad49bcb10eb5aaa2c08c1863ff21ba1d753d80ef10c4698df47e8edd6893b1b
+      arm64: ea67584a8c3c9cf6201d9f4e6ba5729fa2732bef3eef918b02091055a23d62ad

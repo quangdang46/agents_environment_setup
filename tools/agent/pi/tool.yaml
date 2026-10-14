@@ -1,23 +1,60 @@
+# AES catalog. earendil-works/pi installed from npm, which is what upstream
+# publishes (pi.dev/install.sh is an npm installer with a TUI pre-flight
+# wrapped around it; AES runs the strategy directly and adds verification
+# plus a checksum the upstream script does not do).
+#
+# NAME COLLISION, and it is worth naming because the catalog already had a
+# `pi` pointing at the retired pi_agent_rust. That manifest declared
+# strategy `package` with `package: pi` for BOTH platforms — no such package
+# exists in apt or homebrew, so the tool could never install on either. It
+# was replaced, not reused. The archive ships a binary called `pi` from
+# `pi-agent-rust`, which is why the earlier entry appeared to work for as
+# long as something else had put a `pi` on PATH.
+#
+# THE VERSION FLOOR IS THE BLOCKER, not the install.
+#
+# npm installs this cleanly on node 18 (an EBADENGINE warning, no refusal),
+# and the binary then dies on startup:
+#
+#   file:///usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js:2
+#   import { createRequire, enableCompileCache } from "node:module";
+#                            ^^^^^^^^^^^^^^^^^^
+#   SyntaxError: The requested module 'node:module' does not provide an
+#   export named 'enableCompileCache'
+#
+# `enableCompileCache` landed in node 22.19.0, and this is measured on node
+# 18.19.1 (ubuntu:24.04, apt nodejs). Every published version of the npm
+# package declares `engines: {node: ">=22.19.0"}` — 59 of 59, oldest to
+# newest, so there is no older release to fall back to the way gemini's
+# linux target could.
+#
+# So aes setup reports this as `installed but verification says unknown`
+# WITH THE PATH NAMED on ubuntu:24.04, which is the truthful outcome: the
+# bytes are correct, pinned by checksum, and the host cannot run them. It is
+# the same shape gemini had before bead 8tv, and the same fix is not
+# available here — a second node would have to be installed alongside the
+# distro one, which no closed strategy in this catalog does.
+#
+# node is declared as a dependency so the resolver installs it first; on
+# darwin (brew node) pi runs, and on linux it needs node 22 from somewhere
+# other than apt. tested: false until both layers pass on a host that has it.
 name: pi
-description: pi agent runtime
+description: Pi, a minimal extensible agent harness (earendil-works) CLI
 category: agent
-tested: true
-tested_on:
-- linux/arm64
-- linux/amd64
+dependencies:
+  - node
+tested: false
 tags:
-- agent
+  - agent
 verify:
   command: pi
   version:
     command: pi --version
-    min: 0.6.0
+    min: "1.2.0"
 install:
   darwin:
-    strategy: package
-    manager: brew
-    package: pi
+    strategy: npm
+    npm_package: "@earendil-works/pi-coding-agent@1.2.0"
   linux:
-    strategy: package
-    manager: apt
-    package: pi
+    strategy: npm
+    npm_package: "@earendil-works/pi-coding-agent@1.2.0"

@@ -1,0 +1,40 @@
+name: hashline
+description: content-hash addressed file editing for AI coding assistants
+category: agent
+tested: false
+tags:
+  - agent
+verify:
+  command: hashline
+  version:
+    command: hashline --version
+    min: "0.9.19"
+install:
+  darwin:
+    strategy: github-release
+    release_tag: v0.9.19
+    repository: quangdang46/hashline
+    binary:
+      amd64: hashline
+      arm64: hashline
+    asset:
+      amd64: hashline-v0.9.19-macos-x86_64.tar.gz
+      arm64: hashline-v0.9.19-macos-aarch64.tar.gz
+    sha256:
+      amd64: 7f62741e4440ba82909d59530fb127c0bd13364eb0f101028bda42b9255e272b
+      arm64: 5dcd47df402449f8cef662ccfd4f826ae2cd429a990279182a5cfefd984d307a
+  linux:
+    # NO linux/arm64 ASSET EXISTS at v0.9.19. The release ships only
+    # linux-x86_64, macos-x64, macos-aarch64 and windows-zip, and the
+    # find-missing-arch rule makes the manifest's absence deliberate rather
+    # than an oversight: on arm64 aes reports the tool as unsupported here,
+    # which is the honest answer to "which platforms can this run on".
+    strategy: github-release
+    release_tag: v0.9.19
+    repository: quangdang46/hashline
+    binary:
+      amd64: hashline
+    asset:
+      amd64: hashline-v0.9.19-linux-x86_64.tar.gz
+    sha256:
+      amd64: f708e373f49fb6096ca659656d19153d88264c014399ef8677a8a0ede5b14c31

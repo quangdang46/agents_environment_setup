@@ -19,6 +19,34 @@ import (
 // DefaultDownloadBase is the GitHub releases download endpoint.
 const DefaultDownloadBase = "https://github.com"
 
+// SetVerboseLog enables download detail for --verbose. It satisfies the
+// CLI's verboseLogger seam so verbosity is set post-resolution and cannot
+// change the resolved actions (I8).
+//
+// Log is set to the same stream deliberately, but for a different reason
+// than verbosity: the retry lines in retry.go are facts about the run rather
+// than debug detail, so they must be visible without --verbose. One stream
+// per run carrying both is what keeps a retry from being invisible in the
+// one place a reader looks.
+//
+// The registry holds ONE GithubRelease for every tool, so these are set
+// once per run rather than per tool, and the per-tool values (tag, asset,
+// checksum) are passed as arguments instead of stored here. Storing a
+// per-tool value here is exactly the leak that made bottom download sbh's
+// release.
+func (g *GithubRelease) SetVerboseLog(verbose bool, w io.Writer) {
+	g.verbose = verbose
+	g.verboseLog = w
+	g.Log = w
+}
+
+func (g *GithubRelease) detail(format string, args ...any) {
+	if !g.verbose || g.verboseLog == nil {
+		return
+	}
+	fmt.Fprintf(g.verboseLog, "    → "+format+"\n", args...)
+}
+
 // GithubRelease installs a tool by downloading a pinned release asset and
 // verifying its checksum before anything is written.
 //
@@ -45,6 +73,20 @@ type GithubRelease struct {
 	// Client is the HTTP client used for the download. Nil means a client
 	// with a sane timeout.
 	Client *http.Client
+
+	// Log receives one line per retried download attempt, so a slow run
+	// explains itself without the success path becoming chatty. A retry is
+	// a fact about the run rather than debug detail, so it is written here
+	// whether or not --verbose is set. See retry.go for the schedule and
+	// the rule that stops retry at the download boundary.
+	Log io.Writer
+
+	// verbose and verboseLog carry --verbose detail: the resolved URL and
+	// the checksum the download will be judged against. Both are set from
+	// the CLI post-resolution via SetVerboseLog, never from the manifest,
+	// so verbosity cannot change what is installed (I8).
+	verbose    bool
+	verboseLog io.Writer
 }
 
 // NewGithubRelease returns a github-release installer with defaults applied.
@@ -115,7 +157,12 @@ func (g *GithubRelease) Install(ctx context.Context, a Action) error {
 	defer os.RemoveAll(work)
 
 	archivePath := filepath.Join(work, "asset.tar.gz")
-	if err := g.download(ctx, g.assetURL(a, asset, version), archivePath); err != nil {
+	assetURL := g.assetURL(a, asset, version)
+	if g.verbose {
+		g.detail("fetch %s", assetURL)
+		g.detail("expect sha256 %s", sum)
+	}
+	if err := g.download(ctx, assetURL, archivePath); err != nil {
 		return err
 	}
 
@@ -202,42 +249,26 @@ func (g *GithubRelease) assetURL(a Action, asset, version string) string {
 }
 
 // download streams a URL to a file, refusing to exceed maxAssetBytes.
+//
+// Transient network failures are retried on a fixed schedule (retry.go).
+// Retry stops here at the download: verifyChecksum runs afterwards on the
+// bytes that arrived, because a checksum mismatch means the bytes are
+// correct and the manifest is stale — re-downloading fetches the same wrong
+// bytes three times.
 func (g *GithubRelease) download(ctx context.Context, url, dest string) error {
 	client := g.Client
 	if client == nil {
 		client = &http.Client{Timeout: downloadTimeout}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: unexpected status %s", url, resp.Status)
-	}
-
 	out, err := os.Create(dest)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dest, err)
 	}
-	// LimitReader's extra byte turns an over-large asset into a clean error
-	// rather than a truncated file that would then fail checksum.
-	written, err := io.Copy(out, io.LimitReader(resp.Body, maxAssetBytes+1))
-	closeErr := out.Close()
-	if err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close %s: %w", dest, closeErr)
-	}
-	if written > maxAssetBytes {
-		return fmt.Errorf("download %s: asset exceeds %d bytes", url, maxAssetBytes)
+	defer out.Close()
+
+	if err := doDownloadWithRetry(ctx, client, url, out, g.Log); err != nil {
+		return err
 	}
 	return nil
 }

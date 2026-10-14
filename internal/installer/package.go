@@ -100,6 +100,11 @@ type PackageInstaller struct {
 	// needs no sudo at all. This is the normal case inside a container and
 	// it is why the sandbox tests do not need a password.
 	IsRoot func() bool
+
+	// verbose makes Install log the exact command before running it, for
+	// --verbose. It is set from the CLI post-resolution via SetVerboseLog,
+	// never from the manifest, so it cannot change what is installed (I8).
+	verbose bool
 }
 
 // defaultPrivilegeTimeout bounds a privileged install. It matches the
@@ -118,6 +123,28 @@ func (p *PackageInstaller) root() bool {
 		return p.IsRoot()
 	}
 	return os.Geteuid() == 0
+}
+
+// SetVerboseLog routes verbose detail for --verbose. It satisfies the CLI's
+// verboseLogger seam.
+//
+// Out is shared deliberately: the privilege prompts already go to p.Out, and
+// a separate log stream would put the prompts and the detail of the command
+// they belong to in different places.
+func (p *PackageInstaller) SetVerboseLog(verbose bool, w io.Writer) {
+	p.verbose = verbose
+	if w != nil && p.Out == nil {
+		p.Out = w
+	}
+}
+
+// detail logs one verbose line. It is a no-op unless --verbose asked, so a
+// caller can log unconditionally.
+func (p *PackageInstaller) detail(format string, args ...any) {
+	if !p.verbose {
+		return
+	}
+	fmt.Fprintf(p.out(), "    → "+format+"\n", args...)
 }
 
 func (p *PackageInstaller) unprivileged() func(context.Context, string) (exec.Result, error) {
@@ -279,8 +306,10 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	}
 
 	// Interactive. Print first — the user sees the exact command before
-	// being asked, and before anything can run.
-	p.printf("aes: this needs elevated privileges. The command is:\n\n    sudo %s\n\n", base)
+	// being asked, and before anything can run. The box is presentation
+	// only: what is printed, when, and what counts as confirmation are all
+	// unchanged (I14).
+	p.printPrivilegeBox(a.Tool, "sudo "+base)
 	if err := p.authorize(base); err != nil {
 		return err
 	}
@@ -343,6 +372,42 @@ func (p *PackageInstaller) authorize(command string) error {
 
 func (p *PackageInstaller) printf(format string, args ...any) {
 	fmt.Fprintf(p.out(), format, args...)
+}
+
+// printPrivilegeBox draws the command a user must approve inside a box.
+//
+// The box is drawn here rather than through internal/progress because this
+// package must not reach upward for a sibling: the layering rule is
+// one-directional, and a rendering dependency in an installer would make
+// every strategy depend on a terminal concern it does not have.
+//
+// The width tracks the content so a short command does not get a 60-column
+// frame. Degrading to plain text when the stream is not a terminal is the
+// caller's business — box characters in a log file read worse, but the
+// command is still there, which is the part that matters.
+func (p *PackageInstaller) printPrivilegeBox(tool, command string) {
+	w := p.out()
+	title := tool + " needs elevated privileges"
+	width := len([]rune(command)) + 4
+	if len(title)+6 > width {
+		width = len(title) + 6
+	}
+
+	fmt.Fprintf(w, "\n╭─ %s ", title)
+	for i := len(title) + 4; i <= width; i++ {
+		fmt.Fprint(w, "─")
+	}
+	fmt.Fprintln(w, "╮")
+	fmt.Fprintf(w, "│  %s", command)
+	for i := 0; i < width-len([]rune(command))-2; i++ {
+		fmt.Fprint(w, " ")
+	}
+	fmt.Fprintln(w, "│")
+	fmt.Fprint(w, "╰")
+	for i := 0; i < width+1; i++ {
+		fmt.Fprint(w, "─")
+	}
+	fmt.Fprintln(w, "╯")
 }
 
 // prepareAptSource installs a tool's declared apt source, if it declares one.
@@ -547,21 +612,15 @@ func (p *PackageInstaller) aptSourceFailed(a Action, installCmd, what string, er
 }
 
 // downloadFile streams url to dest, refusing to write more than maxAssetBytes.
+//
+// Like the github-release path, transient network failures are retried on
+// the fixed schedule in retry.go. The retried unit is the unprivileged HTTP
+// fetch only: this function runs before any sudo decision, so a retry here
+// cannot re-invoke a privilege path and does not conflict with the no-retry
+// rule on apt-get itself. Verification stays outside the boundary: the
+// caller checks the keyring digest after this returns.
 func downloadFile(ctx context.Context, url string, dest *os.File) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status %s", resp.Status)
-	}
-	_, err = io.Copy(dest, io.LimitReader(resp.Body, maxAssetBytes+1))
-	return err
+	return doDownloadWithRetry(ctx, http.DefaultClient, url, dest, nil)
 }
 
 // verifyFile checks the sha256 of path against want, which must be lowercase hex.

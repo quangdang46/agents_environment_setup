@@ -1,0 +1,41 @@
+name: bvr
+description: graph-aware triage engine for Beads projects (beads_graph)
+category: agent
+tested: false
+tags:
+  - agent
+verify:
+  # `bv` is the binary the release actually ships and what lands on PATH;
+  # the tool name stays `bvr` to match the repository. The two being
+  # different is exactly what verify.command exists for.
+  command: bv
+  version:
+    command: bv --version
+    min: "0.25.2"
+install:
+  darwin:
+    strategy: github-release
+    release_tag: v0.25.2
+    repository: quangdang46/beads_graph
+    binary:
+      amd64: bvr
+      arm64: bvr
+    asset:
+      amd64: bvr-v0.25.2-macos-x86_64.tar.gz
+      arm64: bvr-v0.25.2-macos-aarch64.tar.gz
+    sha256:
+      amd64: 1e53463677a9ea822d1f172d99f689acd69facaa64fbb31ff6a4514be0e5d8e5
+      arm64: d2ad13add901d7ba3f1af5218659446273ba7dafa4a07720898eb1672a09a4f0
+  linux:
+    strategy: github-release
+    release_tag: v0.25.2
+    repository: quangdang46/beads_graph
+    binary:
+      amd64: bvr
+      arm64: bvr
+    asset:
+      amd64: bvr-v0.25.2-linux-x86_64.tar.gz
+      arm64: bvr-v0.25.2-linux-aarch64.tar.gz
+    sha256:
+      amd64: 1631dba8cae77607ff1ec75d923a4496b21466daddb90dd5f64bddddf1a58ebc
+      arm64: 6eb3397c6350167fcb7aa4ead9f7c2781fe52e6cb9c981385e60687c4291cfbd
