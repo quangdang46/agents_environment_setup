@@ -4,7 +4,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue.svg)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)
-![Status](https://img.shields.io/badge/status-pre--1.0%20%7C%207%20tools%20proven%20on%20linux%2Farm64-orange.svg)
+![Status](https://img.shields.io/badge/status-v0.1.0%20%7C%2063%20tools%20tested-green.svg)
 
 </div>
 
@@ -19,13 +19,11 @@ curl -fsSL https://raw.githubusercontent.com/quangdang46/agents_environment_setu
 aes setup
 ```
 
-> **Status: pre-1.0, and honest about it.** No release is published yet, so the
-> install line above does not work today — build from source. 62 tool
-> definitions exist; **24 are marked `tested: true`**, each carrying a
-> `tested_on` list so the flag says where it was proven rather than implying
-> everywhere. `aes setup` with no flags installs and verifies the default
-> profile end to end and exits 0; `aes setup --profile full` does the same for
-> the whole catalog, measured on a clean `ubuntu:24.04` container. See
+> **Status: v0.1.0.** 68 tool definitions exist; **63 are marked
+> `tested: true`**, each carrying a `tested_on` list so the flag says where
+> it was proven rather than implying everywhere. `aes setup` with no flags
+> installs and verifies the default profile (12 tools) end to end and exits
+> 0, measured on a clean `ubuntu:24.04` container. See
 > [Status and limitations](#status-and-limitations).
 
 ---
@@ -265,10 +263,10 @@ These are the properties the test suite exists to defend.
 
 This is an active, pre-1.0 project. Stated plainly:
 
-- **No published release.** `install.sh` and the checksum verification are
-  complete and tested against a local fixture, but there is no GitHub release
-  to download from yet. Build from source for now.
-- **24 of 62 tools are `tested: true`, and the rest are not — deliberately.**
+- **v0.1.0 is the first published release.** `install.sh` downloads a
+  checksum-verified binary from GitHub Releases; `aes setup` then installs
+  and verifies the default profile end to end on a clean machine.
+- **63 of 68 tools are `tested: true`, and the rest are not — deliberately.**
   Verification requires both layers: a real install, then `aes verify`
   confirming the result on that same machine. Both run in a fresh
   `ubuntu:24.04` container (`internal/sandbox`, opt-in behind
@@ -277,15 +275,15 @@ This is an active, pre-1.0 project. Stated plainly:
   during a full-catalog run on a clean container, not assumed; a dozen were
   wrong and are now right.
 
-  The default profile selects **18** tools and 11 of them are unproven, so
-  `require_tested` refuses the whole thing. That is I15 working, not a bug —
-  the profile would be making a claim nothing has verified. Use `--only`, or
-  `--only` plus `--profile` once more tools are proven.
+  The default profile selects **12 tools**, all of them `tested: true` on
+  both linux/amd64 and linux/arm64. The remaining 56 tools are reachable via
+  `--profile full`, which sets `require_tested: false` on purpose: selecting
+  by category necessarily picks up unproven tools, and a profile that
+  silently refused them was unrunnable on any machine.
 
-  The proven scope is honest and narrow: `tested_on: [linux/arm64]`, and the
-  resolver skips a tool on a host it was not proven on. Two of the remaining
-  tools are known-broken and tracked rather than quietly excluded — see
-  below.
+  The proven scope is honest and narrow: most entries carry
+  `tested_on: [linux/arm64, linux/amd64]`, and the resolver skips a tool on a
+  host it was not proven on. darwin has no proven entries yet.
 
 - **The TUI is new and lightly exercised.** It exists and its selection
   logic is well tested, but it has never been run on a machine other than
@@ -295,15 +293,18 @@ This is an active, pre-1.0 project. Stated plainly:
   github-release and package-manager tools for real, but `go`/`npm`/`cargo`/
   `uv` have no supported per-package removal, so AES reports *not removed*
   with the manual route rather than pretending. `aes forget` always works.
-- **Two catalog entries in the default profile cannot install**, both found by
-  running the container rather than by reading the manifests. `aadc` publishes
-  `.tar.xz` assets and the extractor is pure-Go gzip, so it needs a capability
-  the installer does not have. `gemini` installs and then dies — its npm
-  package declares `engines: node >=20` and Ubuntu 24.04 ships 18.19.1 (codex,
-  claude and opencode all run fine on 18; it is gemini alone). Both are open
-  decisions rather than exclusions.
-- **The `tested: true` scope is one platform.** The flag is a bool plus a
-  `tested_on` list; nothing has been proven on darwin or linux/amd64 yet.
+- **Two catalog entries cannot install for known reasons**, both found by
+  running the container rather than by reading the manifests. `vault` 2.1.x
+  installs cleanly through apt and then fails to exec under Docker's default
+  seccomp profile (EPERM on a syscall its static binary needs) — the binary
+  is real, and `aes setup` names the path and the refusal rather than
+  claiming success. `pi` (earendil-works, npm) installs and then dies — its
+  package declares `engines: node >=22.19` and Ubuntu 24.04 ships 18.19.1;
+  every published version carries the same requirement, so there is no
+  node-18-compatible release to fall back to. Both are open decisions rather
+  than exclusions.
+- **The `tested: true` scope is linux.** The flag is a bool plus a
+  `tested_on` list; nothing has been proven on darwin yet.
 - **CI runs on pull requests.** `ci.yml` does fmt+vet, a test matrix across
   macOS arm64 and Ubuntu amd64, and a build job that unpacks a fresh artifact
   and runs `aes list --json` against a throwaway HOME — the check that catches a
@@ -313,7 +314,7 @@ This is an active, pre-1.0 project. Stated plainly:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `profile "default" requires tested tools, but these are not tested: …` | I15; the profile selects 18 tools and 11 are unproven | Use `--only <tool>` to bypass the profile |
+| `profile "default" requires tested tools, but these are not tested: …` | I15; the default profile is all-tested, so this means `--profile full` was used with `require_tested` | Pass `--only <tool>`, or accept that `full` opts into unproven installs |
 | `catalog root: stat tools: no such file or directory` | Binary built before the catalog was embedded | Rebuild with the current tree |
 | `profile "x": no tool named "y"` | Profile references a tool not in the catalog | Fix the profile; a dangling reference is a hard error by design |
 | Exit `5` | Something needs root | Run the command AES printed, then re-run |
