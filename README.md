@@ -10,6 +10,8 @@
 
 **One command takes a machine from nothing to a complete AI coding environment — and exits 0 only when it actually is.**
 
+<video src="docs/demo/out/aes-demo.mp4" controls width="100%"></video>
+
 `aes setup` resolves a profile into a dependency-ordered plan, verifies what's already there, installs only what's missing, verifies again, and refuses to call it done until the tools are real.
 
 ```bash
