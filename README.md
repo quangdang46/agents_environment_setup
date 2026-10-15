@@ -10,9 +10,100 @@
 
 **One command takes a machine from nothing to a complete AI coding environment — and exits 0 only when it actually is.**
 
-<video src="docs/demo/out/aes-demo.mp4" controls width="100%"></video>
-
 `aes setup` resolves a profile into a dependency-ordered plan, verifies what's already there, installs only what's missing, verifies again, and refuses to call it done until the tools are real.
+
+<details>
+<summary>Example run — fresh <code>ubuntu:24.04</code>, default profile (12 tools, 4m15s)</summary>
+
+```
+$ curl -fsSL https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh | sh -s -- --version v0.1.0
+==> detecting platform
+    linux/amd64
+==> downloading aes-0.1.0-linux-amd64.tar.gz
+==> fetching checksums.txt
+==> verifying checksum
+    checksum ok (5ddf022c…)
+==> extracting
+==> installing to /root/.aes/bin/aes
+==> verifying installation
+aes 0.1.0
+
+$ aes setup --non-interactive
+═══ aes setup 0.1.0 — 12 tools (profile: default) ═══
+→ logging to /root/.aes/logs/setup-20261015T023310Z.log
+═══ Installing 12 tools ═══
+[█░░░░░░░░░░░░░░░░░░░] 1/12 (8%) Installing bat
+⏳ installing bat
+✓ bat installed (v0.26.1, 2.5s)
+[███░░░░░░░░░░░░░░░░░] 2/12 (16%) Installing bottom
+⏳ installing bottom
+✓ bottom installed (v0.14.9, 1.8s)
+[█████░░░░░░░░░░░░░░░] 3/12 (25%) Installing btop
+⏳ installing btop
+✓ btop installed (v1.4.7+f7b2e8a, 1.5s)
+[██████░░░░░░░░░░░░░░] 4/12 (33%) Installing dust
+⏳ installing dust
+✓ dust installed (v1.2.6, 1.3s)
+[████████░░░░░░░░░░░░] 5/12 (41%) Installing eza
+⏳ installing eza
+✓ eza installed (v0.23.5, 0.9s)
+[██████████░░░░░░░░░░] 6/12 (50%) Installing node
+⏳ installing node
+✓ node installed (v18.19.1, 11.5s)
+[███████████░░░░░░░░░] 7/12 (58%) Installing npm
+⏳ installing npm
+✓ npm installed (v9.2.0, 2m24s)
+[█████████████░░░░░░░] 8/12 (66%) Installing claude
+⏳ installing claude
+✓ claude installed (v2.1.283, 29.4s)
+[███████████████░░░░░] 9/12 (75%) Installing codex
+⏳ installing codex
+✓ codex installed (v0.157.1, 18.9s)
+[████████████████░░░░] 10/12 (83%) Installing opencode
+⏳ installing opencode
+✓ opencode installed (v1.18.32, 35.0s)
+[██████████████████░░] 11/12 (91%) Installing tmux
+⏳ installing tmux
+✓ tmux installed (v3.4, 5.1s)
+[████████████████████] 12/12 (100%) Installing zellij
+⏳ installing zellij
+✓ zellij installed (v0.45.1, 3.3s)
+
+═══ Smoke test ═══
+✓ bat v0.26.1
+✓ bottom v0.14.9
+✓ btop v1.4.7+f7b2e8a
+✓ claude v2.1.283
+✓ codex v0.157.1
+✓ dust v1.2.6
+✓ eza v0.23.5
+✓ node v18.19.1
+✓ npm v9.2.0
+✓ opencode v1.18.32
+✓ tmux v3.4
+✓ zellij v0.45.1
+installed 12 · already present 0 · skipped 0 · failed 0  (4m15s)
+TOOL      STATUS     TIME   DETAIL
+bat       installed  2.5s
+bottom    installed  1.8s
+btop      installed  1.5s
+claude    installed  29.4s
+codex     installed  18.9s
+dust      installed  1.3s
+eza       installed  0.9s
+node      installed  11.5s
+npm       installed  2m24s
+opencode  installed  35.0s
+tmux      installed  5.1s
+zellij    installed  3.3s
+
+environment: /root/.aes/env.sh
+activate it with:  . /root/.aes/env.sh
+
+full run log: /root/.aes/logs/setup-20261015T023310Z.log
+```
+
+</details>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh | sh
