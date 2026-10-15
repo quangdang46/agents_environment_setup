@@ -36,12 +36,11 @@ jobs:
           cache: true
 
       - name: Build and test
-        env:
-          CGO_ENABLED: "0"
-          # Built for the matrix target, not the runner, so the test step
-          # below compiles the same way the artifact does.
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+        # Native, not cross-arch: `go test` compiles a binary for GOOS/GOARCH,
+        # so a linux/amd64 test on macos-latest dies with "exec format error"
+        # (exit 2) before any assertion runs. The contract tests are
+        # platform-agnostic; the artifact build below is the step that is
+        # allowed to cross-compile.
         run: |
           go build ./...
           go vet ./...
