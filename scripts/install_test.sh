@@ -67,6 +67,24 @@ run_install() {
 # ----------------------------------------------------------------- tests
 
 echo
+echo "0. version spelling: v-prefixed and bare agree on one asset"
+# Release tags carry the leading v (`v0.1.0`); the asset filename does not
+# (`aes-0.1.0-linux-amd64.tar.gz`). A caller passing either spelling must
+# resolve to the same asset, because the two forms were once mixed in the URL
+# and the result was a 404 that surfaced only after platform detection
+# succeeded.
+for spec in "vtest vtest" "test test"; do
+    set -- $spec
+    PREFIX="$WORK/vspelling-$1"
+    OUT=$(sh "$INSTALL_SH" --base-url "file://$SERVE" --version "$1" --prefix "$PREFIX" 2>&1)
+    if [ -x "$PREFIX/bin/aes" ]; then
+        ok "--version $1 resolved and installed"
+    else
+        bad "--version $1 resolved and installed" "$OUT"
+    fi
+done
+
+echo
 echo "1. matching checksum -> binary placed and runs"
 PREFIX="$WORK/ok"
 OUT=$(run_install "$PREFIX" || true)

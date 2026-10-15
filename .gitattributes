@@ -1,0 +1,13 @@
+# POSIX shell must stay LF. `curl | sh` runs install.sh on the machine that
+# fetched it, so the bytes on the wire must be executable as-is, and a
+# CRLF checkout turns every line ending into a trailing backslash that the
+# shell reads as a line continuation. It fails with "Illegal option -" from
+# the `set -eu` on line 9, which names neither the file nor the cause.
+*.sh text eol=lf
+
+# The checksums and manifests are consumed as text by Go, Python and tar.
+*.txt text
+*.go text
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text
