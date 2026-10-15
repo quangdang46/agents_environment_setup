@@ -22,6 +22,7 @@ set -eu
 
 REPO="${AES_REPO:-quangdang46/agents_environment_setup}"
 VERSION="${AES_VERSION:-latest}"
+VERSION=${VERSION#v}
 PREFIX="${AES_PREFIX:-$HOME/.aes}"
 BASE_URL="${AES_BASE_URL:-}"
 
@@ -94,10 +95,16 @@ detect_arch() {
 asset_url() {
     if [ -n "$BASE_URL" ]; then
         printf '%s/%s' "${BASE_URL%/}" "$1"
-    elif [ "$VERSION" = "latest" ]; then
+    elif [ "$VERSION" = "latest" ] || [ "$VERSION" = "vlatest" ]; then
         printf 'https://github.com/%s/releases/latest/download/%s' "$REPO" "$1"
     else
-        printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$VERSION" "$1"
+        # Release tags carry a leading v (`v0.1.0`) while the version segment
+        # of the asset filename does not (`aes-0.1.0-...`). Keep the two forms
+        # separate so normalising the caller's input never breaks the tag side
+        # — that asymmetry was a real 404: the URL path was built from the
+        # unstripped `v0.1.0` while the asset name came from stripped `0.1.0`,
+        # and conversely.
+        printf 'https://github.com/%s/releases/download/v%s/%s' "$REPO" "$VERSION" "$1"
     fi
 }
 
@@ -146,7 +153,13 @@ assert_no_path_traversal() {
 main() {
     while [ $# -gt 0 ]; do
         case "$1" in
-            --version) VERSION=$2; shift 2 ;;
+            # Callers pass either `v0.1.0` or `0.1.0`; the release tag carries the
+    # leading v. Normalise once, here, so the download URL is always built
+    # from the same form the tag uses rather than from whichever the caller
+    # happened to type — a URL built from `0.1.0` is a 404 against a tag
+    # named `v0.1.0`, and the 404 arrives after a successful platform
+    # detection and a checksum fetch, far from the cause.
+    --version) VERSION=${2#v}; [ -n "$VERSION" ] || VERSION=latest; shift 2 ;;
             --prefix)  PREFIX=$2;  shift 2 ;;
             --base-url) BASE_URL=$2; shift 2 ;;
             -h|--help) usage; exit 0 ;;
