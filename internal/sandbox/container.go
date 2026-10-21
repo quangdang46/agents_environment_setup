@@ -296,10 +296,50 @@ func (c *Container) Prepare(ctx context.Context, packages ...string) error {
 	// test is measuring the fixture.
 	script := "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends " +
 		strings.Join(packages, " ")
-	if _, _, err := c.Sh(ctx, script, nil); err != nil {
-		return fmt.Errorf("sandbox: install %v: %w", packages, err)
+	// Run rather than Sh, so the failure can carry apt's own words.
+	//
+	// Measured on the 63-tool Layer 2 sweep: sixteen tools reported "prepare
+	// container: sandbox: install [ca-certificates nodejs npm]: exit status
+	// 100" and nothing else. apt's own line said what had happened — and it
+	// was captured and then thrown away. A reader could not tell a mirror
+	// refusing connections from a package list that would not resolve, and
+	// the harness was reporting sixteen tools as broken when the fixture's
+	// preparation was what had broken.
+	res, err := c.Run(ctx, []string{"sh", "-c", script}, nil, "")
+	if err != nil {
+		return fmt.Errorf("sandbox: install %v: %w%s", packages, err, shellFailureDetail(res))
 	}
 	return nil
+}
+
+// shellFailureDetail is the failed command's own output.
+//
+// The harness had the same information-destroying error the product's
+// installer had: a failure was reported as an exit status and a sentence
+// about which command failed, with the reason — which is what the command
+// said — dropped on the floor. The reader is left with no way to tell the
+// causes apart, and the causes here are not remotely alike: a mirror that is
+// refusing connections, a package list that will not resolve, and a
+// post-install script that failed are three different problems.
+func shellFailureDetail(res ExecResult) string {
+	tail := lastLines(res.Stdout+"\n"+res.Stderr, 12)
+	if tail == "" {
+		return ""
+	}
+	return "\n    " + strings.ReplaceAll(tail, "\n", "\n    ")
+}
+
+// lastLines returns the last n non-empty lines of s, for failure detail.
+func lastLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	kept := make([]string, 0, n)
+	for i := len(lines) - 1; i >= 0 && len(kept) < n; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		kept = append([]string{lines[i]}, kept...)
+	}
+	return strings.Join(kept, "\n")
 }
 
 // Close stops and removes the container.

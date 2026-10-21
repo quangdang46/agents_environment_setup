@@ -208,7 +208,25 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 				t.Fatalf("absence was checked against %q, not the container", presence.Where)
 			}
 			if presence.Found {
-				t.Fatalf("%s is already present in a fresh %s at %q — the run would prove nothing",
+				// A SKIP, not a failure, and the distinction is a consequence
+				// of the container being fresh for every tool.
+				//
+				// With one shared container, "already present" meant
+				// CONTAMINATION — an earlier tool's install had brought this
+				// one in — and failing was right: the run was measuring
+				// nothing. With a container per tool it means the BASE IMAGE
+				// ships it: ubuntu:24.04 has bash, and the fixture's own
+				// preparation installs nodejs and npm, so those three can
+				// never be absent here.
+				//
+				// Nothing is broken in that case. bash, node, npm and python
+				// are verified tools on real machines, and reporting them as
+				// failures here would say the opposite — it would invite
+				// demoting them from tested: true because of what an image
+				// happens to contain. The shared path already skips on this
+				// same condition (ErrToolPresent), and the two verdicts
+				// should not disagree about one fact.
+				t.Skipf("%s is already present in a fresh %s at %q — this image cannot prove it",
 					tc.name, DefaultImage, presence.Evidence)
 			}
 			t.Logf("%s absent inside the container before the run", tc.name)
