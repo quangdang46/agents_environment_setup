@@ -5,3 +5,7 @@
 
 # release artifacts produced by scripts/build.sh
 dist/
+
+# A copy of the docker CLI, used to run the Layer 2 harness from a container
+# that has no docker CLI of its own. A build artefact, not source.
+_tmpbin/

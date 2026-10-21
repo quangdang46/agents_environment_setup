@@ -282,9 +282,9 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	// would have it claim an Authorization it never earned, and the gate would
 	// stop meaning anything the first time it was passed something true.
 	if p.root() {
-		_, err := p.unprivileged()(ctx, base)
+		res, err := p.unprivileged()(ctx, base)
 		if err != nil {
-			return fmt.Errorf("install %s: %w", a.Tool, err)
+			return fmt.Errorf("install %s: %w%s", a.Tool, err, aptFailureDetail(res))
 		}
 		return nil
 	}
@@ -328,7 +328,7 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 // On the failure path the printable command is emitted, because the user's
 // next move is to run it themselves and the CLI will exit 5.
 func (p *PackageInstaller) runApt(ctx context.Context, tool, cmd string, auth exec.Authorization) error {
-	_, err := p.privileged()(ctx, cmd, auth)
+	res, err := p.privileged()(ctx, cmd, auth)
 	if err == nil {
 		return nil
 	}
@@ -339,7 +339,36 @@ func (p *PackageInstaller) runApt(ctx context.Context, tool, cmd string, auth ex
 		p.printf("aes: could not install %s automatically. Run this yourself:\n\n    sudo %s\n\n", tool, plain)
 		return &exec.PrivilegeError{Command: "sudo " + plain, NonInteractive: true}
 	}
-	return fmt.Errorf("install %s: %w", tool, err)
+	return fmt.Errorf("install %s: %w%s", tool, err, aptFailureDetail(res))
+}
+
+// aptFailureDetail is dpkg's own explanation of a failed install.
+//
+// The captured tail goes into the ERROR, not just the log, and for the same
+// reason the ecosystem installer does it: a bare "command failed with exit
+// code 100" tells a reader nothing they can act on. dpkg's reason is the
+// whole diagnosis.
+//
+// Measured 2026-10-21, on the Layer 2 container proof: `aes setup --force`
+// on git-lfs reported "exit code 100" and nothing else. dpkg's own line was
+// "old git-lfs package pre-removal script subprocess returned error exit
+// status 1" — the package's pre-removal script runs `git lfs uninstall`,
+// which needs the very binary the reinstall is restoring, so dpkg aborts the
+// unpack. That is a different problem with a different fix from "the network
+// was down", and the user cannot tell them apart without dpkg's line.
+func aptFailureDetail(res exec.Result) string {
+	// Both streams, and the reason is specific: dpkg writes its diagnosis
+	// ("old git-lfs package pre-removal script subprocess returned error
+	// exit status 1") to stdout, while apt's own closing line ("E:
+	// Sub-process /usr/bin/dpkg returned an error code (1)") goes to stderr.
+	// Taking stderr alone keeps the summary and drops the reason; taking
+	// stdout alone keeps the reason and drops the summary. The tail of both
+	// is the only view that has both.
+	tail := lastLines(res.Stdout+"\n"+res.Stderr, 20)
+	if tail == "" {
+		return ""
+	}
+	return "\n    " + strings.ReplaceAll(tail, "\n", "\n    ")
 }
 
 // authorize asks the user to confirm a printed command.

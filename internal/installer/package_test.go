@@ -50,6 +50,56 @@ func pkgAction(manager, pkg string) Action {
 	}
 }
 
+// A failed apt install must carry dpkg's OWN words, because dpkg's reason is
+// the whole diagnosis.
+//
+// Measured 2026-10-21 on the Layer 2 container proof: `aes setup --force` on
+// git-lfs reported "command failed with exit code 100" and nothing else.
+// dpkg's line was "old git-lfs package pre-removal script subprocess returned
+// error exit status 1" — the package's pre-removal script needs the very
+// binary the reinstall is restoring. A user cannot tell that apart from "the
+// network was down" without dpkg's line.
+func TestAptFailureCarriesDpkgOwnOutput(t *testing.T) {
+	t.Parallel()
+
+	dpkg := "dpkg: error processing archive git-lfs_3.4.1-1ubuntu0.4_amd64.deb (--unpack):\n" +
+		" new git-lfs package pre-removal script subprocess returned error exit status 1"
+
+	p := &PackageInstaller{
+		RunUnprivileged: func(_ context.Context, cmd string) (exec.Result, error) {
+			return exec.Result{ExitCode: 100, Stderr: dpkg}, exec.ErrFailed
+		},
+		IsRoot: func() bool { return true },
+		Out:    io.Discard,
+	}
+
+	err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "git-lfs"))
+	if err == nil {
+		t.Fatal("expected an error from a failing apt install")
+	}
+	if !strings.Contains(err.Error(), "pre-removal script subprocess returned error exit status 1") {
+		t.Errorf("error does not carry dpkg's own explanation:\n%v", err)
+	}
+}
+
+// A successful install must not carry anything: the detail is for failures,
+// and a line of noise on a green run is a line nobody reads.
+func TestAptSuccessCarriesNoFailureDetail(t *testing.T) {
+	t.Parallel()
+
+	p := &PackageInstaller{
+		RunUnprivileged: func(_ context.Context, cmd string) (exec.Result, error) {
+			return exec.Result{ExitCode: 0}, nil
+		},
+		IsRoot: func() bool { return true },
+		Out:    io.Discard,
+	}
+
+	if err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "jq")); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+}
+
 func TestBrewNeverEscalates(t *testing.T) {
 	t.Parallel()
 
