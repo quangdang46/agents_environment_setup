@@ -32,6 +32,21 @@ import (
 // green main with no CI. AbsentInside exists for exactly this and the
 // assertion below calls it directly rather than trusting the precondition
 // check inside the sequence to have done it.
+//
+// # One container PER TOOL
+//
+// The container is fresh for every tool, not shared across the sweep. A
+// shared container is a machine that remembers: `docker`'s install drags git
+// in as a dependency, so by the time the sweep reaches git the tool is
+// already present and the run can prove nothing. The same contamination
+// reaches the apt state, and a later package install then fails for a reason
+// that has nothing to do with the tool under test.
+//
+// Freshness is the property the whole proof rests on — "a fresh ubuntu:24.04
+// has no jq because nothing has ever installed jq there" — and it does not
+// survive a tool installing another tool's dependency. One container per tool
+// costs a container start and a prepare per tool, and that is the price of
+// the absence assertion meaning what it says.
 
 // containerToolsFor is every tool the DEFAULT selection resolves to, read from
 // the catalog rather than from a list maintained here.
@@ -96,7 +111,11 @@ var containerPrep = []string{"ca-certificates", "nodejs", "npm"}
 func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	layer2Enabled(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
+	// The budget covers the whole sweep, and the sweep starts a container and
+	// prepares it for every tool. 40 minutes was enough for a ten-tool
+	// profile in a shared container; it is not enough for sixty-three fresh
+	// ones.
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
 	defer cancel()
 
 	if err := ContainerAvailable(ctx); err != nil {
@@ -111,25 +130,6 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 		t.Fatalf("read image architecture: %v", err)
 	}
 	bin := buildAesFor(t, "linux", arch)
-
-	c, err := StartContainer(ctx, ContainerConfig{Binary: bin, Keep: os.Getenv("AES_KEEP_SANDBOX") == "1"})
-	if err != nil {
-		t.Fatalf("start container: %v", err)
-	}
-	t.Cleanup(func() {
-		if c.keep {
-			t.Logf("container %s left running (AES_KEEP_SANDBOX=1)", c.ID)
-			return
-		}
-		if err := c.Close(context.Background()); err != nil {
-			t.Errorf("close container: %v", err)
-		}
-	})
-	t.Logf("container %s running %s (goarch %s)", c.ID, DefaultImage, c.GoArch)
-
-	if err := c.Prepare(ctx, containerPrep...); err != nil {
-		t.Fatalf("prepare container: %v", err)
-	}
 
 	// The isolation this package rests on, asserted around a REAL container
 	// run rather than only around stubs.
@@ -151,7 +151,7 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	// The host the catalog is resolved against is Linux, because that is where
 	// the install happens. Reading runtime.GOOS here would pick darwin and every
 	// target lookup would silently miss.
-	linux := &platform.Host{OS: platform.OSLinux, Arch: c.GoArch, Manager: platform.ManagerApt}
+	linux := &platform.Host{OS: platform.OSLinux, Arch: arch, Manager: platform.ManagerApt}
 
 	// Read from the catalog, so a tool added to or removed from the catalog
 	// changes what this proves without anyone editing the test.
@@ -171,6 +171,29 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 			}
 			if target.Strategy != tc.strategy {
 				t.Errorf("%s uses %s on linux, expected %s", tc.name, target.Strategy, tc.strategy)
+			}
+
+			// A container of its own. The sweep is not a shared machine:
+			// one tool's install brings in another tool's binary, and the
+			// absence assertion below stops meaning anything once that
+			// has happened.
+			c, err := StartContainer(ctx, ContainerConfig{Binary: bin, Keep: os.Getenv("AES_KEEP_SANDBOX") == "1"})
+			if err != nil {
+				t.Fatalf("start container: %v", err)
+			}
+			t.Cleanup(func() {
+				if c.keep {
+					t.Logf("container %s left running (AES_KEEP_SANDBOX=1)", c.ID)
+					return
+				}
+				if err := c.Close(context.Background()); err != nil {
+					t.Errorf("close container: %v", err)
+				}
+			})
+			t.Logf("container %s running %s (goarch %s)", c.ID, DefaultImage, c.GoArch)
+
+			if err := c.Prepare(ctx, containerPrep...); err != nil {
+				t.Fatalf("prepare container: %v", err)
 			}
 
 			// The precondition, measured inside. This is the assertion the

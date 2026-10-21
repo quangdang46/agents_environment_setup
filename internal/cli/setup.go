@@ -615,16 +615,36 @@ func setupOneInner(ctx context.Context, app *App, rc *runContext, store *state.S
 			// from one that runs and prints the wrong version, and the
 			// difference decides what the user does next.
 			//
-			// Measured on ubuntu:24.04 under Docker Desktop's default seccomp
-			// profile: vault 2.1.x installs cleanly through apt and then
-			// fails to exec with EPERM ("Operation not permitted", rc 126),
-			// because v2's static binary makes a syscall the profile blocks.
 			// "installed but verification says unknown" names none of that.
 			// The binary is real, the environment is the refusal, and
-			// `aes doctor` will keep reporting it until the profile changes.
+			// `aes doctor` will keep reporting it until the environment
+			// changes.
 			switch {
 			case after.ProbeError != "" && after.Path != "":
-				hint := "the refusal is from the environment (a seccomp profile blocking a syscall this binary needs is the usual cause)"
+				// The refusal is the environment's, and it has two shapes
+				// worth naming, because they have different fixes.
+				//
+				// Measured on ubuntu:24.04 in a container: vault installs
+				// cleanly through apt and then fails to exec with EPERM
+				// ("Operation not permitted", rc 126). The cause is NOT a
+				// seccomp profile, which is what this message used to say.
+				// It is a FILE CAPABILITY: the .deb records cap_setgid on
+				// the binary, dpkg's linux-capabilities trigger applies it
+				// once setcap is on the machine, and the kernel then refuses
+				// to exec a file whose capability the process cannot be
+				// granted. Whether that happens depends on what else got
+				// installed first — docker.io drags in libcap2-bin, and
+				// after that the trigger can do its job. Installed on its
+				// own, the same .deb has no capability applied and the same
+				// binary runs.
+				//
+				// So the honest message names the shape and not a guess:
+				// the binary is present and the environment refuses to run
+				// it, and the reader can tell the two apart by looking.
+				hint := "the refusal is from the environment: the binary is present " +
+					"and the sandbox will not run it (a Linux file capability the " +
+					"container cannot grant is the usual cause — `setcap -r <path>` " +
+					"removes it; a seccomp profile blocking a syscall it needs is the other)"
 				// A runtime the binary cannot parse is a different refusal
 				// from a runtime that refuses to run it, and the interpreter's
 				// version is the one thing a reader can act on.

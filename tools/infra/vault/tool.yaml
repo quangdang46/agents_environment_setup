@@ -1,5 +1,37 @@
 # AES catalog. package for darwin (hashicorp/homebrew-tap) and linux
 # (HashiCorp's own apt repository). Measured 2026-09-29 on linux/amd64.
+#
+# IN A CONTAINER, THIS BINARY CAN BECOME UNRUNNABLE, AND IT IS NOT THIS
+# MANIFEST'S FAULT. Measured 2026-10-21 on ubuntu:24.04 in Docker: the .deb
+# records a Linux file capability (cap_setgid) on the binary. dpkg's
+# linux-capabilities trigger applies it — but only once `setcap` is on the
+# machine, which it is not in a bare image and IS once something has pulled in
+# libcap2-bin. docker.io does, and the default set installs it. So:
+#
+#   vault installed on its own      -> no capability applied -> the binary runs
+#   vault installed after docker.io -> capability applied -> execve is EPERM
+#                                    ("Operation not permitted", rc 126)
+#
+# The kernel refuses the exec because the container's capability bounding set
+# cannot grant what the file asks for. Nothing is wrong with the package, the
+# version, the version floor, or the install: the binary is present and the
+# environment declines to run it. A real Linux host grants the capability and
+# the same binary runs, which is why this file can still say tested: true for
+# linux/amd64.
+#
+# The trap for the next person: the error looks like a seccomp refusal, and a
+# seccomp profile is the obvious suspect. It is not. Measured, all four:
+#
+#   docker run (default caps)          -> EPERM
+#   docker run --cap-add=SETGID        -> EPERM
+#   docker run --cap-add=SETFCAP       -> EPERM
+#   docker run --cap-add=ALL           -> runs
+#   setcap -r /usr/bin/vault           -> runs
+#
+# So the fix is not a capability flag: it is removing the capability the
+# package asked for, or granting everything. A real Linux host does not need
+# either, because its capability bounding set already covers what the file
+# asks for.
 # Read the darwin and linux sections before changing either: they are not two
 # spellings of one fact, and the github-release explanation below is the reason
 # neither of them is.
