@@ -65,7 +65,7 @@ is the primary strategy: independent of any package manager, explicit checksum, 
               aes setup  /  aes (TUI)
                        │
               ┌────────▼─────────┐
-              │  Config / Profile│
+              │  Catalog + flags │
               └────────┬─────────┘
               ┌────────▼─────────┐
               │  Catalog         │  tool.yaml
@@ -122,7 +122,7 @@ the feature was cut; do not let it regrow under another name.
 | I12 | Unsupported platform → skip | A `darwin`-only tool on Linux is skipped |
 | I13 | TUI ≡ CLI | Same input → same Actions |
 | I14 | `sudo` never runs silently | Only after printing the command and confirming |
-| I15 | Default profile contains **only `tested: true`** | Profile referencing an untested tool fails validation |
+| I15 | The default set contains **only `tested: true`** | A tool marked `default: true` without `tested: true` fails the catalog test |
 
 ---
 
@@ -181,7 +181,6 @@ aes/
 │   ├── state/
 │   ├── envgen/
 │   └── cli/
-├── profiles/         # minimal, developer, ai, full
 ├── tools/
 ├── install.sh        # tier-0 bootstrap
 ├── docs/
@@ -249,7 +248,7 @@ aes/
 - `internal/resolver/dag_test.go`
 
 **Contract:**
-- The resolver always runs: profile → only/exclude → dependency closure → platform filter → actions
+- The resolver always runs: only/exclude → dependency closure → platform filter → actions
 - **Dependencies beat selection**: `--only claude` still pulls its deps. Excluding a required
   dep errors, naming who needs it
 - Actions are **deterministic**: sorted by name; identical input yields byte-identical output
@@ -260,7 +259,7 @@ aes/
 - `--only claude` where claude needs git → actions include git
 - `--exclude node` while claude needs node → error "node required by claude"
 - Same input twice → identical actions (byte compare)
-- Empty profile → every `default: true` tool
+- An empty selection → every `default: true` tool
 
 **Done:** resolver returns correct order, cycles error instead of hanging, output deterministic.
 
@@ -340,7 +339,7 @@ aes/
 - `cmd/aes/main.go`
 
 **Contract:**
-- `setup` runs: detect → load profile → resolve → verify current state → install what is
+- `setup` runs: detect → resolve the selection → verify current state → install what is
   missing → verify again → state → env → summary
 - `--dry-run`: prints actions, **mutates nothing**
 - `--yes` / `--non-interactive`: no prompts, fully deterministic
@@ -367,17 +366,17 @@ aes/
 
 - 10–15 tools **verified**: real install, real verify, version compared → `tested: true`
 - 25–35 tools: valid definitions, `tested: false` — **expansion pool, excluded from the
-  default profile**
+  default set**
 - Every tool carries `tested: true|false`; `doctor` warns about untested ones
 
 **Categories:** shell · search · terminal · git · runtime · ai · agent · infra · utility
 
-**The default profile contains only `tested: true`** (I15). Otherwise the North Star —
+**The default set contains only `tested: true`** (I15). Otherwise the North Star —
 "complete, **verified** environment" — is a lie, and 25 tools that were never actually run are
 exactly where it breaks on a user's first machine.
 
 **Done:** `aes list` shows the catalog correctly; ≥10 tools verified; `aes setup` installs the
-whole default profile on a clean machine without error.
+whole default set on a clean machine without error.
 
 ### Stage 8 — Sandbox testing (later)
 
@@ -387,7 +386,7 @@ whole default profile on a clean machine without error.
 
 ### Stage 9 — TUI (later)
 
-`aes` opens the TUI. Menu: `Setup` · `Tools` · `Profiles` · `Doctor` · `Environment`
+`aes` opens the TUI. Menu: `Setup` · `Tools` · `Doctor` · `Environment`
 
 **Tools:** search and filter, tick to select several, Enter → the same resolver, the same
 installer, the same verify. Selecting `rust` pulls in `cargo` automatically. This is
@@ -420,7 +419,7 @@ Both are *convenience methods*. The canonical path remains `curl … | sh` → `
 
 **Core (2):**
 ```bash
-aes setup      # --yes --non-interactive --dry-run --json --profile --only --exclude --force --verbose
+aes setup      # --yes --non-interactive --dry-run --json --only --exclude --force --verbose
 aes            # TUI
 ```
 
@@ -463,7 +462,7 @@ whose reality conflicts with its state. A tool excluded by `--exclude` stays exc
 ### Tool-level commands
 
 **Maintenance:** `install` · `uninstall` · `update` · `list` · `verify` · `doctor` · `env` ·
-`test` · `search` · `profile`
+`test` · `search`
 
 `uninstall` semantics are split, and the naming is deliberate — a command called `remove` that
 only drops a state entry is a lie about what it did:
@@ -629,7 +628,6 @@ type Action struct {
 }
 
 type Request struct {
-    Profile string
     Only    []string
     Exclude []string
 }
@@ -832,22 +830,23 @@ Three rules:
 3. **A corrupt state file is an error, never an empty state.** Treating corruption as "nothing
    installed" causes a reinstall storm.
 
-## Profile format
+## What is installed by default
 
 ```yaml
-# profiles/default.yaml
-name: default
-description: Verified AI coding environment
-include:
-  - ripgrep      # explicit tools
-tags:            # or whole categories
-  - search
-  - git
-require_tested: true   # I15 — only tested: true tools may appear
+# tools/<category>/<name>/tool.yaml
+name: ripgrep
+description: Fast recursive grep
+category: search
+default: true       # installed when no tool is named
+tested: true        # verified end to end (I15 — a default tool must be tested)
+tested_on:
+  - linux/arm64
+  - linux/amd64
 ```
 
-`require_tested: true` is enforced by the profile loader: any resolved tool with
-`tested: false` fails validation with an error naming that tool.
+A run with no `--only` resolves to every tool marked `default: true`. The
+catalog test asserts that every one of them is also `tested: true`, so the
+default set can never contain a tool nobody has proven (I15).
 
 ## `env.sh` contract
 

@@ -98,7 +98,7 @@ func apply(m *Model, key Key, r rune) {
 
 	case KeyEnter:
 		switch m.Screen {
-		case ScreenMenu, ScreenProfiles:
+		case ScreenMenu:
 			if m.Cursor < len(Menu) {
 				m.Screen = Menu[m.Cursor].Screen
 				m.Cursor = 0

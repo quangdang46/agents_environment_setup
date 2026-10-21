@@ -60,7 +60,7 @@ func TestNoSourceReferencesTheForbiddenDir(t *testing.T) {
 		if info.IsDir() {
 			// .beads is task data, not source. .git and dist are not ours.
 			switch info.Name() {
-			case ".git", ".beads", "dist", "tools", "profiles", "docs":
+			case ".git", ".beads", "dist", "tools", "docs":
 				return filepath.SkipDir
 			}
 			return nil

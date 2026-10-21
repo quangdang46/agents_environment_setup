@@ -1,6 +1,7 @@
 name: tree
 description: print directory structure
 category: utility
+default: true
 tested: true
 tested_on:
 - linux/arm64

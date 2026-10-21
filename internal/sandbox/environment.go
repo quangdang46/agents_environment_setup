@@ -52,6 +52,15 @@ type Environment interface {
 	// about.
 	TreeDigest(ctx context.Context, root string) (string, error)
 
+	// TreeDigestExcluding is TreeDigest with some subtrees left out.
+	//
+	// The exclusions are relative paths under root, and a directory named in
+	// one is pruned whole. It exists for the run log: `aes setup` writes a
+	// timestamped log per run, so the log directory is expected to grow
+	// between two runs, and counting it would report drift for a thing that
+	// is observability rather than state.
+	TreeDigestExcluding(ctx context.Context, root string, exclude ...string) (string, error)
+
 	// FileDigest identifies one file for a before/after comparison, by size
 	// and mtime rather than content: an idempotent re-run may legitimately
 	// rewrite a file byte for byte, and that is not drift.
@@ -159,8 +168,13 @@ func (Host) ReadFile(_ context.Context, path string) ([]byte, error) {
 // It reuses the same digest the host-isolation assertion has always used, so a
 // value written before this abstraction existed still compares equal to one
 // written after it.
-func (Host) TreeDigest(_ context.Context, root string) (string, error) {
-	return treeFingerprint(root)
+func (Host) TreeDigest(ctx context.Context, root string) (string, error) {
+	return Host{}.TreeDigestExcluding(ctx, root)
+}
+
+// TreeDigestExcluding digests a local tree with some subtrees pruned.
+func (Host) TreeDigestExcluding(_ context.Context, root string, exclude ...string) (string, error) {
+	return treeFingerprintExcluding(root, exclude...)
 }
 
 // FileDigest describes one local file, and reuses the existing helper so the

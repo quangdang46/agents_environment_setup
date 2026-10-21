@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/manifest"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
@@ -35,8 +33,8 @@ import (
 // assertion below calls it directly rather than trusting the precondition
 // check inside the sequence to have done it.
 
-// containerToolsFor is every tool the DEFAULT profile selects, read from the
-// profile and the catalog rather than from a list maintained here.
+// containerToolsFor is every tool the DEFAULT selection resolves to, read from
+// the catalog rather than from a list maintained here.
 //
 // The list used to be written out by hand, and it went stale the moment a tool
 // was removed from the catalog: the test still asked for `aadc`, failed with
@@ -51,48 +49,16 @@ import (
 func containerToolsFor(t *testing.T, cat *catalog.Catalog) []namedTool {
 	t.Helper()
 
-	data, err := os.ReadFile(defaultProfilePath)
-	if err != nil {
-		t.Fatalf("read %s: %v", defaultProfilePath, err)
-	}
-	var prof struct {
-		Include []string `yaml:"include"`
-		Tags    []string `yaml:"tags"`
-	}
-	if err := yaml.Unmarshal(data, &prof); err != nil {
-		t.Fatalf("parse %s: %v", defaultProfilePath, err)
-	}
-	if len(prof.Include) == 0 && len(prof.Tags) == 0 {
-		t.Fatalf("%s selects nothing; this test would be vacuous", defaultProfilePath)
+	defaults := cat.Default()
+	if len(defaults) == 0 {
+		t.Fatal("no tool is marked default:true; this test would be vacuous")
 	}
 
-	// The same union Resolve performs: names plus category plus tag.
-	seen := map[string]bool{}
-	for _, name := range prof.Include {
-		seen[name] = true
-	}
-	for _, selector := range prof.Tags {
-		for _, tool := range cat.ByCategory(selector) {
-			seen[tool.Name] = true
-		}
-		for _, tool := range cat.ByTag(selector) {
-			seen[tool.Name] = true
-		}
-	}
-
-	out := make([]namedTool, 0, len(seen))
-	for name := range seen {
-		tool, ok := cat.ByName(name)
-		if !ok {
-			t.Errorf("the default profile selects %q, which is not in the catalog", name)
-			continue
-		}
-		out = append(out, namedTool{name: name, strategy: strategyOf(tool)})
+	out := make([]namedTool, 0, len(defaults))
+	for _, tool := range defaults {
+		out = append(out, namedTool{name: tool.Name, strategy: strategyOf(tool)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
-	if len(out) == 0 {
-		t.Fatal("the profile selected no installable tool; nothing would be proven")
-	}
 	return out
 }
 
@@ -112,8 +78,6 @@ func strategyOf(tool *manifest.Tool) string {
 	}
 	return target.Strategy
 }
-
-const defaultProfilePath = "../../profiles/default.yaml"
 
 // containerPrep are the packages the fixture needs before any strategy can run.
 //
@@ -189,10 +153,10 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	// target lookup would silently miss.
 	linux := &platform.Host{OS: platform.OSLinux, Arch: c.GoArch, Manager: platform.ManagerApt}
 
-	// Read from the profile, so a tool added to or removed from the catalog
+	// Read from the catalog, so a tool added to or removed from the catalog
 	// changes what this proves without anyone editing the test.
 	tools := containerToolsFor(t, cat)
-	t.Logf("the default profile selects %d tools; proving each on a fresh machine", len(tools))
+	t.Logf("the default selection resolves to %d tools; proving each on a fresh machine", len(tools))
 
 	strategiesProven := map[string]bool{}
 	for _, tc := range tools {
@@ -301,13 +265,13 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 
 }
 
-// checkDefaultProfileIsCovered fails when the default profile names a tool this
-// test no longer proves.
+// checkDefaultSelectionIsCovered fails when the default selection names a tool
+// this test no longer proves.
 //
 // The two lists are written out separately on purpose — a test that read the
-// profile would silently shrink to whatever the profile happens to contain and
+// catalog would silently shrink to whatever the catalog happens to contain and
 // keep passing. This is the assertion that stops that: it compares the list
-// that was actually exercised against the profile that has to resolve, and
+// that was actually exercised against the selection that has to resolve, and
 // names anything added to one and not the other.
 
 // buildAesFor compiles the binary under test for a specific platform, so the

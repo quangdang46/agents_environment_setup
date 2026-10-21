@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -60,6 +61,9 @@ type toolSpec struct {
 	provides string
 	// minVersion, when set, makes the tool stale if its version is lower.
 	minVersion string
+	// isDefault marks the tool `default: true`, which is the catalog's way of
+	// saying "installed when no tool is named".
+	isDefault bool
 	// strategyName overrides the install strategy, defaulting to go.
 	strategyName string
 }
@@ -69,9 +73,8 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 
 	tmp := t.TempDir()
 	catRoot := filepath.Join(tmp, "catalog")
-	profileDir := filepath.Join(tmp, "profiles")
 	binDir := filepath.Join(tmp, "bin")
-	for _, d := range []string{catRoot, profileDir, binDir} {
+	for _, d := range []string{catRoot, binDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", d, err)
 		}
@@ -100,8 +103,11 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 				" --version\n    min: \"" + s.minVersion + "\"\n"
 		}
 		content := "name: " + s.name + "\ndescription: fixture " + s.name + "\ncategory: " + s.category +
-			"\nprovides: [" + s.provides + "]\n" + verify +
-			"install:\n  darwin:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n" +
+			"\nprovides: [" + s.provides + "]\n" + verify
+		if s.isDefault {
+			content += "default: true\n"
+		}
+		content += "install:\n  darwin:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n" +
 			"  linux:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n"
 		if err := os.WriteFile(filepath.Join(dir, "tool.yaml"), []byte(content), 0o644); err != nil {
 			t.Fatalf("write tool.yaml: %v", err)
@@ -120,7 +126,6 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 		Err:         h.stderr,
 		Home:        h.home,
 		CatalogRoot: catRoot,
-		ProfileDir:  profileDir,
 		IsTTY:       func() bool { return false },
 	}
 	h.app.Registry = installer.NewRegistry(filepath.Join(h.app.Home, "bin"))
@@ -264,6 +269,33 @@ func itoa(n int64) string {
 }
 
 // ---------------------------------------------------------------- assertions
+
+// Naming no tool means "the defaults": `aes setup` with no flags resolves the
+// catalog's `default: true` tools, which is the North Star. The catalog
+// decides this, and a tool the manifest marks default must be installed
+// without being asked for by name.
+func TestSetupWithNoFlagsInstallsTheCatalogDefaults(t *testing.T) {
+	h := newSetupHarness(t,
+		toolSpec{name: "wanted", category: "utility", provides: "wanted", isDefault: true},
+		toolSpec{name: "optin", category: "utility", provides: "optin"},
+	)
+
+	code, sum := h.run(t, "--dry-run")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0\n%s", code, h.stderr.String())
+	}
+	if sum == nil {
+		t.Fatalf("no summary emitted:\n%s", h.stdout.String())
+	}
+	var names []string
+	for _, r := range sum.Results {
+		names = append(names, r.Name)
+	}
+	sort.Strings(names)
+	if len(names) != 1 || names[0] != "wanted" {
+		t.Errorf("resolved %v, want [wanted]", names)
+	}
+}
 
 // Assertion 2: `setup --dry-run` prints actions and changes NO file. The
 // snapshot covers the whole ~/.aes tree, not just state.json — an earlier

@@ -169,7 +169,7 @@ func (c *Catalog) Tags() []string {
 }
 
 // Default returns every tool marked default: true, sorted by name. This is
-// what an empty profile resolves to.
+// what a run with no explicit selection resolves to.
 func (c *Catalog) Default() []*manifest.Tool {
 	out := make([]*manifest.Tool, 0, len(c.names))
 	for _, name := range c.names {
@@ -180,9 +180,9 @@ func (c *Catalog) Default() []*manifest.Tool {
 	return out
 }
 
-// Tested returns every tool marked tested: true, sorted by name. The default
-// profile draws from here, so an untested tool cannot reach a user by accident
-// (I15).
+// Tested returns every tool marked tested: true, sorted by name. Every
+// default tool must also be tested, so an untested tool cannot reach a user
+// by accident (I15).
 func (c *Catalog) Tested() []*manifest.Tool {
 	out := make([]*manifest.Tool, 0, len(c.names))
 	for _, name := range c.names {

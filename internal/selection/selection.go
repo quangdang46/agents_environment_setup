@@ -29,11 +29,19 @@ type Selection struct {
 	// Exclude names tools to leave out. Excluding something a selected tool
 	// depends on is an error, not a silent omission.
 	Exclude []string
-	// Profile is the name a profile was expanded from, if any. It is carried
-	// for diagnostics only and never affects resolution: the CLI expands a
-	// profile into Only before calling here, so the resolver has no knowledge
-	// of profile files.
-	Profile string
+	// Defaults says what an empty Only means.
+	//
+	// True: the user named no tool, so the catalog's default set is the
+	// selection — this is `aes setup` with no flags, and the North Star
+	// depends on it resolving to something.
+	//
+	// False: the user selected nothing, which is nothing. This is the TUI
+	// with no tool ticked.
+	//
+	// The two are different intents, so the difference is carried in the type
+	// rather than recomputed by each caller: a second computation is a second
+	// thing to disagree with the first, and the disagreement is silent.
+	Defaults bool
 
 	// AllowUnproven waives the platform half of the tested gate: a tool proven
 	// on some platform but not this one is selected anyway.
@@ -77,10 +85,13 @@ func (s Selection) String() string {
 
 // Resolve turns a selection into ordered, deduplicated Actions.
 //
-// An empty selection is a no-op rather than an error: pressing Enter in the
-// TUI with nothing ticked should do nothing, not fail. An explicitly named
-// tool that is not in the catalog IS an error, because that is a typo the
-// user needs to know about.
+// A selection that names nothing and is not Defaults is a no-op rather than an
+// error: pressing Enter in the TUI with nothing ticked should do nothing, not
+// fail. A selection that names nothing and IS Defaults resolves to the
+// catalog's default set — that is what `aes setup` with no flags means.
+//
+// An explicitly named tool that is not in the catalog IS an error, because
+// that is a typo the user needs to know about.
 func Resolve(c *catalog.Catalog, h *platform.Host, sel Selection) ([]resolver.Action, error) {
 	if c == nil {
 		return nil, fmt.Errorf("selection: no catalog")
@@ -88,7 +99,7 @@ func Resolve(c *catalog.Catalog, h *platform.Host, sel Selection) ([]resolver.Ac
 	if h == nil {
 		return nil, fmt.Errorf("selection: no host")
 	}
-	if sel.Empty() {
+	if sel.Empty() && !sel.Defaults {
 		return nil, nil
 	}
 	for _, name := range sel.Names() {

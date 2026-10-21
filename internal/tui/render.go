@@ -17,8 +17,6 @@ func (m *Model) Render(w io.Writer) {
 		m.renderTools(w)
 	case ScreenMenu:
 		m.renderMenu(w)
-	case ScreenProfiles:
-		m.renderMenu(w)
 	case ScreenDoctor:
 		m.renderMessage(w, "Doctor reports on the environment. Run `aes doctor` for the full report.")
 	case ScreenEnvironment:
@@ -44,8 +42,6 @@ func screenHint(s Screen) string {
 		return "the North Star: install and verify a complete environment"
 	case ScreenTools:
 		return "search and tick tools, then install the selection"
-	case ScreenProfiles:
-		return "browse the shipped profiles"
 	case ScreenDoctor:
 		return "environment health and drift"
 	case ScreenEnvironment:

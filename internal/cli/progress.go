@@ -139,9 +139,6 @@ func printDryRunPlan(app *App, actions []resolver.Action, rc *runContext, toJSON
 	}
 	fmt.Fprintln(out, "dry run — nothing will be installed")
 	fmt.Fprintf(out, "\n%d tools selected", len(actions))
-	if name := rc.Flags.Profile; name != "" {
-		fmt.Fprintf(out, " (profile: %s)", name)
-	}
 	fmt.Fprintln(out)
 
 	cells := make([][]string, 0, len(actions))
@@ -212,9 +209,6 @@ func buildResumeCmd(f *Flags, failed []string, needsPriv bool) string {
 	b.WriteString("aes setup")
 	if f.NonInteractive {
 		b.WriteString(" --non-interactive")
-	}
-	if f.Profile != "" {
-		b.WriteString(" --profile " + f.Profile)
 	}
 	for _, name := range failed {
 		b.WriteString(" --only " + name)

@@ -272,11 +272,13 @@ func (a *App) SetupSelection(ctx context.Context, sel selection.Selection, f *Fl
 	}
 	flags.Only = sel.Names()
 	flags.Exclude = sel.Exclude
-	// An explicit selection is the selection: no profile is layered on top.
-	// Otherwise picking one tool in the TUI would install the whole default
-	// profile, which is the same surprise `aes setup --only` was fixed to
-	// avoid.
-	flags.Profile = ""
 	flags.JSON = false // the TUI renders results itself
+	// An explicit selection is the selection. The CLI reads "no tool named" as
+	// "install the defaults", and a TUI selection that names nothing is not
+	// that: it is the user ticking nothing, and installing the whole default
+	// set on their behalf is a surprise nobody asked for.
+	if len(flags.Only) == 0 {
+		return fmt.Errorf("setup: nothing selected")
+	}
 	return runSetup(ctx, a, flags, nil, nil)
 }

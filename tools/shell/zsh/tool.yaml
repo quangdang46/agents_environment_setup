@@ -1,6 +1,7 @@
 name: zsh
 description: Z shell
 category: shell
+default: true
 tested: true
 tested_on:
 - linux/arm64

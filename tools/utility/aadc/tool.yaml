@@ -10,6 +10,7 @@
 name: aadc
 description: ASCII diagram corrector for malformed ASCII art
 category: utility
+default: true
 tested: true
 # Layer 1 and Layer 2 both passed on linux/amd64, 2026-09-30. What the
 # flag means, and why there is no darwin/* entry, is in AGENTS.md under

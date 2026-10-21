@@ -295,6 +295,63 @@ func TestTreeFingerprintDetectsAChange(t *testing.T) {
 	}
 }
 
+// The idempotence check digests AES_HOME twice, and a second `aes setup` is
+// supposed to write a second run log. Counting that log would report drift
+// for a file that is observability rather than state, so the log directory is
+// excluded — and nothing else is.
+func TestTreeDigestExcludingIgnoresOnlyTheExcludedSubtree(t *testing.T) {
+	dir := t.TempDir()
+	logs := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logs, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"version":1}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	before, err := treeFingerprintExcluding(dir, "logs")
+	if err != nil {
+		t.Fatalf("fingerprint: %v", err)
+	}
+
+	// A new run log must not move the digest.
+	plainBefore, err := treeFingerprintExcluding(dir)
+	if err != nil {
+		t.Fatalf("fingerprint: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(logs, "setup-20260101T000000Z.log"), []byte("noise\n"), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	after, err := treeFingerprintExcluding(dir, "logs")
+	if err != nil {
+		t.Fatalf("fingerprint: %v", err)
+	}
+	if after != before {
+		t.Error("a new run log changed the digest")
+	}
+
+	// Without the exclusion the same log DOES move the digest, which is what
+	// makes this an exclusion rather than a digest that stopped noticing.
+	plainAfter, err := treeFingerprintExcluding(dir)
+	if err != nil {
+		t.Fatalf("fingerprint: %v", err)
+	}
+	if plainAfter == plainBefore {
+		t.Error("an unexcluded run log did not change the digest")
+	}
+
+	// Anything else must still move it.
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(`{"version":2}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	changed, err := treeFingerprintExcluding(dir, "logs")
+	if err != nil {
+		t.Fatalf("fingerprint: %v", err)
+	}
+	if changed == before {
+		t.Error("a changed state file did not change the digest")
+	}
+}
+
 func TestTreeFingerprintOfAMissingDirIsAbsent(t *testing.T) {
 	got, err := TreeFingerprint(filepath.Join(t.TempDir(), "nope"))
 	if err != nil {
@@ -303,6 +360,7 @@ func TestTreeFingerprintOfAMissingDirIsAbsent(t *testing.T) {
 	if got != "absent" {
 		t.Errorf("digest = %q, want %q", got, "absent")
 	}
+
 }
 
 // The sandbox bin must lead PATH, and the host PATH must survive behind it.

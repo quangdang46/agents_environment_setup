@@ -200,7 +200,6 @@ func TestDoctorReportsAnAliasShadowingAVerifiedTool(t *testing.T) {
 	}
 
 	h.app.CatalogRoot = writeAliasCatalog(t, home, "shadowy", binDir)
-	h.app.ProfileDir = filepath.Join(home, "profiles")
 
 	// A shadow is a WARNING, and doctor still exits 0. Nothing about the
 	// machine is broken: the binary is installed, it verifies, and the alias
@@ -250,7 +249,6 @@ func TestDoctorIsQuietWithoutAnAlias(t *testing.T) {
 		t.Fatalf("write rc: %v", err)
 	}
 	h.app.CatalogRoot = writeAliasCatalog(t, home, "quiet", binDir)
-	h.app.ProfileDir = filepath.Join(home, "profiles")
 
 	h.app.Run([]string{"doctor", "--json"})
 	if strings.Contains(h.stdout.String(), "shadowed") {
@@ -314,7 +312,6 @@ func TestDoctorDoesNotReportAShadowForAToolThatIsMissing(t *testing.T) {
 		t.Fatalf("write rc: %v", err)
 	}
 	h.app.CatalogRoot = writeAliasCatalog(t, home, "absent", "")
-	h.app.ProfileDir = filepath.Join(home, "profiles")
 
 	h.app.Run([]string{"doctor", "--json"})
 	if strings.Contains(h.stdout.String(), `"kind": "shadowed"`) {

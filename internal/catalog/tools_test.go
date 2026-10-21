@@ -146,7 +146,7 @@ func TestCatalogIntegrity(t *testing.T) {
 }
 
 // The catalog's `tested` flag is the North Star's claim that the default
-// profile is *verified*. A tool claiming tested:true must at minimum be one
+// selection is *verified*. A tool claiming tested:true must at minimum be one
 // the Layer 1 fixtures actually exercise, or the flag is a promise about
 // nothing.
 func TestTestedToolsAreOnTheLayer1List(t *testing.T) {
@@ -161,6 +161,28 @@ func TestTestedToolsAreOnTheLayer1List(t *testing.T) {
 	if len(names) > 0 {
 		t.Errorf("tools marked tested:true but not covered by the Layer 1 fixtures: %s",
 			strings.Join(names, ", "))
+	}
+}
+
+// Invariant I15: every tool the default selection resolves to must be
+// verified. `aes setup` with no flags installs exactly the `default: true`
+// tools, so an unverified one among them is a tool the North Star installs
+// having never been proven.
+func TestDefaultToolsAreTested(t *testing.T) {
+	c := loadTools(t)
+	defaults := c.Default()
+	if len(defaults) == 0 {
+		t.Fatal("no tool is marked default:true; `aes setup` with no flags would install nothing")
+	}
+	var names []string
+	for _, tool := range defaults {
+		if !tool.Tested {
+			names = append(names, tool.Name)
+		}
+	}
+	sort.Strings(names)
+	if len(names) > 0 {
+		t.Errorf("tools marked default:true but not tested:true: %s", strings.Join(names, ", "))
 	}
 }
 
@@ -295,8 +317,9 @@ func TestVerifyCommandMustNotNameAWorldWritableDir(t *testing.T) {
 // The verifier builds its fixtures from the spec's table, and it passed
 // happily while zoxide had no manifest at all. A fixture suite and the thing
 // it fixtures are separate artifacts; only a comparison between them catches
-// the drift, and the gap surfaced in production when a shipped profile
-// referenced zoxide and `aes setup` refused to load.
+// the drift, and the gap surfaced in production when a shipped manifest
+// existed for one tool and not another, and `aes setup` installed a set that
+// did not match the fixture table.
 //
 // Any list a test enumerates needs a second test asserting the system under
 // test still contains it.

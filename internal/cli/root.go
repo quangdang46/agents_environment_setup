@@ -115,6 +115,12 @@ func ExitCode(err error) int {
 		errors.Is(err, resolver.ErrExcludedDependency):
 		return ExitInvalidCatalog
 
+	case errors.Is(err, resolver.ErrExcludedSelection):
+		// Two flags that contradict each other. Exit 2 is "invalid usage or
+		// a bad flag", and a flag combination that cannot work is exactly
+		// that — unlike an excluded dependency, which is a catalog defect.
+		return ExitUsage
+
 	case errors.Is(err, platform.ErrUnsupportedOS):
 		return ExitUnsupportedPlatform
 
@@ -230,8 +236,6 @@ type Flags struct {
 	// time-sensitive runs.
 	NoSmokeTest bool
 
-	// Profile names the profile to resolve.
-	Profile string
 	// Only and Exclude narrow the resolved set.
 	Only    stringList
 	Exclude stringList
@@ -272,8 +276,6 @@ type App struct {
 	Home string
 	// CatalogRoot is where tool.yaml files live.
 	CatalogRoot string
-	// ProfileDir is where profile files live.
-	ProfileDir string
 
 	// Registry resolves a strategy to an installer.
 	Registry *installer.Registry
@@ -417,7 +419,6 @@ func parseFlags(cmd *Command, args []string, errOut io.Writer) (*Flags, any, []s
 	fs.BoolVar(&f.Verbose, "verbose", false, "more detail")
 	fs.BoolVar(&f.Quiet, "quiet", false, "suppress progress output on stderr")
 	fs.BoolVar(&f.NoSmokeTest, "no-smoke-test", false, "skip the post-install smoke pass")
-	fs.StringVar(&f.Profile, "profile", "", "profile to resolve")
 	fs.Var(&f.Only, "only", "install only this tool (repeatable)")
 	fs.Var(&f.Exclude, "exclude", "skip this tool (repeatable)")
 
@@ -485,7 +486,6 @@ func (a *App) writeHelp(w io.Writer) {
 	fmt.Fprintf(w, "  --dry-run          resolve and print, change nothing\n")
 	fmt.Fprintf(w, "  --json             machine-parseable output on stdout\n")
 	fmt.Fprintf(w, "  --force            repair state that disagrees with reality\n")
-	fmt.Fprintf(w, "  --profile <name>   profile to resolve\n")
 	fmt.Fprintf(w, "  --only <tool>      resolve only this tool (repeatable)\n")
 	fmt.Fprintf(w, "  --exclude <tool>   skip this tool (repeatable)\n")
 	fmt.Fprintf(w, "  --allow-unproven  proceed with tools proven only on another platform\n")

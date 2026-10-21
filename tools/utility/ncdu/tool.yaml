@@ -1,6 +1,7 @@
 name: ncdu
 description: NCurses disk usage analyser
 category: utility
+default: true
 tested: true
 tested_on:
 - linux/arm64

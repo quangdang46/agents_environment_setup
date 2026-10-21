@@ -53,6 +53,12 @@ import (
 // harness instead of hanging it.
 const StepTimeout = 5 * time.Minute
 
+// runLogDir is the directory under AES_HOME that holds the per-run log.
+//
+// It is excluded from the idempotence digests: a second run is supposed to
+// produce a second log, and a log is observability, not state.
+const runLogDir = "logs"
+
 // Config controls a run.
 type Config struct {
 	// Binary is the aes executable under test. Required.
@@ -225,7 +231,13 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 	// means shipping the whole tree out over docker exec to explain a
 	// failure. The digests are the assertion; the diff is only a courtesy to
 	// whoever reads the failure.
-	beforeHome, err := environment.TreeDigest(ctx, aesHome)
+	//
+	// The run log is excluded from both digests. `aes setup` writes a
+	// timestamped log per run, so the log directory is EXPECTED to grow
+	// between two runs, and counting it reports drift for a thing that is
+	// observability rather than state — the same reasoning that keeps a
+	// tool's own cache out of the tree this digests.
+	beforeHome, err := environment.TreeDigestExcluding(ctx, aesHome, runLogDir)
 	if err != nil {
 		return res, fmt.Errorf("sandbox: fingerprint before re-run: %w", err)
 	}
@@ -233,7 +245,7 @@ func runIn(ctx context.Context, environment Environment, tool *manifest.Tool, cf
 
 	out, code, err = run(ctx, environment, cfg, env, home, setupArgs(cfg, tool.Name)...)
 
-	afterHome, err := environment.TreeDigest(ctx, aesHome)
+	afterHome, err := environment.TreeDigestExcluding(ctx, aesHome, runLogDir)
 	if err != nil {
 		return res, fmt.Errorf("sandbox: fingerprint after re-run: %w", err)
 	}
@@ -512,15 +524,29 @@ func fingerprint(path string) string {
 // directories can be compared byte for byte. This is what makes the "host
 // ~/.aes is untouched" claim an assertion rather than an intention.
 func treeFingerprint(root string) (string, error) {
+	return treeFingerprintExcluding(root)
+}
+
+// treeFingerprintExcluding is treeFingerprint with some subtrees pruned.
+//
+// The exclusions are relative paths under root. A file under an excluded
+// directory is not digested at all, and the directory itself contributes
+// nothing, so the digest describes what the tree holds rather than how many
+// times it has been written to.
+func treeFingerprintExcluding(root string, exclude ...string) (string, error) {
 	h := sha256.New()
 	var files []string
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() {
-			files = append(files, p)
+		if d.IsDir() {
+			if p != root && isExcluded(root, p, exclude) {
+				return filepath.SkipDir
+			}
+			return nil
 		}
+		files = append(files, p)
 		return nil
 	})
 	if err != nil {
@@ -539,6 +565,29 @@ func treeFingerprint(root string) (string, error) {
 		fmt.Fprintf(h, "%s %x\n", rel, sha256.Sum256(data))
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// isExcluded reports whether dir is one of the excluded subtrees.
+//
+// The comparison is on the relative path with separators normalised, so
+// "logs" and "./logs" name the same directory and a path that merely starts
+// with the same characters ("logs-old") does not.
+func isExcluded(root, dir string, exclude []string) bool {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	for _, e := range exclude {
+		e = filepath.ToSlash(strings.TrimPrefix(e, "./"))
+		if e == "" {
+			continue
+		}
+		if rel == e || strings.HasPrefix(rel, e+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // TreeFingerprint exposes the digest used for the host-isolation assertion.

@@ -67,27 +67,24 @@ whether the product works.
 
 ## 3. The one thing that will surprise you
 
-**`aes setup` with no flags exits 1 on a machine that is not linux/arm64.**
+**`aes setup` with no flags exits 1 on a machine that is not linux.**
 
-Not a bug. Every proven tool carries `tested_on: [linux/arm64]`, and the
-resolver *skips* a tool it cannot vouch for on the host asking. On macOS the
-default profile therefore selects nothing.
+Not a bug. Every proven tool carries a `tested_on` list naming the platforms
+it was proven on, and the resolver *skips* a tool it cannot vouch for on the
+host asking. On macOS the default set therefore selects nothing.
 
 ```
 $ aes setup --dry-run
-aes: profile "default" requires tested tools — no install has been proven anywhere
-for: bat, bottom, btop, codex, dust, eza, gemini, ntm, opencode, zellij; proven
-only on linux/arm64, not on this host (darwin/arm64): claude, tmux
+aes: nothing to install: the default selection resolved to no tools on this
+platform (darwin/arm64). `aes list` shows which tools this host can install;
+pass --only to choose explicitly.
 exit status 1
 ```
 
-Note the two halves of that sentence: ten tools have **no proof anywhere**, and
-two have proof that is simply not about this machine. They are different
-problems and `--allow-unproven` only waives the second.
-
-`--allow-unproven` waives the **platform** half only. Tools with no proven
-install anywhere still block, because there is nothing to accept on their
-behalf.
+The tools are still in the catalog and still install on request — `--only
+<tool>` names one directly, and `--allow-unproven` waives the **platform** half
+of the gate. What it does not waive is the **evidence-free** half: a tool with
+no proven install anywhere still has nothing to accept on its behalf.
 
 **This is the open product question** (§5.1). It is not a thing to fix quietly.
 
@@ -99,7 +96,7 @@ A fresh `ubuntu:24.04`, the real binary, absence measured *inside* — not
 inferred from the host, because on a macOS laptop `git` and `jq` are already
 installed and a host-side check would call them present.
 
-**11 of the 12 tools the default profile selects pass** the full seven-step
+**11 of the 12 tools the default set selected then pass** the full seven-step
 sequence. All three strategies. ~185s.
 
 ```
@@ -112,10 +109,11 @@ FAIL  gemini
 with `SyntaxError: Invalid regular expression flags`. `codex`, `claude` and
 `opencode` all run fine on Node 18 — it is gemini alone.
 
-The list is **derived from `profiles/default.yaml`**, not hand-maintained. It
-was, and it went stale the moment a tool left the catalog: the test still asked
-for `aadc`, failed with "not in the catalog", and reported a catalog change as
-a Layer 2 product failure. Do not reintroduce a hand-kept list.
+The list is **derived from the catalog's default set** (`catalog.Default()`),
+not hand-maintained. It was, and it went stale the moment a tool left the
+catalog: the test still asked for `aadc`, failed with "not in the catalog", and
+reported a catalog change as a Layer 2 product failure. Do not reintroduce a
+hand-kept list.
 
 ---
 

@@ -394,12 +394,6 @@ func addEnvFindings(app *App, rc *runContext, add func(string, driftKind, string
 		}
 	}
 
-	// An untested tool in the default profile is the failure invariant I15
-	// exists to prevent. The profile loader refuses to resolve one, so
-	// reaching here means the profile directory does not exist yet.
-	if _, err := os.Stat(app.ProfileDir); err != nil {
-		add("info", driftNone, "", fmt.Sprintf("no profiles directory at %s; the default profile is unavailable", app.ProfileDir))
-	}
 }
 
 // pathContains reports whether dir is an element of the PATH value.

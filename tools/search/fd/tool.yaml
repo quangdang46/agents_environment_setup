@@ -1,6 +1,7 @@
 name: fd
 description: fast and user-friendly alternative to find
 category: search
+default: true
 tested: true
 tested_on:
 - linux/arm64

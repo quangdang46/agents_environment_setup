@@ -1,6 +1,7 @@
 name: docker
 description: container runtime and CLI
 category: infra
+default: true
 tested: true
 tested_on:
 - linux/arm64

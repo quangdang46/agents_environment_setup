@@ -11,6 +11,7 @@
 name: wrangler
 description: Cloudflare Workers CLI
 category: infra
+default: true
 # Both layers passed on the platform named below: the tool installed from
 # nothing in a fresh ubuntu:24.04 container with nodejs and npm present, and
 # `aes verify` reported StatusOK with a parsed version on that machine

@@ -1,6 +1,7 @@
 name: lazygit
 description: terminal UI for git
 category: git
+default: true
 tested: true
 tested_on:
 - linux/arm64

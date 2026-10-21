@@ -477,11 +477,36 @@ func (c *Container) ReadFile(ctx context.Context, path string) ([]byte, error) {
 // without it two identical trees could hash differently because the container
 // returned directory entries in a different order.
 func (c *Container) TreeDigest(ctx context.Context, root string) (string, error) {
+	return c.TreeDigestExcluding(ctx, root)
+}
+
+// TreeDigestExcluding is TreeDigest with some subtrees pruned.
+//
+// The pruning is done by find, so the excluded directory is never descended
+// into and never appears in the listing — the digest describes what the tree
+// holds rather than how many times it has been written to.
+func (c *Container) TreeDigestExcluding(ctx context.Context, root string, exclude ...string) (string, error) {
+	// find takes one -path/-prune pair per excluded directory, and the pairs
+	// are joined with -o, so each one has to be a complete term of its own.
+	var prunes []string
+	for _, e := range exclude {
+		e = strings.TrimPrefix(filepath.ToSlash(e), "./")
+		if e == "" {
+			continue
+		}
+		prunes = append(prunes, fmt.Sprintf("-path %s -prune -o", shellQuote("./"+e)))
+	}
+	find := "find ."
+	if len(prunes) > 0 {
+		find += " " + strings.Join(prunes, " ") + " "
+	} else {
+		find += " "
+	}
 	script := fmt.Sprintf(`if [ ! -d %s ]; then echo absent; exit 0; fi
 cd %s || exit 1
-find . -type f | LC_ALL=C sort | while IFS= read -r f; do
+%stype f | LC_ALL=C sort | while IFS= read -r f; do
   printf '%%s %%s\n' "$f" "$(sha256sum "$f" | cut -d" " -f1)"
-done | sha256sum | cut -d" " -f1`, shellQuote(root), shellQuote(root))
+done | sha256sum | cut -d" " -f1`, shellQuote(root), shellQuote(root), find)
 	out, _, err := c.Sh(ctx, script, nil)
 	if err != nil {
 		return "", err

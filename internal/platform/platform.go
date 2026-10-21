@@ -101,7 +101,7 @@ func (h *Host) Key() string { return h.OS }
 
 // Supports reports whether the tool declares an install recipe for this
 // host. A darwin-only tool is skipped on Linux rather than being an error
-// (invariant I12) — the default profile is shared across platforms, so
+// (invariant I12) — the default set is shared across platforms, so
 // "not here" is the normal case, not a failure.
 func (h *Host) Supports(t *manifest.Tool) bool {
 	_, ok := h.Target(t)

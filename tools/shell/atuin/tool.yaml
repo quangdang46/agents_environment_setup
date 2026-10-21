@@ -1,6 +1,7 @@
 name: atuin
 description: shell history with sync and search
 category: shell
+default: true
 tested: true
 tested_on:
 - linux/arm64

@@ -1,6 +1,7 @@
 name: hyperfine
 description: command-line benchmarking tool
 category: utility
+default: true
 tested: true
 tested_on:
 - linux/arm64

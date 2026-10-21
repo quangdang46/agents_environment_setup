@@ -74,7 +74,6 @@ func newHarness(t *testing.T, tools ...[3]string) *harness {
 		Err:         h.stderr,
 		Home:        h.home,
 		CatalogRoot: catRoot,
-		ProfileDir:  filepath.Join(home, "profiles"),
 		Registry:    installer.NewRegistry(filepath.Join(home, "bin")),
 		IsTTY:       func() bool { return false },
 	}
@@ -181,6 +180,7 @@ func TestExitCodeMapping(t *testing.T) {
 		{"dependency cycle", resolver.ErrCycle, ExitInvalidCatalog},
 		{"unknown tool", resolver.ErrUnknownTool, ExitInvalidCatalog},
 		{"excluded dependency", resolver.ErrExcludedDependency, ExitInvalidCatalog},
+		{"selected and excluded", resolver.ErrExcludedSelection, ExitUsage},
 		{"unimplemented strategy", installer.ErrUnknownStrategy, ExitInvalidCatalog},
 		{"unsupported platform", platform.ErrUnsupportedOS, ExitUnsupportedPlatform},
 		{"usage", &UsageError{msg: "bad flag"}, ExitUsage},
@@ -479,14 +479,14 @@ func snapshot(t *testing.T, root string) string {
 	return b.String()
 }
 
-func TestDoctorReportsUntestedToolsInProfile(t *testing.T) {
+func TestDoctorRunsWithOnlyTheCatalog(t *testing.T) {
 
 	h := newHarness(t, [3]string{"demo", "utility", "go"})
 
-	// A directory with no profiles means the default profile is unavailable,
-	// which doctor should say rather than silently proceeding.
+	// The default selection comes from the catalog alone, and doctor must
+	// not go looking for anything beside it.
 	if got := h.run("doctor", "--json"); got != ExitOK {
-		t.Errorf("exit = %d, want 0 (a missing profile dir is informational)\n%s", got, h.stderr.String())
+		t.Errorf("exit = %d, want 0\n%s", got, h.stderr.String())
 	}
 }
 
@@ -606,7 +606,7 @@ func TestHelpAndVersion(t *testing.T) {
 //
 // This replaces an earlier test that asserted setup *fails* while
 // unimplemented. That test passed for any reason setup failed — including a
-// broken profile or a missing catalog — so it could not distinguish "not
+// broken catalog or a missing tool — so it could not distinguish "not
 // written yet" from "written and broken", which is the exact weakness a
 // test should not have. This one asserts the property that matters instead:
 // whatever setup did, it did not claim a completed environment without

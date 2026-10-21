@@ -2,6 +2,7 @@
 name: eza
 description: modern replacement for ls
 category: terminal
+default: true
 tested: true
 tested_on:
   # Proven on linux/amd64 on 2026-09-27: installed from nothing in a fresh

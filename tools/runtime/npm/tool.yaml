@@ -11,6 +11,7 @@
 name: npm
 description: Node.js package manager
 category: runtime
+default: true
 # Both layers passed on the platform named below.
 tested: true
 tested_on:

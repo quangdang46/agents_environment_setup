@@ -7,7 +7,6 @@ import (
 
 	aessetup "github.com/quangdang46/agents_environment_setup"
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
-	"github.com/quangdang46/agents_environment_setup/internal/profile"
 )
 
 // TestEmbeddedAssetsAreLoadable is the point of embed.go: a binary that ships
@@ -21,9 +20,7 @@ func TestEmbeddedAssetsAreLoadable(t *testing.T) {
 	// the real loaders, which is where a schema or path bug would show.
 	dir := t.TempDir()
 	toolDir := filepath.Join(dir, "tools")
-	profDir := filepath.Join(dir, "profiles")
 	materialise(aessetup.Tools, toolDir)
-	materialise(aessetup.Profiles, profDir)
 
 	cat, err := catalog.Load(toolDir)
 	if err != nil {
@@ -31,9 +28,6 @@ func TestEmbeddedAssetsAreLoadable(t *testing.T) {
 	}
 	if cat.Len() == 0 {
 		t.Fatal("embedded catalog is empty")
-	}
-	if _, err := profile.LoadDir(profDir); err != nil {
-		t.Fatalf("embedded profiles do not load: %v", err)
 	}
 }
 
@@ -58,15 +52,12 @@ func TestResolveDataPrefersACheckout(t *testing.T) {
 		t.Fatalf("resolve %s: %v", dir, err)
 	}
 
-	catRoot, profDir, err := resolveData(filepath.Join(t.TempDir(), ".aes"))
+	catRoot, err := resolveData(filepath.Join(t.TempDir(), ".aes"))
 	if err != nil {
 		t.Fatalf("resolveData: %v", err)
 	}
 	if catRoot != filepath.Join(resolved, "tools") {
 		t.Errorf("catalogRoot = %q, want %q", catRoot, filepath.Join(resolved, "tools"))
-	}
-	if profDir != filepath.Join(resolved, "profiles") {
-		t.Errorf("profileDir = %q, want %q", profDir, filepath.Join(resolved, "profiles"))
 	}
 }
 
@@ -75,15 +66,12 @@ func TestResolveDataFallsBackToEmbedded(t *testing.T) {
 	chdir(t, t.TempDir()) // no go.mod anywhere above this temp dir
 
 	aesHome := t.TempDir()
-	catRoot, profDir, err := resolveData(aesHome)
+	catRoot, err := resolveData(aesHome)
 	if err != nil {
 		t.Fatalf("resolveData: %v", err)
 	}
 	if !isPopulated(catRoot) {
 		t.Errorf("catalog was not materialised: %q", catRoot)
-	}
-	if !isPopulated(profDir) {
-		t.Errorf("profiles were not materialised: %q", profDir)
 	}
 	// The materialised catalog must actually be loadable, not just present.
 	if _, err := catalog.Load(catRoot); err != nil {
@@ -97,11 +85,11 @@ func TestResolveDataIsIdempotent(t *testing.T) {
 	chdir(t, t.TempDir())
 	aesHome := t.TempDir()
 
-	firstRoot, _, err := resolveData(aesHome)
+	firstRoot, err := resolveData(aesHome)
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	secondRoot, _, err := resolveData(aesHome)
+	secondRoot, err := resolveData(aesHome)
 	if err != nil {
 		t.Fatalf("second: %v", err)
 	}
@@ -126,11 +114,8 @@ func TestResolveDataSelfHealsFromAnEmptyCache(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(share, "tools"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(share, "profiles"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
 
-	catRoot, _, err := resolveData(aesHome)
+	catRoot, err := resolveData(aesHome)
 	if err != nil {
 		t.Fatalf("resolveData: %v", err)
 	}

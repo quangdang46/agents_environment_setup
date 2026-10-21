@@ -36,6 +36,33 @@ func host() *platform.Host {
 	return &platform.Host{OS: platform.OSDarwin, Arch: platform.ArchARM64}
 }
 
+// fixtureWithDefault is fixture(t) with one extra tool marked default: true —
+// the catalog's own way of saying "this one is installed by default".
+func fixtureWithDefault(t *testing.T, defaultName string) *catalog.Catalog {
+	t.Helper()
+	root := t.TempDir()
+	for name, cat := range map[string]string{"a": "utility", "b": "utility", "c": "utility"} {
+		dir := filepath.Join(root, cat, name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		content := "name: " + name + "\ndescription: f\ncategory: " + cat + "\nprovides: [" + name + "]\n"
+		if name == defaultName {
+			content += "default: true\n"
+		}
+		content += "install:\n  darwin:\n    strategy: go\n    go_package: example.com/" + name + "@v1.0.0\n" +
+			"  linux:\n    strategy: go\n    go_package: example.com/" + name + "@v1.0.0\n"
+		if err := os.WriteFile(filepath.Join(dir, "tool.yaml"), []byte(content), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	c, err := catalog.Load(root)
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+	return c
+}
+
 // Selection order must not matter. This is the property that lets two
 // frontends agree without comparing their outputs field by field.
 func TestSelectionNamesAreSortedAndDeduped(t *testing.T) {
@@ -95,8 +122,36 @@ func TestResolveEmptySelection(t *testing.T) {
 	}
 }
 
+// An empty selection that IS Defaults is the CLI's "no tool named": it
+// resolves to the catalog's default set rather than to nothing. This is the
+// distinction the two frontends depend on — `aes setup` with no flags must
+// install something, and a TUI with nothing ticked must not.
+func TestResolveEmptyDefaultsSelectionResolvesToTheDefaultSet(t *testing.T) {
+	t.Parallel()
+
+	c := fixture(t)
+	got, err := Resolve(c, host(), Selection{Defaults: true})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("a catalog with no default tools resolved to %d actions", len(got))
+	}
+
+	// The same catalog with one tool marked default must resolve to exactly
+	// that tool.
+	c = fixtureWithDefault(t, "b")
+	got, err = Resolve(c, host(), Selection{Defaults: true})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(got) != 1 || got[0].Tool != "b" {
+		t.Errorf("default selection resolved to %v, want [b]", got)
+	}
+}
+
 // A typo is an error, not an empty plan — the same reasoning as a dangling
-// profile reference.
+// catalog reference.
 func TestResolveRejectsUnknownTool(t *testing.T) {
 	t.Parallel()
 

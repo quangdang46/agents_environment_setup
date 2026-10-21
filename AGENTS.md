@@ -33,14 +33,13 @@ internal/
   tui/              the interactive frontend. pure state machine, no business logic
   sandbox/          Layer 2: real installs, on the host or in a container
   contract/         tests for invariants that span packages (I7)
-profiles/           minimal · developer · ai · full · default
-tools/<category>/<name>/tool.yaml   the catalog
+tools/<category>/<name>/tool.yaml   the catalog. `default: true` = installed when no tool is named
 ```
 
 This map was stale for a while and listed ten of sixteen packages, with
-`profiles/` and `tools/` marked "not yet" when both had been shipping for some
-time. A map is only useful if it is current, and an out-of-date one is worse
-than none: it reads as authoritative.
+`tools/` marked "not yet" when it had been shipping for some time. A map is only
+useful if it is current, and an out-of-date one is worse than none: it reads as
+authoritative.
 
 **Layering is one-directional.** `manifest` imports nothing but stdlib + yaml. `state` and `exec`
 import nothing internal. `verifier` may use `exec`; the `installer` may use everything. Never
@@ -108,7 +107,7 @@ probe that names `/tmp`, `/var/tmp` or `/dev/shm`.
 publisher wrote.** `scripts/release_probe.py` reads the release's own `.sha256` sidecar, and a
 re-uploaded asset leaves that sidecar describing bytes that are no longer there. Eight of 198
 coordinates were wrong on 2026-09-30, three of them on `tested: true` tools in the default
-profile. `scripts/audit_catalog.py` checks every coordinate against the digest GitHub reports
+set. `scripts/audit_catalog.py` checks every coordinate against the digest GitHub reports
 at the tag the manifest **pins**, and exits 1 on a mismatch. Run it before believing a catalog
 change.
 
@@ -184,13 +183,19 @@ A related one, same shape: a bind-mounted **file** is bound by inode, so `go bui
 the container started leaves the container running the old binary. Rebuilding changes the host's
 inode; the mount still points at the old one. Recreate the container, or mount a directory.
 
-**Parsing is not resolving.** A profile naming a tool or a tag that does not exist parses
+**Parsing is not resolving.** A manifest naming a dependency that does not exist parses
 perfectly and then fails at run time, taking the whole binary down — `aes setup --dry-run` exits 1
-on a profile it happily loaded. A test that only checks "the file parses" cannot catch this. Ship
-one that walks every `include` and every selector in `profiles/*.yaml` and asserts each resolves
+on a tool manifest it happily loaded. A test that only checks "the file parses" cannot catch this.
+Ship one that walks every `dependencies:` entry in `tools/**/tool.yaml` and asserts each resolves
 against the real catalog. It must check *references* rather than `Resolve()`, so it stays valid
-while the catalog has no `tested:` tools yet — a profile naming something nonexistent never is
+while the catalog has no `tested:` tools yet — a manifest naming something nonexistent never is
 legitimate, a catalog with nothing tested is.
+
+**A `default: true` tool that is not `tested: true` is a bug, and the catalog test says so.** The
+default set is what `aes setup` with no flags installs, so an unverified tool in it is a tool
+handed to a user as part of a *verified* environment (I15). `internal/catalog/tools_test.go`
+asserts every default tool is tested; when you add a tool, either mark it `default: true` and
+`tested: true`, or neither.
 
 **There is no `plan`.** The value between the resolver and the installer is an `Action`. The
 `aes plan` feature was cut; do not let it regrow under another name (`InstallPlan`, `PlanCommand`,

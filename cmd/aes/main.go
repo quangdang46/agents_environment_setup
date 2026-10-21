@@ -34,7 +34,7 @@ func main() {
 		os.Exit(cli.ExitFailure)
 	}
 
-	catalogRoot, profileDir, err := resolveData(aesHome)
+	catalogRoot, err := resolveData(aesHome)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "aes: %v\n", err)
 		os.Exit(cli.ExitInvalidCatalog)
@@ -46,11 +46,10 @@ func main() {
 		Err:         os.Stderr,
 		Home:        aesHome,
 		CatalogRoot: catalogRoot,
-		ProfileDir:  profileDir,
 		Registry:    installer.NewRegistry(filepath.Join(aesHome, "bin")),
 	}
 	cli.Version = version
-	app.RunTUI = func() error { return runTUI(context.Background(), app, catalogRoot, profileDir) }
+	app.RunTUI = func() error { return runTUI(context.Background(), app, catalogRoot) }
 
 	os.Exit(app.Run(os.Args[1:]))
 }
@@ -84,7 +83,7 @@ func resolveHome() (string, error) {
 // which runs the same pipeline `aes setup --only <selection>` runs. The TUI
 // itself cannot install anything — it does not import the installer — so this
 // is the only way anything gets installed from the interactive path.
-func runTUI(ctx context.Context, app *cli.App, catalogRoot, profileDir string) error {
+func runTUI(ctx context.Context, app *cli.App, catalogRoot string) error {
 	cat, err := catalog.Load(catalogRoot)
 	if err != nil {
 		return fmt.Errorf("load catalog: %w", err)
@@ -108,7 +107,7 @@ func runTUI(ctx context.Context, app *cli.App, catalogRoot, profileDir string) e
 	return tui.Run(ctx, m, os.Stdin, os.Stdout, os.Stderr)
 }
 
-// resolveData decides where the catalog and profiles come from.
+// resolveData decides where the catalog comes from.
 //
 // A source checkout is preferred when there is one, so editing a tool.yaml
 // takes effect without a rebuild. Otherwise the assets embedded in the binary
@@ -117,31 +116,27 @@ func runTUI(ctx context.Context, app *cli.App, catalogRoot, profileDir string) e
 // `curl … | sh` work.
 //
 // Materialising rather than reading straight out of the embed is deliberate:
-// catalog.Load and profile.LoadDir take filesystem paths, and teaching them
-// an fs.FS would push an abstraction through four packages to save a copy of
-// a few hundred kilobytes. The cache is keyed by version, so a new binary
-// never reads a stale catalog written by an older one.
-func resolveData(aesHome string) (catalogRoot, profileDir string, err error) {
+// catalog.Load takes a filesystem path, and teaching it an fs.FS would push
+// an abstraction through several packages to save a copy of a few hundred
+// kilobytes. The cache is keyed by version, so a new binary never reads a
+// stale catalog written by an older one.
+func resolveData(aesHome string) (catalogRoot string, err error) {
 	if root := findRepoRoot(); root != "" {
-		return filepath.Join(root, "tools"), filepath.Join(root, "profiles"), nil
+		return filepath.Join(root, "tools"), nil
 	}
 
 	share := filepath.Join(aesHome, "share", version)
 	catalogRoot = filepath.Join(share, "tools")
-	profileDir = filepath.Join(share, "profiles")
 
 	// Already materialised by this version: nothing to do.
-	if isPopulated(catalogRoot) && isPopulated(profileDir) {
-		return catalogRoot, profileDir, nil
+	if isPopulated(catalogRoot) {
+		return catalogRoot, nil
 	}
 
 	if err := materialise(aessetup.Tools, catalogRoot); err != nil {
-		return "", "", fmt.Errorf("preparing the tool catalog: %w", err)
+		return "", fmt.Errorf("preparing the tool catalog: %w", err)
 	}
-	if err := materialise(aessetup.Profiles, profileDir); err != nil {
-		return "", "", fmt.Errorf("preparing the profiles: %w", err)
-	}
-	return catalogRoot, profileDir, nil
+	return catalogRoot, nil
 }
 
 // materialise writes an embedded tree to dir.

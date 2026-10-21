@@ -1,6 +1,7 @@
 name: lazydocker
 description: terminal UI for docker and docker compose
 category: infra
+default: true
 tested: true
 tested_on:
 - linux/arm64

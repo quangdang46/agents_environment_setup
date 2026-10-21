@@ -1,6 +1,7 @@
 name: toon
 description: token-oriented object notation encoder
 category: utility
+default: true
 tested: true
 tested_on:
 - linux/arm64

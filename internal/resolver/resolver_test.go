@@ -271,6 +271,40 @@ func TestExcludeUnusedToolIsSilent(t *testing.T) {
 	}
 }
 
+// Excluding a tool that IS in the selection must remove it. The flag says
+// "skip this tool"; a tool the user excluded and then watched get installed
+// is a flag that lies.
+func TestExcludeRemovesASelectedTool(t *testing.T) {
+	c := build(t,
+		spec{name: "a", isDefault: true},
+		spec{name: "b", isDefault: true},
+	)
+	actions, err := Resolve(c, Request{Exclude: []string{"b"}}, darwin())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := toolOrder(actions); got != "a" {
+		t.Errorf("actions = %s, want a", got)
+	}
+}
+
+// Naming a tool and excluding it at the same time is a contradiction, and
+// picking a winner silently would leave the user with a plan they did not ask
+// for and cannot explain.
+func TestSelectedAndExcludedIsAnError(t *testing.T) {
+	c := build(t,
+		spec{name: "a"},
+		spec{name: "b"},
+	)
+	_, err := Resolve(c, Request{Only: []string{"a"}, Exclude: []string{"a"}}, darwin())
+	if !errors.Is(err, ErrExcludedSelection) {
+		t.Fatalf("error = %v, want ErrExcludedSelection", err)
+	}
+	if !strings.Contains(err.Error(), "a") {
+		t.Errorf("error %q does not name the tool", err)
+	}
+}
+
 func TestUnknownToolIsAnError(t *testing.T) {
 	c := build(t, spec{name: "a"})
 	for _, tc := range []struct {
@@ -320,7 +354,7 @@ func TestResolveIsDeterministic(t *testing.T) {
 		}
 	}
 	// And again through a different selection shape, to catch order that only
-	// happens to be stable for the default profile.
+	// happens to be stable for the default set.
 	sel := Request{Only: []string{"a", "b"}}
 	s1, _ := Resolve(c, sel, darwin())
 	s2, _ := Resolve(c, sel, darwin())
@@ -331,7 +365,7 @@ func TestResolveIsDeterministic(t *testing.T) {
 	}
 }
 
-func TestEmptyProfileResolvesToDefaultTools(t *testing.T) {
+func TestEmptySelectionResolvesToDefaultTools(t *testing.T) {
 	c := build(t,
 		spec{name: "a", isDefault: true},
 		spec{name: "b", isDefault: true},
@@ -577,9 +611,9 @@ func TestUnprovenPlatformIsSkipped(t *testing.T) {
 //
 // Without it the opt-in could not do the one thing its help text promises:
 // "proceed with tools proven only on another platform" (internal/cli/root.go).
-// The gate lived here while the flag was handled in profile.checkTested, so a
-// user who passed the flag got a silent no — the tool was simply absent from
-// the run, which reads as "already satisfied" rather than "refused".
+// The gate lived here while the flag was handled elsewhere, so a user who
+// passed the flag got a silent no — the tool was simply absent from the run,
+// which reads as "already satisfied" rather than "refused".
 func TestAllowUnprovenWaivesThePlatformSkip(t *testing.T) {
 	proved := "linux/arm64"
 	c := build(t, spec{name: "was-here", isDefault: true, platforms: []string{"darwin", "linux"}})

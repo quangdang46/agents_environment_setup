@@ -47,7 +47,7 @@ type toolResult struct {
 	// the failure buckets and the dry-run plan, never the resolver.
 	Strategy string `json:"strategy,omitempty"`
 	// DurationMs is how long setupOne spent on this tool, in milliseconds.
-	// It exists so a slow profile can say which tools dominate the run
+	// It exists so a slow run can say which tools dominate it
 	// rather than guessing.
 	DurationMs int64 `json:"duration_ms,omitempty"`
 	// Warnings are things that went wrong without making the tool's outcome
@@ -136,7 +136,7 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 	restore := withBinOnPath(filepath.Join(app.Home, "bin"))
 	defer restore()
 
-	// 1-3: detect, load the profile, resolve.
+	// 1-3: detect, resolve the selection.
 	rc, err := app.resolve(f)
 	if err != nil {
 		// A catalog or manifest failure aborts immediately: nothing can
@@ -186,11 +186,7 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 	pr := progress.New(app.Err, progress.Options{Verbose: f.Verbose, TTY: app.tty(), Quiet: f.Quiet})
 	setInstallerVerbosity(app, rc, actions, f, pr)
 
-	profileName := f.Profile
-	if profileName == "" {
-		profileName = "default"
-	}
-	pr.Section("aes setup %s — %d tools (profile: %s)", Version, len(actions), profileName)
+	pr.Section("aes setup %s — %d tools", Version, len(actions))
 	if logPath != "" {
 		pr.Info("→ logging to %s", logPath)
 	}
@@ -300,7 +296,7 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 // explainEmptySelection says WHY a selection resolved to nothing, in terms the
 // user can act on.
 //
-// The previous message was "the resolved profile selected no tools on this
+// The previous message was "the resolved selection named no tools on this
 // platform" — which names neither the tools nor the platform and offers no
 // remedy, so a user who typed `aes setup --only git` and got a refusal had to
 // go and run `aes doctor` to find out why. The commonest cause is a tool
@@ -309,9 +305,9 @@ func explainEmptySelection(f *Flags, rc *runContext) string {
 	here := rc.Host.Key() + "/" + rc.Host.Arch
 
 	if len(f.Only) == 0 {
-		return "the resolved profile selected no tools on this platform " +
+		return "the default selection resolved to no tools on this platform " +
 			"(" + here + "). `aes list` shows which tools this host can install; " +
-			"pass --profile or --only to choose explicitly."
+			"pass --only to choose explicitly."
 	}
 
 	// Name the tools that were dropped for being unproven HERE, which is the

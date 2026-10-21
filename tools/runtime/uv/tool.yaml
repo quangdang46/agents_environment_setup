@@ -1,6 +1,7 @@
 name: uv
 description: fast Python package and project manager
 category: runtime
+default: true
 tested: true
 tested_on:
 - linux/arm64

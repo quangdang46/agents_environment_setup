@@ -80,8 +80,8 @@ func newLifeHarness(t *testing.T, specs ...toolSpec) *lifeHarness {
 	}
 	h.app = &App{
 		In: h.in, Out: h.stdout, Err: h.stderr, Home: h.home,
-		CatalogRoot: catRoot, ProfileDir: filepath.Join(tmp, "profiles"),
-		IsTTY: func() bool { return false },
+		CatalogRoot: catRoot,
+		IsTTY:       func() bool { return false },
 	}
 	return h
 }

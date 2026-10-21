@@ -2,6 +2,7 @@
 name: gh
 description: GitHub's official command-line tool
 category: git
+default: true
 # Both layers passed on the platform named below: aes installed this from
 # nothing in a fresh container, and `aes verify` reported StatusOK with a
 # parsed version on that same machine afterwards (bead gj9). `tested_on`

@@ -2,6 +2,7 @@
 name: bat
 description: cat clone with syntax highlighting
 category: terminal
+default: true
 tested: true
 tested_on:
   # Proven on linux/amd64 on 2026-09-27: installed from nothing in a fresh

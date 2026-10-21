@@ -42,7 +42,6 @@ type Screen int
 const (
 	ScreenMenu Screen = iota
 	ScreenTools
-	ScreenProfiles
 	ScreenDoctor
 	ScreenEnvironment
 )
@@ -51,8 +50,6 @@ func (s Screen) String() string {
 	switch s {
 	case ScreenTools:
 		return "Tools"
-	case ScreenProfiles:
-		return "Profiles"
 	case ScreenDoctor:
 		return "Doctor"
 	case ScreenEnvironment:
@@ -72,7 +69,6 @@ type MenuItem struct {
 var Menu = []MenuItem{
 	{ScreenMenu, "Setup"},
 	{ScreenTools, "Tools"},
-	{ScreenProfiles, "Profiles"},
 	{ScreenDoctor, "Doctor"},
 	{ScreenEnvironment, "Environment"},
 }
@@ -260,7 +256,7 @@ func (m *Model) rowCount() int {
 	switch m.Screen {
 	case ScreenTools:
 		return len(m.Tools)
-	case ScreenMenu, ScreenProfiles:
+	case ScreenMenu:
 		return len(Menu)
 	default:
 		return 0

@@ -7,14 +7,13 @@ import (
 
 	"github.com/quangdang46/agents_environment_setup/internal/catalog"
 	"github.com/quangdang46/agents_environment_setup/internal/platform"
-	"github.com/quangdang46/agents_environment_setup/internal/profile"
 	"github.com/quangdang46/agents_environment_setup/internal/resolver"
 	"github.com/quangdang46/agents_environment_setup/internal/selection"
 	"github.com/quangdang46/agents_environment_setup/internal/verifier"
 )
 
 // context is the resolved world a command operates on: a catalog, a host,
-// and the profile expansion of the flags.
+// and the flags for this run.
 //
 // It is built once per invocation and shared, so every command in a run
 // agrees on what the catalog is and which host it is running against. A
@@ -61,65 +60,15 @@ func (rc *runContext) target() verifier.Target {
 	return verifier.Target{Host: rc.Host, AESHome: rc.App.Home}
 }
 
-// request turns the profile and the --only/--exclude flags into a resolver
-// Request.
+// request turns the --only/--exclude flags into a resolver Request.
 //
-// A profile is expanded here, into Only, rather than being handed to the
-// resolver. That is deliberate: it keeps the resolver's locked
-// Resolve(c, req, h) signature free of profile-file knowledge, so a TUI can
-// drive the same resolver without loading a single profile file.
+// An empty Only is not special-cased here: the resolver falls back to
+// catalog.Default() on its own when nothing is given, so `aes setup` with no
+// flags installs the catalog's default tools without this layer having to
+// know that.
 func (rc *runContext) request() (resolver.Request, error) {
-	req := resolver.Request{Only: rc.Flags.Only, Exclude: rc.Flags.Exclude}
-
-	// An explicit --only IS the selection. Loading a profile on top of it
-	// would mean `aes setup --only ripgrep` also installs whatever the
-	// default profile names — surprising, and it makes --only unusable
-	// whenever the default profile is broken or empty, which is exactly
-	// when a user reaches for --only to get something installed.
-	name := rc.Flags.Profile
-	if name == "" && len(rc.Flags.Only) == 0 {
-		// No explicit selection at all: the shipped default, not "no
-		// profile". `aes setup` with no flags doing nothing would make the
-		// North Star a lie.
-		name = DefaultProfile
-	}
-	if name == "" {
-		return req, nil
-	}
-
-	set, err := profile.LoadDir(rc.App.ProfileDir)
-	if err != nil {
-		return req, err
-	}
-	p, err := set.Get(name)
-	if err != nil {
-		return req, err
-	}
-	// Bound to this host so require_tested can distinguish "never verified"
-	// from "verified elsewhere"; both otherwise report as untested.
-	tools, err := p.WithHost(rc.Host).WithAllowUnproven(rc.Flags != nil && rc.Flags.AllowUnproven).Resolve(rc.Catalog)
-	if err != nil {
-		return req, err
-	}
-	// Printed before the run, never swallowed: --allow-unproven is an
-	// informed choice and the information is what makes it one.
-	for _, w := range p.Warnings() {
-		fmt.Fprintf(rc.App.Err, "aes: %s\n", w)
-	}
-	for _, t := range tools {
-		req.Only = append(req.Only, t.Name)
-	}
-	// The profile's own exclusions ride along with its expansion. Dropping them
-	// here would be invisible and wrong: Resolve already removed the tools from
-	// its own list, but the dependency closure is computed from Only + Exclude
-	// downstream, and a tool excluded from the profile that another selected
-	// tool depends on must fail loudly rather than be silently pulled back in.
-	req.Exclude = append(req.Exclude, p.Exclude...)
-	return req, nil
+	return resolver.Request{Only: rc.Flags.Only, Exclude: rc.Flags.Exclude}, nil
 }
-
-// DefaultProfile is the profile used when --profile is not given.
-const DefaultProfile = "default"
 
 // actions resolves the selection against the catalog and host.
 //
@@ -127,6 +76,10 @@ const DefaultProfile = "default"
 // "the TUI and the CLI produce the same Actions" is a property of the code
 // rather than a comparison a test has to keep making. The resolver is not
 // called directly from here for exactly that reason.
+//
+// Naming no tool is the CLI's way of saying "the defaults", and it is
+// recorded as such: the TUI's empty selection means nothing at all, and the
+// two are different intents that must not be re-decided downstream.
 func (rc *runContext) actions() ([]resolver.Action, error) {
 	req, err := rc.request()
 	if err != nil {
@@ -135,7 +88,7 @@ func (rc *runContext) actions() ([]resolver.Action, error) {
 	return selection.Resolve(rc.Catalog, rc.Host, selection.Selection{
 		Only:          req.Only,
 		Exclude:       req.Exclude,
-		Profile:       req.Profile,
+		Defaults:      len(req.Only) == 0,
 		AllowUnproven: rc.Flags != nil && rc.Flags.AllowUnproven,
 	})
 }

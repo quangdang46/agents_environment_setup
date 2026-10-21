@@ -10,10 +10,10 @@
 
 **One command takes a machine from nothing to a complete AI coding environment — and exits 0 only when it actually is.**
 
-`aes setup` resolves a profile into a dependency-ordered plan, verifies what's already there, installs only what's missing, verifies again, and refuses to call it done until the tools are real.
+`aes setup` resolves the catalog into a dependency-ordered plan, verifies what's already there, installs only what's missing, verifies again, and refuses to call it done until the tools are real.
 
 <details>
-<summary>Example run — fresh <code>ubuntu:24.04</code>, default profile (12 tools, 4m15s)</summary>
+<summary>Example run — fresh <code>ubuntu:24.04</code>, 63 tools</summary>
 
 ```
 $ curl -fsSL https://raw.githubusercontent.com/quangdang46/agents_environment_setup/main/install.sh | sh -s -- --version v0.1.0
@@ -28,79 +28,36 @@ $ curl -fsSL https://raw.githubusercontent.com/quangdang46/agents_environment_se
 ==> verifying installation
 aes 0.1.0
 
-$ aes setup --non-interactive
-═══ aes setup 0.1.0 — 12 tools (profile: default) ═══
-→ logging to /root/.aes/logs/setup-20261015T023310Z.log
-═══ Installing 12 tools ═══
-[█░░░░░░░░░░░░░░░░░░░] 1/12 (8%) Installing bat
-⏳ installing bat
-✓ bat installed (v0.26.1, 2.5s)
-[███░░░░░░░░░░░░░░░░░] 2/12 (16%) Installing bottom
-⏳ installing bottom
-✓ bottom installed (v0.14.9, 1.8s)
-[█████░░░░░░░░░░░░░░░] 3/12 (25%) Installing btop
-⏳ installing btop
-✓ btop installed (v1.4.7+f7b2e8a, 1.5s)
-[██████░░░░░░░░░░░░░░] 4/12 (33%) Installing dust
-⏳ installing dust
-✓ dust installed (v1.2.6, 1.3s)
-[████████░░░░░░░░░░░░] 5/12 (41%) Installing eza
-⏳ installing eza
-✓ eza installed (v0.23.5, 0.9s)
-[██████████░░░░░░░░░░] 6/12 (50%) Installing node
-⏳ installing node
-✓ node installed (v18.19.1, 11.5s)
-[███████████░░░░░░░░░] 7/12 (58%) Installing npm
-⏳ installing npm
-✓ npm installed (v9.2.0, 2m24s)
-[█████████████░░░░░░░] 8/12 (66%) Installing claude
-⏳ installing claude
-✓ claude installed (v2.1.283, 29.4s)
-[███████████████░░░░░] 9/12 (75%) Installing codex
-⏳ installing codex
-✓ codex installed (v0.157.1, 18.9s)
-[████████████████░░░░] 10/12 (83%) Installing opencode
-⏳ installing opencode
-✓ opencode installed (v1.18.32, 35.0s)
-[██████████████████░░] 11/12 (91%) Installing tmux
-⏳ installing tmux
-✓ tmux installed (v3.4, 5.1s)
-[████████████████████] 12/12 (100%) Installing zellij
-⏳ installing zellij
-✓ zellij installed (v0.45.1, 3.3s)
+$ aes setup --non-interactive --dry-run
+═══ aes setup 0.1.0 — 63 tools ═══
+dry run — nothing will be installed
 
-═══ Smoke test ═══
-✓ bat v0.26.1
-✓ bottom v0.14.9
-✓ btop v1.4.7+f7b2e8a
-✓ claude v2.1.283
-✓ codex v0.157.1
-✓ dust v1.2.6
-✓ eza v0.23.5
-✓ node v18.19.1
-✓ npm v9.2.0
-✓ opencode v1.18.32
-✓ tmux v3.4
-✓ zellij v0.45.1
-installed 12 · already present 0 · skipped 0 · failed 0  (4m15s)
-TOOL      STATUS     TIME   DETAIL
-bat       installed  2.5s
-bottom    installed  1.8s
-btop      installed  1.5s
-claude    installed  29.4s
-codex     installed  18.9s
-dust      installed  1.3s
-eza       installed  0.9s
-node      installed  11.5s
-npm       installed  2m24s
-opencode  installed  35.0s
-tmux      installed  5.1s
-zellij    installed  3.3s
-
-environment: /root/.aes/env.sh
-activate it with:  . /root/.aes/env.sh
-
-full run log: /root/.aes/logs/setup-20261015T023310Z.log
+63 tools selected
+     CATEGORY    TOOL                  INSTALL                                                        WHY
+1.   [utility]   aadc                  -> Dicklesworthstone/aadc@v0.1.1                               (default)
+2.   [utility]   age                   -> FiloSottile/age@v1.3.2                                      (default)
+3.   [search]    ast-grep              -> ast-grep/ast-grep@0.45.3                                    (default)
+4.   [shell]     atuin                 -> atuinsh/atuin@v18.23.0                                      (default)
+5.   [shell]     bash                  -> package(apt) bash                                           (default)
+     … 57 more rows …
+63.  [shell]     zsh                   -> package(apt) zsh                                            (default)
+This is a preview. Run without --dry-run to execute.
+═══ Installing 63 tools ═══
+[░░░░░░░░░░░░░░░░░░░░] 1/63 (1%) Installing aadc
+[░░░░░░░░░░░░░░░░░░░░] 2/63 (3%) Installing age
+[░░░░░░░░░░░░░░░░░░░░] 3/63 (4%) Installing ast-grep
+[█░░░░░░░░░░░░░░░░░░░] 4/63 (6%) Installing atuin
+[█░░░░░░░░░░░░░░░░░░░] 5/63 (7%) Installing bash
+     … 58 more tools …
+[████████████████████] 63/63 (100%) Installing zsh
+dry run — nothing was installed and nothing was changed
+TOOL                  STATUS   TIME  DETAIL
+aadc                  dry-run  0.0s
+age                   dry-run  0.0s
+ast-grep              dry-run  0.0s
+atuin                 dry-run  0.0s
+… 59 more rows …
+zsh                   dry-run  0.0s
 ```
 
 </details>
@@ -113,8 +70,8 @@ aes setup
 > **Status: v0.1.0.** 68 tool definitions exist; **63 are marked
 > `tested: true`**, each carrying a `tested_on` list so the flag says where
 > it was proven rather than implying everywhere. `aes setup` with no flags
-> installs and verifies the default profile (12 tools) end to end and exits
-> 0, measured on a clean `ubuntu:24.04` container. See
+> installs and verifies all 63 of them end to end and exits 0, measured on a
+> clean `ubuntu:24.04` container. See
 > [Status and limitations](#status-and-limitations).
 
 ---
@@ -272,21 +229,29 @@ warning             PATH does not contain ~/.aes/bin; run: aes env --write
 `doctor` never fixes anything, and there is no `--fix`. A diagnostic that
 changes your machine without showing you is not a diagnostic.
 
-## Profiles
+## What gets installed
 
-A profile is a named selection. `require_tested: true` — set on every shipped
-profile — refuses to resolve to a tool that hasn't been verified end to end.
+`aes setup` with no flags installs every tool the catalog marks
+`default: true` — today, all 63 verified ones. The flag lives in the
+manifest, next to the one that says where a tool was proven:
 
 ```yaml
-name: minimal
-description: The minimum a working machine needs
-include: [git, ripgrep, jq]
-require_tested: true
+name: ripgrep
+description: Fast recursive grep
+category: search
+default: true
+tested: true
+tested_on: [linux/arm64, linux/amd64]
 ```
 
-Shipped: `minimal` · `developer` · `ai` · `full` · `default` (alias for `ai`).
-`--only <tool>` bypasses the profile entirely, so an explicit selection is
-never blocked by a broken one.
+A tool marked `default: true` but not `tested: true` is a contradiction the
+catalog tests refuse: only verified tools are installed by default.
+
+Narrow the set with `--only <tool>` (repeatable) or drop one with
+`--exclude <tool>`. An explicit `--only` replaces the default set rather than
+adding to it, so `--only ripgrep` means ripgrep and its dependencies — nothing
+else. Naming a tool and excluding it at the same time is an error (exit 2)
+rather than a silent choice.
 
 ## Adding a tool
 
@@ -346,7 +311,7 @@ These are the properties the test suite exists to defend.
 | I12 | Unsupported platform is a skip, not an error. |
 | I13 | TUI ≡ CLI: same input → same `Action`s. |
 | I14 | `sudo` never runs silently — only after printing and confirming. |
-| I15 | The default profile contains only `tested: true` tools. |
+| I15 | The default set contains only `tested: true` tools. |
 
 ---
 
@@ -356,7 +321,7 @@ This is an active, pre-1.0 project. Stated plainly:
 
 - **v0.1.0 is the first published release.** `install.sh` downloads a
   checksum-verified binary from GitHub Releases; `aes setup` then installs
-  and verifies the default profile end to end on a clean machine.
+  and verifies the default set end to end on a clean machine.
 - **63 of 68 tools are `tested: true`, and the rest are not — deliberately.**
   Verification requires both layers: a real install, then `aes verify`
   confirming the result on that same machine. Both run in a fresh
@@ -366,11 +331,12 @@ This is an active, pre-1.0 project. Stated plainly:
   during a full-catalog run on a clean container, not assumed; a dozen were
   wrong and are now right.
 
-  The default profile selects **12 tools**, all of them `tested: true` on
-  both linux/amd64 and linux/arm64. The remaining 56 tools are reachable via
-  `--profile full`, which sets `require_tested: false` on purpose: selecting
-  by category necessarily picks up unproven tools, and a profile that
-  silently refused them was unrunnable on any machine.
+  The default set is **all 63 verified tools**, each of them `tested: true`
+  on both linux/amd64 and linux/arm64. The remaining 5 are not installed by
+  default: they have not been proven on any machine, and a tool that has
+  never been installed anywhere is exactly the one that must not be handed
+  to a user as a verified environment. They are still in the catalog, and
+  `--only <tool>` installs one on request.
 
   The proven scope is honest and narrow: most entries carry
   `tested_on: [linux/arm64, linux/amd64]`, and the resolver skips a tool on a
@@ -405,9 +371,9 @@ This is an active, pre-1.0 project. Stated plainly:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `profile "default" requires tested tools, but these are not tested: …` | I15; the default profile is all-tested, so this means `--profile full` was used with `require_tested` | Pass `--only <tool>`, or accept that `full` opts into unproven installs |
 | `catalog root: stat tools: no such file or directory` | Binary built before the catalog was embedded | Rebuild with the current tree |
-| `profile "x": no tool named "y"` | Profile references a tool not in the catalog | Fix the profile; a dangling reference is a hard error by design |
+| `contradictory selection: "jq" is both selected by name and excluded` | `--only jq --exclude jq` | Pick one — a tool cannot be installed and skipped at once |
+| `nothing to install: …` | Nothing on this host is in the default set, or every default tool was skipped for being unproven here | `aes list` shows what this host can install; `aes doctor` says why a tool is absent |
 | Exit `5` | Something needs root | Run the command AES printed, then re-run |
 | Exit `6` after `aes setup` | A tool installed but doesn't verify | `aes doctor` — often a `PATH` problem |
 | Tool installed but "not runnable" | Its strategy's bin dir isn't on `PATH` | `aes env --write` then source the file |
@@ -417,8 +383,8 @@ This is an active, pre-1.0 project. Stated plainly:
 
 **Does it need Go, brew, or apt installed first?**
 No. The binary is fully self-contained and cross-compiled with `CGO_ENABLED=0`.
-The catalog and profiles are embedded in it, so an installed binary needs
-nothing beside itself.
+The catalog is embedded in it, so an installed binary needs nothing beside
+itself.
 
 **Will it `sudo` without asking?**
 No. The `sudo` gate is structural: a command containing `sudo` is refused
@@ -427,11 +393,12 @@ printed and confirmed, or `sudo -n` in automation.
 
 **Why aren't more tools marked `tested: true`?**
 Because the flag means a real install was verified end to end, in a fresh
-container, and 24 tools have been through that. The rest install — they run
-under `--profile full`, where a floor that only holds on the platform it was
-measured on still refuses to over-claim. Marking a tool on detection evidence
-alone would make the tool's central claim — a *verified* environment — a lie,
-which is the one thing the flag exists to prevent.
+container, and 63 tools have been through that. The rest are in the catalog
+but not in the default set: they install on request with `--only <tool>`,
+where a floor that only holds on the platform it was measured on still
+refuses to over-claim. Marking a tool on detection evidence alone would make
+the tool's central claim — a *verified* environment — a lie, which is the one
+thing the flag exists to prevent.
 
 The flag also carries `tested_on`, so "verified" is a claim about a named
 platform rather than about the world. `aes` on darwin will skip a tool proven

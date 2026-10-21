@@ -522,7 +522,7 @@ func VerifyFor(h *platform.Host, t *manifest.Tool) Result {
 	return VerifyIn(Target{Host: h}, t)
 }
 
-// VerifyContextIn is VerifyIn with cancellation, so a run over a whole profile
+// VerifyContextIn is VerifyIn with cancellation, so a run over a whole set
 // stops when the user interrupts it. This is the form callers should reach for.
 func VerifyContextIn(ctx context.Context, tgt Target, t *manifest.Tool) Result {
 	res, _ := verifyInner(ctx, tgt, t)

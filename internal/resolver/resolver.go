@@ -57,6 +57,12 @@ var (
 	// an install that fails much later, for a reason with no obvious link back
 	// to the --exclude that caused it.
 	ErrExcludedDependency = errors.New("required tool was excluded")
+
+	// ErrExcludedSelection reports a tool that was named by --only and
+	// excluded at the same time. The two flags contradict each other, and
+	// picking a winner silently would leave the user with a plan they did not
+	// ask for and cannot explain.
+	ErrExcludedSelection = errors.New("contradictory selection")
 )
 
 // Action is a resolved snapshot of one thing to do on one specific host.
@@ -88,11 +94,8 @@ type Action struct {
 
 // Request is what the user asked for.
 type Request struct {
-	// Profile names a profile. The resolver does not read profile files — the
-	// profile loader (internal/cli) expands a profile into Only before calling
-	// here, so this package never has to know what a profile is. The field is
-	// kept for the caller to act on and is otherwise unused.
-	Profile string
+	// Only names the tools to install. An empty Only means "the catalog's
+	// default set" — the tools a manifest marks `default: true`.
 	Only    []string
 	Exclude []string
 
@@ -101,7 +104,7 @@ type Request struct {
 	//
 	// It is a field here rather than a decision made above because the two
 	// gates are in different packages and only this one can see both halves.
-	// profile.checkTested refuses a tool with no evidence anywhere; this skips a
+	// The default set refuses a tool with no evidence anywhere; this skips a
 	// tool whose evidence is about another machine. Without the field the
 	// opt-in could not reach the skip at all — `--allow-unproven` promised
 	// "proceed with tools proven only on another platform" and did not, which
@@ -131,7 +134,7 @@ func Resolve(c *catalog.Catalog, req Request, h *platform.Host) ([]Action, error
 	if err != nil {
 		return nil, err
 	}
-	roots, err := selectTools(c, req)
+	roots, err := selectTools(c, req, excluded)
 	if err != nil {
 		return nil, err
 	}
@@ -187,10 +190,16 @@ func Resolve(c *catalog.Catalog, req Request, h *platform.Host) ([]Action, error
 
 // selectTools picks the roots of the resolution.
 //
-// An explicit --only replaces the profile rather than adding to it, because
-// "install exactly this" is the only reading of a list that is not an
-// incremental request.
-func selectTools(c *catalog.Catalog, req Request) (map[string]string, error) {
+// An explicit --only IS the selection: it replaces the default set rather than
+// adding to it, because "install exactly this" is the only reading of a list
+// that is not an incremental request. With no --only, the catalog's default
+// set is the selection.
+//
+// An excluded tool is never a root. `--exclude` says "skip this tool", and a
+// tool the user excluded and then watched get installed is a flag that lies.
+// The dependency closure still reports the exclusion as the conflict it is
+// when something else needs the tool.
+func selectTools(c *catalog.Catalog, req Request, excluded map[string]bool) (map[string]string, error) {
 	roots := make(map[string]string)
 
 	if len(req.Only) > 0 {
@@ -198,12 +207,22 @@ func selectTools(c *catalog.Catalog, req Request) (map[string]string, error) {
 			if _, ok := c.ByName(name); !ok {
 				return nil, fmt.Errorf("%w: %q", ErrUnknownTool, name)
 			}
+			if excluded[name] {
+				// Named and excluded at the same time. Dropping it silently
+				// would leave the user with an empty plan and no idea why;
+				// the closure below cannot report it, because a root that
+				// nothing depends on is never visited as a dependency.
+				return nil, fmt.Errorf("%w: %q is both selected by name and excluded", ErrExcludedSelection, name)
+			}
 			roots[name] = "only:" + name
 		}
 		return roots, nil
 	}
 
 	for _, t := range c.Default() {
+		if excluded[t.Name] {
+			continue
+		}
 		roots[t.Name] = "default"
 	}
 	return roots, nil

@@ -1,6 +1,7 @@
 name: rust
 description: Rust toolchain via rustc and cargo
 category: runtime
+default: true
 tested: true
 tested_on:
 - linux/arm64
