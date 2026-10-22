@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,17 +65,52 @@ import (
 func containerToolsFor(t *testing.T, cat *catalog.Catalog) []namedTool {
 	t.Helper()
 
-	defaults := cat.Default()
-	if len(defaults) == 0 {
+	tools := cat.Default()
+	if len(tools) == 0 {
 		t.Fatal("no tool is marked default:true; this test would be vacuous")
 	}
+	return namedToolsFor(t, cat, tools)
+}
 
-	out := make([]namedTool, 0, len(defaults))
-	for _, tool := range defaults {
+// namedToolsFor turns a set of tools into the sweep's list.
+func namedToolsFor(t *testing.T, cat *catalog.Catalog, tools []*manifest.Tool) []namedTool {
+	t.Helper()
+	out := make([]namedTool, 0, len(tools))
+	for _, tool := range tools {
 		out = append(out, namedTool{name: tool.Name, strategy: strategyOf(tool)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out
+}
+
+// layer2ToolFilter names the tools to sweep INSTEAD of the default selection.
+//
+// It exists because a sweep that takes ninety minutes is a bad way to answer
+// one question. When a tool's proof fails, the useful next step is to re-run
+// that tool — and the handoff is explicit that a contended apt mirror makes a
+// whole sweep meaningless, so re-running the whole sweep to check one tool is
+// the expensive way to do it.
+//
+// The names are catalog tools, not necessarily default ones: a tool that has
+// not been proven yet is not in the default set, and proving it is exactly
+// what this filter is for.
+//
+//	AES_LAYER2_TOOL=git-lfs,bvr AES_LAYER2=1 go test -run TestLayer2Container ./internal/sandbox/
+//
+// An empty value means no filter, and the sweep covers the default selection
+// as it always has.
+func layer2ToolFilter() []string {
+	raw := strings.TrimSpace(os.Getenv("AES_LAYER2_TOOL"))
+	if raw == "" {
+		return nil
+	}
+	var names []string
+	for _, n := range strings.Split(raw, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
 }
 
 // namedTool is one tool and the strategy its manifest declares for linux.
@@ -155,7 +191,21 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	// Read from the catalog, so a tool added to or removed from the catalog
 	// changes what this proves without anyone editing the test.
 	tools := containerToolsFor(t, cat)
-	t.Logf("the default selection resolves to %d tools; proving each on a fresh machine", len(tools))
+	filtered := layer2ToolFilter()
+	if len(filtered) > 0 {
+		var picked []*manifest.Tool
+		for _, name := range filtered {
+			tool, ok := cat.ByName(name)
+			if !ok {
+				t.Fatalf("%s is not in the catalog", name)
+			}
+			picked = append(picked, tool)
+		}
+		tools = namedToolsFor(t, cat, picked)
+		t.Logf("sweeping %d named tools instead of the default selection: %v", len(tools), filtered)
+	} else {
+		t.Logf("the default selection resolves to %d tools; proving each on a fresh machine", len(tools))
+	}
 
 	strategiesProven := map[string]bool{}
 	for _, tc := range tools {
@@ -298,7 +348,15 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	// reachable, so unlike the host run this one can fail for having proven
 	// too few — and should, because a silent regression to one strategy is
 	// exactly what a container is here to make visible.
-	if len(strategiesProven) < 3 {
+	//
+	// A filtered sweep is a different question, and the answer is different
+	// too: it was asked about one tool, not about the catalog's coverage. So
+	// it demands that SOMETHING was proven and reports the rest.
+	if len(filtered) > 0 {
+		if len(strategiesProven) == 0 {
+			t.Errorf("no strategy was proven for %v", filtered)
+		}
+	} else if len(strategiesProven) < 3 {
 		t.Errorf("only %d of 3 strategies proven: %v", len(strategiesProven), strategiesProven)
 	}
 	t.Logf("strategies proven inside a fresh container: %v", strategiesProven)
