@@ -73,7 +73,29 @@ var layer2Tools = []struct {
 	// strategy on macOS. delta and gping are package on darwin; several other
 	// package tools are already installed here, which requireAbsent rejects.
 	{"delta", manifest.StrategyPackage},
-	{"gping", manifest.StrategyPackage},
+	// The catalog's own tools, and the only darwin evidence the catalog has.
+	//
+	// Every other tool in the catalog is proven on linux, and the container
+	// sweep is the only test that proves the whole catalog — so the darwin
+	// coordinates are unproven for all of them, and the resolver skips a
+	// proven-on-another-platform tool rather than install it. That is the
+	// honest answer, and it is also why `aes setup` on a macOS resolves to
+	// nothing.
+	//
+	// These four are here because they are the catalog's own tools, and a
+	// darwin proof of them is a darwin proof of something the project ships.
+	// They are github-release, so the run is a real download, a real
+	// checksum, a real extract — and the drift and force-reinstall steps
+	// apply as they do everywhere.
+	//
+	// A tool the machine already has is skipped by requireAbsent, so the
+	// proof runs on a machine where these are not installed. The
+	// developer's machine has all four, which is why the proof here is run
+	// with a PATH that does not carry them.
+	{"br", manifest.StrategyGithubRelease},
+	{"bvr", manifest.StrategyGithubRelease},
+	{"discord-cli", manifest.StrategyGithubRelease},
+	{"hashline", manifest.StrategyGithubRelease},
 }
 
 func TestLayer2RealInstall(t *testing.T) {
@@ -124,6 +146,23 @@ func TestLayer2RealInstall(t *testing.T) {
 			res, err := Run(context.Background(), tool, Config{
 				Binary: bin,
 				Keep:   os.Getenv("AES_KEEP_SANDBOX") == "1",
+				// The run that GATHERS evidence for this platform has to be
+				// willing to install a tool that is unproven here.
+				//
+				// Without it the resolver skips exactly the tools whose proof
+				// is missing for this platform, and the proof can therefore
+				// only ever be gathered for a platform the tool is already
+				// proven on. That is not a corner case: every tool in the
+				// catalog is proven on linux and on nothing else, so the
+				// whole host run used to fail at the first step with
+				//
+				//   nothing to install: no tool in this selection can be
+				//   installed on darwin/arm64; proven only on linux/amd64,
+				//   not on this host
+				//
+				// which is the product's own answer to a question the test
+				// was asking. Every step still has to pass.
+				AllowUnproven: true,
 			})
 			if err != nil {
 				if errors.Is(err, ErrToolPresent) {
