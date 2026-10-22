@@ -252,6 +252,26 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	base := "apt-get install -y"
 	if a.Force {
 		base += " --reinstall"
+		// The owner of the binary goes alongside the named package, because
+		// --reinstall re-extracts the packages it is given and nothing else.
+		//
+		// The package a manifest names is often not the package that ships
+		// the file the verifier looks at. Measured 2026-10-21 on the Layer 2
+		// container proof: `cargo` does not own /usr/bin/rustc (the `rustc`
+		// package does), `gnupg` does not own /usr/bin/gpg (the `gpg`
+		// package does), and `postgresql-18` does not own /usr/bin/psql
+		// (`postgresql-client-18` does).
+		//
+		// A FIRST install works for all three, because the named package
+		// pulls the owner in as a dependency. A FORCED REPAIR does not: the
+		// reinstall restores the named package's own files, the binary the
+		// user lost lives in another package, and nothing puts it back. The
+		// repair then reports "installed but verification says missing" on a
+		// machine where the tool is still broken — the worst outcome,
+		// because it says the work was done.
+		if owner := p.ownerPackage(ctx, a.Name); owner != "" && owner != pkg {
+			base += " " + owner
+		}
 	}
 	base += " " + pkg
 
@@ -340,6 +360,44 @@ func (p *PackageInstaller) runApt(ctx context.Context, tool, cmd string, auth ex
 		return &exec.PrivilegeError{Command: "sudo " + plain, NonInteractive: true}
 	}
 	return fmt.Errorf("install %s: %w%s", tool, err, aptFailureDetail(res))
+}
+
+// ownerPackage returns the apt packages that own the file named name, joined
+// for a command line, or "" when dpkg does not know one.
+//
+// dpkg is the authority on which package ships which file, and it is one
+// command away. The answer also survives the file being deleted: a package's
+// file list is dpkg's own record, not the filesystem's, so `dpkg -S` still
+// names the owner of a binary that is no longer there. That is what makes
+// this usable for a REPAIR, where the whole point is that the file is gone.
+//
+// The pattern is a glob, because dpkg matches paths rather than names, and a
+// glob can hit files whose name merely ENDS with the binary's name — so every
+// hit is checked for an exact base-name match before its package is believed.
+func (p *PackageInstaller) ownerPackage(ctx context.Context, name string) string {
+	if name == "" {
+		return ""
+	}
+	res, _ := p.unprivileged()(ctx, "dpkg -S "+exec.ShellQuote("*/"+name))
+	seen := map[string]bool{}
+	var owners []string
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		i := strings.Index(line, ": ")
+		if i < 0 {
+			continue
+		}
+		pkg := strings.TrimSpace(line[:i])
+		path := strings.TrimSpace(line[i+2:])
+		if filepath.Base(path) != name {
+			continue
+		}
+		if pkg == "" || seen[pkg] {
+			continue
+		}
+		seen[pkg] = true
+		owners = append(owners, pkg)
+	}
+	return strings.Join(owners, " ")
 }
 
 // aptFailureDetail is dpkg's own explanation of a failed install.

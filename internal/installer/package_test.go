@@ -361,13 +361,106 @@ func TestAptForceReinstallsRatherThanTrustingDpkg(t *testing.T) {
 		t.Errorf("privileged calls = %v, want none: as root there is no escalation",
 			rec.privileged)
 	}
-	if len(rec.unprivileged) != 1 {
-		t.Fatalf("unprivileged calls = %v, want exactly one", rec.unprivileged)
+	// The repair asks dpkg which package owns the binary before it reinstalls
+	// (see TestAptForceReinstallsThePackageThatOwnsTheBinary), so the
+	// install command is the one that starts with apt-get, not simply the
+	// first command run.
+	install := ""
+	for _, cmd := range rec.unprivileged {
+		if strings.HasPrefix(cmd, "apt-get") {
+			install = cmd
+		}
 	}
-	if !strings.Contains(rec.unprivileged[0], "--reinstall") {
+	if install == "" {
+		t.Fatalf("no apt-get command among %v", rec.unprivileged)
+	}
+	if !strings.Contains(install, "--reinstall") {
 		t.Errorf("forced apt command = %q, want --reinstall.\n"+
 			"Without it apt trusts dpkg's database, reports the package as already "+
 			"newest, and leaves a deleted binary deleted -- so --force repairs nothing",
+			install)
+	}
+}
+
+// A forced repair must reinstall the package that OWNS the binary, not only
+// the one the manifest names.
+//
+// Measured 2026-10-21 on the Layer 2 container proof: `cargo` does not own
+// /usr/bin/rustc (the `rustc` package does), `gnupg` does not own
+// /usr/bin/gpg (the `gpg` package does), and `postgresql-18` does not own
+// /usr/bin/psql (`postgresql-client-18` does). A first install works for all
+// three, because the named package pulls the owner in as a dependency. A
+// forced repair does not: --reinstall re-extracts the packages it is given
+// and nothing else, so the binary the user lost is never restored and the
+// repair reports success on a machine where the tool is still broken.
+func TestAptForceReinstallsThePackageThatOwnsTheBinary(t *testing.T) {
+	t.Parallel()
+
+	var rec []string
+	p := &PackageInstaller{
+		RunUnprivileged: func(_ context.Context, cmd string) (exec.Result, error) {
+			rec = append(rec, cmd)
+			if strings.HasPrefix(cmd, "dpkg -S") {
+				// dpkg answers with the package and the path it owns.
+				return exec.Result{Stdout: "rustc: /usr/bin/rustc\n"}, nil
+			}
+			return exec.Result{ExitCode: 0}, nil
+		},
+		IsRoot: func() bool { return true },
+		Out:    io.Discard,
+	}
+
+	action := pkgAction(manifest.ManagerApt, "cargo")
+	action.Name = "rustc"
+	action.Force = true
+	if err := p.Install(context.Background(), action); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	install := ""
+	for _, cmd := range rec {
+		if strings.HasPrefix(cmd, "apt-get") {
+			install = cmd
+		}
+	}
+	if install == "" {
+		t.Fatalf("no apt-get command among %v", rec)
+	}
+	if !strings.Contains(install, "rustc") {
+		t.Errorf("forced apt command = %q, want it to name rustc.\n"+
+			"The rustc package owns /usr/bin/rustc; reinstalling cargo alone restores "+
+			"nothing and the repair reports success on a machine where the tool is still broken",
+			install)
+	}
+	if !strings.Contains(install, "cargo") {
+		t.Errorf("forced apt command = %q, want it to name the manifest's package too", install)
+	}
+}
+
+// The negative control for the lookup itself: an ordinary FIRST install must
+// not ask dpkg anything. The dependency chain brings the owner in, so the
+// question is only worth asking when repairing.
+func TestAptFirstInstallDoesNotAskDpkgWhoOwnsTheBinary(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv, priv := rec.installers()
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		RunPrivileged:   priv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	if err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "jq")); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if len(rec.unprivileged) != 1 {
+		t.Fatalf("unprivileged calls = %v, want exactly one", rec.unprivileged)
+	}
+	if strings.Contains(rec.unprivileged[0], "dpkg -S") {
+		t.Errorf("a first install ran %q; the owner lookup is for a repair only",
 			rec.unprivileged[0])
 	}
 }
