@@ -1111,6 +1111,44 @@ installed, so the harness's delete-the-binary step is the only thing that exerci
 along with the owner-package rule that makes a forced repair restore the file the manifest's
 package does not own.
 
+## The "proven on another platform" skip is not a dead end, and the proof run has to opt past it
+
+`tested: true` carries a `tested_on` list of the GOOS/GOARCH pairs the tool
+was proven on, and the resolver **skips** a tool that is proven somewhere but
+not here. On a macOS that skip is total: every tool in the catalog is proven
+on linux, so `aes setup` resolves to nothing and exits 1.
+
+The question that produced this rule was "is a `tested: true` flag allowed to
+be set from evidence the host asking cannot obtain?", and the answer is that
+the question is better posed the other way round: **the host CAN obtain the
+evidence, and the rule must not stop the run whose job is to gather it.**
+
+The mechanism is `AllowUnproven`, and it already existed for the container
+sweep: a proof run has to be willing to install a tool that is unproven here,
+because a tool that can only be installed where it is already proven can never
+be proven anywhere new. The host Layer 2 run did not have it, and the
+consequence was a test that could not pass on the platform it existed to
+prove:
+
+    zellij: FAILED
+      [FAIL] install  exit=1 | aes: nothing to install: no tool in this
+      selection can be installed on darwin/arm64; proven only on
+      linux/amd64, not on this host: zellij
+
+The product's own refusal was the test's failure message. With `AllowUnproven`
+the same run installs the tool, verifies it, and proves the darwin coordinate
+— measured 2026-10-22 for `br`, `bvr`, `discord-cli` and `hashline`, and
+`aes setup --dry-run` on that macOS went from resolving to no tools at all to
+resolving to four.
+
+So the decision is: **the skip stands for a user's run, and the proof run
+opts past it.** A tool is installed on a platform where it has been proven;
+a tool that has never been proven on a platform is skipped there, with
+`--allow-unproven` as the explicit way past it. What the darwin gap needs is
+not a change to the rule but the missing measurements — and those need a
+machine where the tools are not already installed, which is a clean macOS
+runner rather than a developer's desk.
+
 ## Definition of Done
 
 - [ ] 15 invariants covered by tests
