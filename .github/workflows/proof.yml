@@ -1,0 +1,107 @@
+name: proof
+
+# The Layer 2 proof, on both platforms, on demand.
+#
+# Nothing in CI ran it. ci.yml's comment used to say it "runs in release.yml's
+# build job", and no workflow did — release.yml builds and tests, and that is
+# all it does. So the catalog's `tested:` flags were set by hand, from a local
+# run, and nothing would have noticed one of them going stale. The comment was
+# corrected (see the ci.yml history); this file is the answer to what it
+# should have pointed at.
+#
+# It is NOT a pull-request gate, and the reason is the same one ci.yml gives
+# for leaving it out of the test job: the proof installs real software, it
+# takes about ninety minutes for the whole catalog, and a network hiccup in
+# the middle of it would look like a broken tool. A gate that cries wolf is
+# worse than no gate, so this runs when a person asks for it.
+#
+# What it produces is EVIDENCE, not a verdict on the catalog. The evidence is
+# a log: which tool installed, which verified, which drifted and was repaired.
+# Turning that into a `tested_on:` entry in a manifest is a human step, and
+# it is deliberately not automated — a tool that a proof could install is not
+# automatically a tool that is proven, and the difference is the difference
+# between a flag that records a measurement and one that records that
+# something was measured somewhere.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tools:
+        description: "Tools to sweep (blank = the whole default selection)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  # The linux proof, in a fresh container per tool, so the absence assertion
+  # means what it says: a fresh ubuntu:24.04 has no jq because nothing has
+  # ever installed jq there.
+  #
+  # The runner's own Docker daemon is the one that runs the containers, and
+  # the harness bind-mounts the binary it built into each of them, so the
+  # mount resolves on the runner where the daemon lives.
+  linux:
+    name: layer 2 (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Layer 2 in a fresh container per tool
+        env:
+          AES_LAYER2: "1"
+          AES_LAYER2_TOOL: ${{ inputs.tools }}
+        run: go test -v -timeout 170m -run TestLayer2Container ./internal/sandbox/
+
+  # The darwin proof, on the runner itself, for the tools a macOS can
+  # install.
+  #
+  # The host proof has to be allowed to install a tool that is not yet proven
+  # on the host, or a tool can only ever be proven where it is already
+  # proven. That is what AllowUnproven is for, and it is why the same run
+  # used to fail with the product's own refusal as its error message.
+  #
+  # A tool the runner already has is skipped: a machine that already has a
+  # tool cannot prove a fresh install of it.
+  darwin:
+    name: layer 2 (darwin)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Layer 2 on the host
+        env:
+          AES_LAYER2: "1"
+        run: go test -v -timeout 50m -run TestLayer2RealInstall ./internal/sandbox/
+
+  # The catalog's apt coordinates, asked of apt rather than guessed at.
+  # This one installs nothing, so it can be a gate.
+  apt-coordinates:
+    name: apt coordinates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Every apt coordinate resolves against the distro index
+        env:
+          AES_CATALOG_CHECK: "1"
+        run: go test -v -timeout 25m -run TestAptCoordinatesMatchWhatAptOffers ./internal/sandbox/
