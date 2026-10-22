@@ -83,13 +83,20 @@ func namedToolsFor(t *testing.T, cat *catalog.Catalog, tools []*manifest.Tool) [
 	return out
 }
 
-// layer2ToolFilter names the tools to sweep INSTEAD of the default selection.
+// layer2ToolFilter reads what the caller asked the sweep to cover.
 //
-// It exists because a sweep that takes ninety minutes is a bad way to answer
-// one question. When a tool's proof fails, the useful next step is to re-run
-// that tool — and the handoff is explicit that a contended apt mirror makes a
-// whole sweep meaningless, so re-running the whole sweep to check one tool is
-// the expensive way to do it.
+// Two different questions, returned as two values rather than folded into
+// one, because they are not the same question: WHICH tools (a list), and
+// whether the caller meant the whole selection by saying `all`. The host
+// test's local default is a short hand-picked list, so it has to tell
+// "nothing was asked for" from "everything was asked for by name" — and both
+// arrive as an empty list if `all` is collapsed into the list.
+//
+// The filter exists because a sweep that takes ninety minutes is a bad way
+// to answer one question. When a tool's proof fails, the useful next step is
+// to re-run that tool — and the handoff is explicit that a contended apt
+// mirror makes a whole sweep meaningless, so re-running the whole sweep to
+// check one tool is the expensive way to do it.
 //
 // The names are catalog tools, not necessarily default ones: a tool that has
 // not been proven yet is not in the default set, and proving it is exactly
@@ -98,22 +105,33 @@ func namedToolsFor(t *testing.T, cat *catalog.Catalog, tools []*manifest.Tool) [
 //	AES_LAYER2_TOOL=git-lfs,bvr AES_LAYER2=1 go test -run TestLayer2Container ./internal/sandbox/
 //
 // An empty value means no filter, and the sweep covers the default selection
-// as it always has.
-func layer2ToolFilter() []string {
+// as it always has. `all` means the same thing to the container — the default
+// selection is the whole catalog there — so the container caller ignores the
+// flag and it is the host test that reads it.
+func layer2ToolFilter() (names []string, all bool) {
 	raw := strings.TrimSpace(os.Getenv("AES_LAYER2_TOOL"))
 	if raw == "" {
-		return nil
+		return nil, false
 	}
-	var names []string
+	var parts []string
 	for _, n := range strings.Split(raw, ",") {
 		if n = strings.TrimSpace(n); n != "" {
-			names = append(names, n)
+			parts = append(parts, n)
 		}
 	}
-	return names
+	if len(parts) == 1 && strings.EqualFold(parts[0], "all") {
+		return nil, true
+	}
+	return parts, false
 }
 
-// namedTool is one tool and the strategy its manifest declares for linux.
+// namedTool is one tool and, when an entry carries one, the strategy the
+// proof expects it to use.
+//
+// strategy is a literal written by hand: an independent claim about what the
+// manifest will say, checked against what it actually says. An entry read
+// from the catalog leaves it empty, because its strategy IS what the
+// manifest says — asserting the two would be an assertion that cannot fail.
 type namedTool struct {
 	name     string
 	strategy string
@@ -191,7 +209,7 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	// Read from the catalog, so a tool added to or removed from the catalog
 	// changes what this proves without anyone editing the test.
 	tools := containerToolsFor(t, cat)
-	filtered := layer2ToolFilter()
+	filtered, _ := layer2ToolFilter()
 	if len(filtered) > 0 {
 		var picked []*manifest.Tool
 		for _, name := range filtered {

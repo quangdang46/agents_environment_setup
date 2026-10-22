@@ -3,10 +3,13 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,7 +56,16 @@ func layer2Enabled(t *testing.T) {
 	}
 }
 
-// layer2Tools spans the strategies a run can prove on this host.
+// layer2Tools is the LOCAL default: the short, hand-picked list a host
+// proof attempts when nothing else was asked for.
+//
+// It is short on purpose. The host run is not sandboxed where it matters —
+// a package/brew tool installs into the real /opt/homebrew, which no home
+// directory can redirect — so a developer who sets AES_LAYER2=1 gets a
+// handful of tools proven rather than twenty-three formulae installed into
+// a package manager they never agreed to touch. A clean CI runner is the
+// machine that may be changed wholesale, and it asks for the whole
+// selection by name; see hostSweep below.
 //
 // The bead asks for three. On macOS two are reachable: github-release installs
 // a real archive, and package/brew runs a real brew. apt is deliberately
@@ -61,41 +73,193 @@ func layer2Enabled(t *testing.T) {
 // otherwise would prove nothing about the privilege model, which is the entire
 // reason to exercise that path. The Ubuntu container in a Linux CI job is
 // where apt gets proven.
-var layer2Tools = []struct {
-	name     string
-	strategy string
-}{
+var layer2Tools = []namedTool{
 	// github-release: a real archive, downloaded, checksum-verified, extracted.
 	{"zellij", manifest.StrategyGithubRelease},
 	{"opentofu", manifest.StrategyGithubRelease},
 	{"starship", manifest.StrategyGithubRelease},
 	// package/brew: a real brew invocation, so the run covers more than one
-	// strategy on macOS. delta and gping are package on darwin; several other
+	// strategy on macOS. delta is package on darwin; several other
 	// package tools are already installed here, which requireAbsent rejects.
 	{"delta", manifest.StrategyPackage},
-	// The catalog's own tools, and the only darwin evidence the catalog has.
-	//
-	// Every other tool in the catalog is proven on linux, and the container
-	// sweep is the only test that proves the whole catalog — so the darwin
-	// coordinates are unproven for all of them, and the resolver skips a
-	// proven-on-another-platform tool rather than install it. That is the
-	// honest answer, and it is also why `aes setup` on a macOS resolves to
-	// nothing.
-	//
-	// These four are here because they are the catalog's own tools, and a
-	// darwin proof of them is a darwin proof of something the project ships.
-	// They are github-release, so the run is a real download, a real
-	// checksum, a real extract — and the drift and force-reinstall steps
-	// apply as they do everywhere.
+	// The catalog's own tools: a darwin proof of them is a darwin proof of
+	// something the project ships. They are github-release, so the run is a
+	// real download, a real checksum, a real extract — and the drift and
+	// force-reinstall steps apply as they do everywhere.
 	//
 	// A tool the machine already has is skipped by requireAbsent, so the
-	// proof runs on a machine where these are not installed. The
-	// developer's machine has all four, which is why the proof here is run
-	// with a PATH that does not carry them.
+	// proof runs on a machine where these are not installed. The developer's
+	// machine has all four, which is why the proof here is run with a PATH
+	// that does not carry them.
 	{"br", manifest.StrategyGithubRelease},
 	{"bvr", manifest.StrategyGithubRelease},
 	{"discord-cli", manifest.StrategyGithubRelease},
 	{"hashline", manifest.StrategyGithubRelease},
+}
+
+// hostSweep is the list of tools a host proof attempts.
+//
+// The answer depends on who is asking, and the difference is about what the
+// run is allowed to touch:
+//
+//   - Nothing requested: layer2Tools above, the hand-picked local list. That
+//     is the default, and the reason that list is short is what the run
+//     installs into — a brew formula lands in the real /opt/homebrew.
+//
+//   - AES_LAYER2_TOOL=all: the whole default selection, read from the catalog
+//     rather than written down here. This is the CI proof, and a clean runner
+//     is the only machine that can answer for the whole catalog: on a
+//     developer's desk requireAbsent would skip most of it as already
+//     installed, which is a partial answer reported as a full one. The local
+//     default and the CI default are deliberately different lists, because
+//     the question was never "which tools exist" but "which machine may this
+//     run change".
+//
+//   - AES_LAYER2_TOOL=a,b: exactly those catalog tools, proven or not. Named
+//     so one tool can be re-proved without re-running a sweep, and so a tool
+//     that is not in the default set can be proven into it — a filter on a
+//     run whose job is to gather evidence that does not exist yet.
+//
+// An entry read from the catalog carries no expected strategy. Its strategy
+// would be read from the same manifest lookup the resolver makes, so
+// comparing it against the resolved target would be a value against itself.
+// The hand-picked list carries a literal per tool, and that one is an
+// independent claim: what the author expected darwin to do, checked against
+// what the manifest declares.
+func hostSweep(t *testing.T, cat *catalog.Catalog) ([]namedTool, error) {
+	t.Helper()
+
+	names, all := layer2ToolFilter()
+	if !all && len(names) == 0 {
+		return layer2Tools, nil
+	}
+
+	var tools []*manifest.Tool
+	if all {
+		tools = cat.Default()
+		if len(tools) == 0 {
+			return nil, errors.New("no tool is marked default:true; this sweep would prove nothing")
+		}
+		t.Logf("AES_LAYER2_TOOL=all: the default selection, %d tools, to be proved on this machine", len(tools))
+	} else {
+		for _, name := range names {
+			tool, ok := cat.ByName(name)
+			if !ok {
+				return nil, fmt.Errorf("%s is not in the catalog", name)
+			}
+			tools = append(tools, tool)
+		}
+		t.Logf("AES_LAYER2_TOOL=%v: %d named tools instead of the local default list", names, len(tools))
+	}
+
+	out := make([]namedTool, 0, len(tools))
+	for _, tool := range tools {
+		out = append(out, namedTool{name: tool.Name})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	return out, nil
+}
+
+// TestHostSweepSelection pins the three answers hostSweep can give. The
+// difference between the first two is the whole reason a CI proof exists:
+// "nothing was asked for" and "everything was asked for by name" both have to
+// be answerable on a machine whose local default is a short list, and only
+// the second one may change it wholesale.
+//
+// Nothing here installs anything. The selection is the part a run would
+// otherwise discover ninety minutes in, after the machine had already been
+// changed.
+func TestHostSweepSelection(t *testing.T) {
+	cat, err := catalog.Load(filepath.Join("..", "..", "tools"))
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+
+	t.Run("no request is the hand-picked local list", func(t *testing.T) {
+		t.Setenv("AES_LAYER2_TOOL", "")
+		tools, err := hostSweep(t, cat)
+		if err != nil {
+			t.Fatalf("hostSweep: %v", err)
+		}
+		if len(tools) != len(layer2Tools) {
+			t.Fatalf("got %d tools, want the %d hand-picked local ones", len(tools), len(layer2Tools))
+		}
+		for i, want := range layer2Tools {
+			if tools[i].name != want.name {
+				t.Errorf("tool %d = %s, want %s", i, tools[i].name, want.name)
+			}
+			if tools[i].strategy == "" {
+				t.Errorf("%s carries no strategy expectation, so the check against the manifest would never run", want.name)
+			}
+		}
+	})
+
+	t.Run("all is the whole default selection, not the local list", func(t *testing.T) {
+		t.Setenv("AES_LAYER2_TOOL", "all")
+		tools, err := hostSweep(t, cat)
+		if err != nil {
+			t.Fatalf("hostSweep: %v", err)
+		}
+		want := cat.Default()
+		if len(want) <= len(layer2Tools) {
+			t.Fatalf("the default selection is %d tools; it must be more than the %d-tool local list or this assertion proves nothing", len(want), len(layer2Tools))
+		}
+		if len(tools) != len(want) {
+			t.Fatalf("got %d tools, want the %d of the default selection", len(tools), len(want))
+		}
+		inDefault := map[string]bool{}
+		for _, tool := range want {
+			inDefault[tool.Name] = true
+		}
+		seen := map[string]bool{}
+		for i, tc := range tools {
+			if !inDefault[tc.name] {
+				t.Errorf("%s is not in the default selection", tc.name)
+			}
+			if seen[tc.name] {
+				t.Errorf("%s appears twice", tc.name)
+			}
+			seen[tc.name] = true
+			if tc.strategy != "" {
+				t.Errorf("%s was read from the catalog but carries a hand-written strategy expectation (%s); the two are the same value, so the comparison cannot fail", tc.name, tc.strategy)
+			}
+			if i > 0 && tools[i-1].name >= tc.name {
+				t.Errorf("not sorted: %q before %q", tools[i-1].name, tc.name)
+			}
+		}
+	})
+
+	t.Run("names are exactly those tools", func(t *testing.T) {
+		t.Setenv("AES_LAYER2_TOOL", "bvr, br")
+		tools, err := hostSweep(t, cat)
+		if err != nil {
+			t.Fatalf("hostSweep: %v", err)
+		}
+		want := []string{"br", "bvr"}
+		if len(tools) != len(want) {
+			t.Fatalf("got %d tools, want %d", len(tools), len(want))
+		}
+		for i, name := range want {
+			if tools[i].name != name {
+				t.Errorf("tool %d = %s, want %s", i, tools[i].name, name)
+			}
+		}
+	})
+
+	t.Run("a name the catalog does not have is refused", func(t *testing.T) {
+		// gping is the real one: a hand-kept list carried it after the
+		// catalog had moved on, and the name sat there failing. The refusal
+		// belongs here, where the list is built, rather than eighty steps
+		// into a run that has already changed the machine.
+		t.Setenv("AES_LAYER2_TOOL", "gping")
+		tools, err := hostSweep(t, cat)
+		if err == nil {
+			t.Fatalf("a name that is not in the catalog was accepted: %v", tools)
+		}
+		if !strings.Contains(err.Error(), "not in the catalog") {
+			t.Errorf("error = %q, want it to name the problem", err)
+		}
+	})
 }
 
 func TestLayer2RealInstall(t *testing.T) {
@@ -123,8 +287,13 @@ func TestLayer2RealInstall(t *testing.T) {
 		t.Fatalf("fingerprint host ~/.aes: %v", err)
 	}
 
+	sweep, err := hostSweep(t, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	strategiesProven := map[string]bool{}
-	for _, tc := range layer2Tools {
+	for _, tc := range sweep {
 		t.Run(tc.name, func(t *testing.T) {
 			tool, ok := c.ByName(tc.name)
 			if !ok {
@@ -134,7 +303,12 @@ func TestLayer2RealInstall(t *testing.T) {
 			if !ok {
 				t.Skipf("%s has no %s target", tc.name, host.Key())
 			}
-			if target.Strategy != tc.strategy {
+			// Only when the entry carries its own expectation. An entry
+			// read from the catalog has none: its strategy would come from
+			// the same manifest lookup the resolver makes, so comparing it
+			// against the resolved target is a value against itself — a
+			// test that cannot fail, which is worse than no test.
+			if tc.strategy != "" && target.Strategy != tc.strategy {
 				t.Errorf("%s uses %s on %s, expected %s", tc.name, target.Strategy, host.Key(), tc.strategy)
 			}
 			if target.Strategy == manifest.StrategyPackage && target.Manager == manifest.ManagerBrew {
