@@ -1,7 +1,21 @@
 name: br
 description: beads_rust task manager for AI coding agents
 category: agent
-tested: false
+default: true
+tested: true
+tested_on:
+  # Proven on darwin/arm64, 2026-10-22, in both layers.
+  #
+  # Layer 1: the tool was on the machine, and the probe read a version
+  # above the floor.
+  #
+  # Layer 2: the full sequence on a machine where the tool was ABSENT —
+  # install, verify, state written, re-run changes nothing, the binary
+  # deleted is noticed as drift, and --force puts it back. Run by the
+  # host Layer 2 proof, whose PATH did not carry the developer's own
+  # copy of the tool: a machine that already has the tool cannot prove
+  # a fresh install of it.
+  - darwin/arm64
 tags:
   - agent
 verify:
