@@ -15,6 +15,11 @@ name: proof
 # the middle of it would look like a broken tool. A gate that cries wolf is
 # worse than no gate, so this runs when a person asks for it.
 #
+# A run can be narrowed twice over: `tools` names the tools, `platform` names
+# the proof. Both default to everything, so a dispatch with no inputs asks for
+# the whole evidence — and re-running all of it to answer one question about
+# one tool is the expensive way to ask.
+#
 # What it produces is EVIDENCE, not a verdict on the catalog. The evidence is
 # a log: which tool installed, which verified, which drifted and was repaired.
 # Turning that into a `tested_on:` entry in a manifest is a human step, and
@@ -30,6 +35,10 @@ on:
         description: "Tools to sweep (blank = the whole default selection)"
         required: false
         default: ""
+      platform:
+        description: "Which proof to run: all, linux, darwin or apt"
+        required: false
+        default: "all"
 
 permissions:
   contents: read
@@ -43,6 +52,7 @@ jobs:
   # the harness bind-mounts the binary it built into each of them, so the
   # mount resolves on the runner where the daemon lives.
   linux:
+    if: inputs.platform == 'all' || inputs.platform == '' || inputs.platform == 'linux'
     name: layer 2 (linux)
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -57,7 +67,7 @@ jobs:
       - name: Layer 2 in a fresh container per tool
         env:
           AES_LAYER2: "1"
-          AES_LAYER2_TOOL: ${{ inputs.tools }}
+          AES_LAYER2_TOOL: ${{ inputs.tools || 'all' }}
         run: go test -v -timeout 170m -run TestLayer2Container ./internal/sandbox/
 
   # The darwin proof, on the runner itself, for the tools a macOS can
@@ -69,11 +79,21 @@ jobs:
   # used to fail with the product's own refusal as its error message.
   #
   # A tool the runner already has is skipped: a machine that already has a
-  # tool cannot prove a fresh install of it.
+  # tool cannot prove a fresh install of it. That is why this has to be a
+  # runner rather than a developer's desk — a desk would skip most of the
+  # catalog and report the partial answer as a full one.
+  #
+  # AES_LAYER2_TOOL asks for `all` when nothing else was named, which the
+  # host test reads as "the whole default selection". Its LOCAL default is a
+  # short hand-picked list, deliberately: a brew install lands in the real
+  # /opt/homebrew, and a developer does not ask for twenty-three formulae.
+  # Here the machine is the point — clean, disposable, and safe to change
+  # wholesale.
   darwin:
+    if: inputs.platform == 'all' || inputs.platform == '' || inputs.platform == 'darwin'
     name: layer 2 (darwin)
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -85,11 +105,13 @@ jobs:
       - name: Layer 2 on the host
         env:
           AES_LAYER2: "1"
-        run: go test -v -timeout 50m -run TestLayer2RealInstall ./internal/sandbox/
+          AES_LAYER2_TOOL: ${{ inputs.tools || 'all' }}
+        run: go test -v -timeout 140m -run TestLayer2RealInstall ./internal/sandbox/
 
   # The catalog's apt coordinates, asked of apt rather than guessed at.
   # This one installs nothing, so it can be a gate.
   apt-coordinates:
+    if: inputs.platform == 'all' || inputs.platform == '' || inputs.platform == 'apt'
     name: apt coordinates
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -105,3 +127,19 @@ jobs:
         env:
           AES_CATALOG_CHECK: "1"
         run: go test -v -timeout 25m -run TestAptCoordinatesMatchWhatAptOffers ./internal/sandbox/
+
+  # A typo in `platform` must not run nothing at all. Every job above is
+  # selected by that input, so an unknown value would skip all three and
+  # the run would finish with no proof in it — the same shape as a corrupt
+  # state file read as an empty one, and just as misleading.
+  unknown-platform:
+    name: platform input is valid
+    if: inputs.platform != 'all' && inputs.platform != '' && inputs.platform != 'linux' && inputs.platform != 'darwin' && inputs.platform != 'apt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          echo "unknown platform input: '$PLATFORM' (want: all, linux, darwin, apt)"
+          exit 1
