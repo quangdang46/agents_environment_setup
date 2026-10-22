@@ -1043,6 +1043,74 @@ direction that quietly reverts work.
 Decided here because it is a second reader of the same four statuses, and a
 decision that lives only in a commit message is one the next agent relitigates.
 
+## A forced apt repair puts the file back before dpkg is allowed to touch it
+
+`--force` promises to repair a drifted tool: state says installed, the verifier says the binary
+is missing, so the repair reinstalls it. For apt that promise has a hole in it, and the hole is
+in dpkg's ordering rather than in the command.
+
+Measured 2026-10-22 in a fresh `ubuntu:24.04`:
+
+```
+rm -f /usr/bin/git-lfs
+apt-get install -y --reinstall git-lfs
+dpkg: warning: old git-lfs package pre-removal script subprocess returned error exit status 1
+dpkg: trying script from the new package instead ...
+dpkg: error processing archive .../git-lfs_3.4.1-1ubuntu0.4_amd64.deb (--unpack):
+ new git-lfs package pre-removal script subprocess returned error exit status 1
+E: Sub-process /usr/bin/dpkg returned an error code (1)
+```
+
+dpkg runs a package's maintainer scripts **before** it unpacks the new files. `git-lfs`'s
+pre-removal script is `git lfs uninstall --skip-repo --system`, which needs the very binary the
+reinstall is restoring. So the binary has to be on disk *before dpkg starts*, and `--reinstall`
+cannot arrange that on its own: the unpack aborts and the file is never put back.
+
+**The decision: a forced apt repair restores the missing file from the package's own archive
+first, and then lets dpkg do the reinstall as usual.**
+
+```
+apt-get download git-lfs
+dpkg-deb --fsys-tarfile git-lfs_*.deb | tar -C / --skip-old-files -xf -
+apt-get install -y --reinstall git-lfs
+-> Unpacking git-lfs (3.4.1-1ubuntu0.4) over (3.4.1-1ubuntu0.4)
+-> Setting up git-lfs (3.4.1-1ubuntu0.4)
+```
+
+Three properties of that restore are deliberate.
+
+**It restores the files that are MISSING and nothing else.** `--skip-old-files` is what does it.
+dpkg's own reinstall re-extracts a package's files but leaves a conffile the administrator edited
+alone, and a repair that reverted `/etc/bash.bashrc` would be damage, not repair. Measured conffiles
+among this catalog's apt packages: `git` owns `/etc/bash_completion.d/git-prompt`, and `bash` owns
+`/etc/bash.bashrc` plus three files under `/etc/skel`.
+
+**It restores the package that owns the binary, not the package the manifest names.** The file that
+went missing is the tool's binary, and dpkg says which package owns it — the same answer that makes
+`--reinstall` necessary in the first place. The manifest's package did not lose anything, and
+restoring files that were never lost is how a repair touches a machine it had no business touching.
+For `postgres18` that is the difference between writing back the client's files and writing over
+`/etc/postgresql/18/main`.
+
+**The archive has to be fetched rather than found**: apt removes it when the transaction ends, and
+the failed transaction ends with `/var/cache/apt/archives` empty. The fetch is unprivileged and
+happens before the privilege decision; the restore is part of the privileged command, so the user
+approves **one** repair in **one** command rather than being asked to approve the same repair twice.
+
+When the archive cannot be fetched, the plain reinstall runs — that is what every other package
+tool needs, and the failure that matters is then reported by the reinstall with dpkg's own
+explanation.
+
+**The alternative was rejected: changing the Layer 2 harness's drift step.** The obvious cheaper
+fix is to make the harness drift a package tool with `apt-get remove --purge <pkg>` instead of
+deleting the binary, since the product already repairs that. That is wrong on two counts. The spec
+prescribes the harness's current sequence — "6. Delete the binary, run `aes doctor` → drift
+detected; 7. Re-run `aes setup --only <tool> --force` → reinstalls" — and a test changed until it
+passes is not a proof. And `--reinstall` only matters when dpkg still believes the package is
+installed, so the harness's delete-the-binary step is the only thing that exercises it at all,
+along with the owner-package rule that makes a forced repair restore the file the manifest's
+package does not own.
+
 ## Definition of Done
 
 - [ ] 15 invariants covered by tests

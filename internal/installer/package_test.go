@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -718,3 +720,353 @@ func TestInjectedAuthorizeIsConsulted(t *testing.T) {
 // exec_test.go asserts both directions: a capped stream ends with the marker,
 // and a complete one does not carry it. Deleting the local cappedWriter removes
 // the second implementation rather than the coverage.
+
+// ---------------------------------------------------------------------------
+// The archive restore
+//
+// dpkg runs a package's maintainer scripts BEFORE it unpacks the new files,
+// and a script that needs the very binary the reinstall is restoring fails
+// when that binary is the thing the user lost. git-lfs's pre-removal script
+// is `git lfs uninstall --skip-repo --system`.
+//
+// Measured 2026-10-22 in a fresh ubuntu:24.04 container:
+//
+//	rm -f /usr/bin/git-lfs
+//	apt-get install -y --reinstall git-lfs
+//	dpkg: warning: old git-lfs package pre-removal script subprocess returned error exit status 1
+//	dpkg: trying script from the new package instead ...
+//	dpkg: error processing archive .../git-lfs_3.4.1-1ubuntu0.4_amd64.deb (--unpack):
+//	 new git-lfs package pre-removal script subprocess returned error exit status 1
+//	E: Sub-process /usr/bin/dpkg returned an error code (1)
+//
+// The binary is never put back. --reinstall cannot fix this on its own; the
+// file has to be on disk before dpkg starts. The package's own archive is
+// where it comes from, and the archive is not in apt's cache afterwards —
+// apt removes it when the transaction ends, and the failed transaction ends
+// with /var/cache/apt/archives empty.
+
+// fakeApt answers the two commands a forced apt repair makes before it
+// installs: dpkg's "which package owns this file", and the archive fetch.
+//
+// The owner answer is what gates the restore. dpkg still recording the
+// binary's owner is exactly the condition under which dpkg will run the
+// package's pre-removal script — and that script is what fails when the file
+// it needs is the file the user lost.
+//
+// The fetch writes a plausible archive into the temp directory the command
+// names. The command carries the directory rather than relying on a working
+// directory, because the installer runs commands through `sh -c` and never
+// changes its own working directory — a download that landed in the wrong
+// place would be a silent no-op rather than a failure.
+func fakeApt(t *testing.T, owner, archiveName string, err error) func(context.Context, string) (exec.Result, error) {
+	t.Helper()
+	return func(_ context.Context, cmd string) (exec.Result, error) {
+		if strings.HasPrefix(cmd, "dpkg -S") {
+			if owner == "" {
+				return exec.Result{ExitCode: 1, Stderr: "dpkg-query: no path found matching pattern"}, nil
+			}
+			// dpkg answers with the package and the path it owns, and the
+			// owner lookup only believes a path whose base name is the binary
+			// it asked about — so the answer has to carry that name.
+			name := dpkgGlobName(cmd)
+			return exec.Result{ExitCode: 0, Stdout: owner + ": /usr/bin/" + name + "\n"}, nil
+		}
+		if !strings.Contains(cmd, "apt-get download") {
+			return exec.Result{ExitCode: 0}, nil
+		}
+		if err != nil {
+			return exec.Result{ExitCode: 100, Stderr: "E: Unable to locate package"}, err
+		}
+		fields := strings.Fields(cmd)
+		if len(fields) < 2 || fields[0] != "cd" {
+			t.Errorf("download command %q does not name a directory to download into", cmd)
+			return exec.Result{ExitCode: 0}, nil
+		}
+		if err := os.WriteFile(filepath.Join(fields[1], archiveName), []byte("archive"), 0o644); err != nil {
+			t.Errorf("write fake archive: %v", err)
+		}
+		return exec.Result{ExitCode: 0}, nil
+	}
+}
+
+// dpkgGlobName reads the binary name out of a `dpkg -S '*/<name>'` command.
+func dpkgGlobName(cmd string) string {
+	i := strings.Index(cmd, "*/")
+	if i < 0 {
+		return ""
+	}
+	name := cmd[i+2:]
+	name = strings.Trim(name, "'\"")
+	return name
+}
+
+// The restore has to put back the file that is MISSING and nothing else.
+//
+// dpkg's own reinstall re-extracts a package's files but leaves a conffile the
+// administrator edited alone; a repair that reverted /etc/bash.bashrc would be
+// damage, not repair. `--skip-old-files` is what keeps the restore to the
+// files that are actually gone, and it is the difference between restoring the
+// drift and overwriting the machine.
+//
+// Measured conffiles among this catalog's apt packages: `git` owns
+// /etc/bash_completion.d/git-prompt and `bash` owns /etc/bash.bashrc plus
+// three files under /etc/skel.
+func TestAptForceRestoresOnlyTheMissingFiles(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv := func(ctx context.Context, cmd string) (exec.Result, error) {
+		rec.unprivileged = append(rec.unprivileged, cmd)
+		return fakeApt(t, "git-lfs", "git-lfs_3.4.1-1ubuntu0.4_amd64.deb", nil)(ctx, cmd)
+	}
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	action := pkgAction(manifest.ManagerApt, "git-lfs")
+	// The installed name is what the owner lookup asks dpkg about, and the
+	// CLI always sets it from the manifest's verify.command.
+	action.Name = "git-lfs"
+	action.Force = true
+	if err := p.Install(context.Background(), action); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	install := ""
+	for _, cmd := range rec.unprivileged {
+		if strings.Contains(cmd, "apt-get install") {
+			install = cmd
+		}
+	}
+	if install == "" {
+		t.Fatalf("no apt-get install among %v", rec.unprivileged)
+	}
+	if !strings.Contains(install, "--skip-old-files") {
+		t.Errorf("forced repair = %q, want it to skip the files that are already there.\n"+
+			"A restore that overwrites existing files reverts a conffile the administrator "+
+			"edited, which is damage rather than repair", install)
+	}
+}
+
+// The restore names the package that owns the binary, and only that package.
+//
+// The manifest's package did not lose anything — the file that went missing is
+// the tool's binary, and dpkg says which package owns it. Restoring the
+// manifest's package too would put back files that were never lost, and for
+// `postgres18` that would mean writing over /etc/postgresql/18/main.
+func TestAptForceRestoresTheOwnerPackageNotTheNamedOne(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv := func(ctx context.Context, cmd string) (exec.Result, error) {
+		rec.unprivileged = append(rec.unprivileged, cmd)
+		return fakeApt(t, "postgresql-client-18", "postgresql-client-18_18.0-1_amd64.deb", nil)(ctx, cmd)
+	}
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	action := pkgAction(manifest.ManagerApt, "postgresql-18")
+	action.Name = "psql"
+	action.Force = true
+	if err := p.Install(context.Background(), action); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	restore := ""
+	for _, cmd := range rec.unprivileged {
+		if strings.Contains(cmd, "dpkg-deb --fsys-tarfile") {
+			restore = cmd
+		}
+	}
+	if restore == "" {
+		t.Fatalf("no restore among %v", rec.unprivileged)
+	}
+	if !strings.Contains(restore, "postgresql-client-18") {
+		t.Errorf("restore = %q, want it to restore the package that owns the binary", restore)
+	}
+	if strings.Contains(restore, "postgresql-18_") {
+		t.Errorf("restore = %q, want it NOT to restore the package the manifest names.\n"+
+			"That package lost nothing, and writing its files back over / would revert "+
+			"the server's configuration", restore)
+	}
+}
+
+// A forced repair must put the file back BEFORE dpkg is asked to reinstall
+// it. The order is the whole point: the extract that comes second is
+// worthless, because dpkg has already aborted.
+func TestAptForceRestoresTheArchiveBeforeReinstalling(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv := func(ctx context.Context, cmd string) (exec.Result, error) {
+		rec.unprivileged = append(rec.unprivileged, cmd)
+		return fakeApt(t, "git-lfs", "git-lfs_3.4.1-1ubuntu0.4_amd64.deb", nil)(ctx, cmd)
+	}
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	action := pkgAction(manifest.ManagerApt, "git-lfs")
+	// The installed name is what the owner lookup asks dpkg about, and the
+	// CLI always sets it from the manifest's verify.command.
+	action.Name = "git-lfs"
+	action.Force = true
+	if err := p.Install(context.Background(), action); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	install := ""
+	for _, cmd := range rec.unprivileged {
+		if strings.Contains(cmd, "apt-get install") {
+			install = cmd
+		}
+	}
+	if install == "" {
+		t.Fatalf("no apt-get install among %v", rec.unprivileged)
+	}
+	restore := strings.Index(install, "dpkg-deb --fsys-tarfile")
+	reinstall := strings.Index(install, "apt-get install")
+	if restore < 0 {
+		t.Fatalf("forced repair = %q, want it to restore the package's files.\n"+
+			"dpkg runs a package's maintainer scripts before it unpacks the new files, "+
+			"and git-lfs's pre-removal script needs the very binary the reinstall is "+
+			"restoring — so the file has to be back before dpkg starts, or the unpack "+
+			"aborts and the binary is never restored", install)
+	}
+	if restore > reinstall {
+		t.Errorf("forced repair = %q, want the restore BEFORE the reinstall.\n"+
+			"In this order dpkg has already aborted by the time the file is put back", install)
+	}
+	if !strings.Contains(install, "--reinstall") {
+		t.Errorf("forced repair = %q, want --reinstall", install)
+	}
+}
+
+// The restore is part of the SAME privileged command, so the user approves one
+// repair rather than being asked to approve the same repair twice.
+func TestAptForceRestoresInsideOnePrivilegedCommand(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv := func(ctx context.Context, cmd string) (exec.Result, error) {
+		rec.unprivileged = append(rec.unprivileged, cmd)
+		return fakeApt(t, "git-lfs", "git-lfs_3.4.1-1ubuntu0.4_amd64.deb", nil)(ctx, cmd)
+	}
+	priv := func(_ context.Context, cmd string) (exec.Result, error) {
+		rec.privileged = append(rec.privileged, cmd)
+		return exec.Result{ExitCode: 0}, nil
+	}
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		RunPrivileged:   priv,
+		Authorize:       func(_ context.Context, _ string) error { return nil },
+		IsRoot:          func() bool { return false },
+		Out:             io.Discard,
+	}
+
+	action := pkgAction(manifest.ManagerApt, "git-lfs")
+	// The installed name is what the owner lookup asks dpkg about, and the
+	// CLI always sets it from the manifest's verify.command.
+	action.Name = "git-lfs"
+	action.Force = true
+	if err := p.Install(context.Background(), action); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if len(rec.privileged) != 1 {
+		t.Fatalf("privileged calls = %v, want exactly one.\n"+
+			"The restore and the reinstall are one repair; asking the user to approve "+
+			"it twice is two decisions about one thing", rec.privileged)
+	}
+	cmd := rec.privileged[0]
+	if !strings.Contains(cmd, "dpkg-deb --fsys-tarfile") {
+		t.Errorf("privileged command = %q, want it to restore the files", cmd)
+	}
+	if !strings.Contains(cmd, "apt-get install -y --reinstall git-lfs") {
+		t.Errorf("privileged command = %q, want it to reinstall git-lfs", cmd)
+	}
+}
+
+// A FIRST install must not restore anything. Nothing is missing, so there is
+// nothing to put back, and an archive fetch on every ordinary install would
+// make the common case pay for the rare one.
+func TestAptFirstInstallDoesNotFetchAnArchive(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv, priv := rec.installers()
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		RunPrivileged:   priv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	if err := p.Install(context.Background(), pkgAction(manifest.ManagerApt, "git-lfs")); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	for _, cmd := range rec.unprivileged {
+		if strings.Contains(cmd, "apt-get download") {
+			t.Errorf("a first install fetched an archive: %q.\n"+
+				"Nothing is missing on a first install; the fetch exists for a repair", cmd)
+		}
+	}
+}
+
+// An archive that cannot be fetched is not a failed repair — it is a repair
+// that falls back to the command that already worked for every other package
+// tool. The failure that matters is still reported, by the reinstall, with
+// dpkg's own explanation.
+func TestAptForceFallsBackWhenTheArchiveCannotBeFetched(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	unpriv := func(ctx context.Context, cmd string) (exec.Result, error) {
+		rec.unprivileged = append(rec.unprivileged, cmd)
+		return fakeApt(t, "git-lfs", "", errors.New("network is down"))(ctx, cmd)
+	}
+
+	p := &PackageInstaller{
+		RunUnprivileged: unpriv,
+		IsRoot:          func() bool { return true },
+		Out:             io.Discard,
+	}
+
+	action := pkgAction(manifest.ManagerApt, "git-lfs")
+	// The installed name is what the owner lookup asks dpkg about, and the
+	// CLI always sets it from the manifest's verify.command.
+	action.Name = "git-lfs"
+	action.Force = true
+	if err := p.Install(context.Background(), action); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	install := ""
+	for _, cmd := range rec.unprivileged {
+		if strings.Contains(cmd, "apt-get install") {
+			install = cmd
+		}
+	}
+	if install == "" {
+		t.Fatalf("no apt-get install among %v", rec.unprivileged)
+	}
+	if strings.Contains(install, "dpkg-deb --extract") {
+		t.Errorf("repair = %q, want the plain reinstall.\n"+
+			"With no archive there is nothing to restore, and a command that names a "+
+			"file that does not exist would fail for a new reason", install)
+	}
+	if !strings.Contains(install, "--reinstall") {
+		t.Errorf("repair = %q, want --reinstall even without an archive", install)
+	}
+}

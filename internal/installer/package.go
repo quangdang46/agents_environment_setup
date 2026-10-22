@@ -12,6 +12,7 @@ import (
 	osexec "os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/quangdang46/agents_environment_setup/internal/exec"
@@ -250,6 +251,23 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	// package, so putting it on ordinary installs would rewrite files that
 	// were already correct on every setup run.
 	base := "apt-get install -y"
+	// pkgs is every package the command names, in the order it names them:
+	// the owner of the binary first, then the package the manifest names.
+	//
+	// It is a list rather than a fragment of the command string because the
+	// same set is needed twice — once for the reinstall and once for the
+	// archive restore below — and two computations of the same set would
+	// eventually disagree about which package owns the file.
+	pkgs := []string{}
+	// owners is the set of packages that own the tool's binary, and it is the
+	// set the archive restore touches.
+	//
+	// It is a separate list from pkgs because the two are not the same. The
+	// reinstall names the manifest's package too, but that package did not
+	// lose anything: the file that went missing is the tool's binary, and
+	// dpkg says which package owns it. Restoring files that were never lost
+	// is how a repair touches a machine it had no business touching.
+	owners := []string{}
 	if a.Force {
 		base += " --reinstall"
 		// The owner of the binary goes alongside the named package, because
@@ -269,11 +287,17 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 		// repair then reports "installed but verification says missing" on a
 		// machine where the tool is still broken — the worst outcome,
 		// because it says the work was done.
-		if owner := p.ownerPackage(ctx, a.Name); owner != "" && owner != pkg {
-			base += " " + owner
+		if owner := p.ownerPackage(ctx, a.Name); owner != "" {
+			owners = strings.Fields(owner)
+			for _, o := range owners {
+				if o != pkg {
+					pkgs = append(pkgs, o)
+				}
+			}
 		}
 	}
-	base += " " + pkg
+	pkgs = append(pkgs, pkg)
+	base += " " + strings.Join(pkgs, " ")
 
 	// The apt source has to exist before apt is asked for the package, and
 	// preparing it is itself a privileged step: it writes a keyring to
@@ -292,6 +316,25 @@ func (p *PackageInstaller) installApt(ctx context.Context, a Action) error {
 	// usage error.
 	if err := p.prepareAptSourcePrivileged(ctx, a, base); err != nil {
 		return err
+	}
+
+	// A repair has to put the file back before dpkg is allowed to touch it.
+	//
+	// The restore is fetched here, after the apt source is prepared, because a
+	// package from a declared third-party repository is only in the index once
+	// that repository has been added. It runs before the privilege decision
+	// because fetching an archive into a temp directory needs no elevation.
+	//
+	// The extract itself is part of the privileged command, so the user sees
+	// one command and approves one command: the whole repair, in the order it
+	// has to happen. Splitting it into two privileged steps would ask the
+	// same person to approve the same repair twice.
+	if a.Force {
+		restore, cleanup := p.aptArchiveRestore(ctx, owners)
+		defer cleanup()
+		if restore != "" {
+			base = "sh -c " + exec.ShellQuote(restore+base)
+		}
 	}
 
 	// Already root: no escalation question arises. Containers and CI images
@@ -398,6 +441,158 @@ func (p *PackageInstaller) ownerPackage(ctx context.Context, name string) string
 		owners = append(owners, pkg)
 	}
 	return strings.Join(owners, " ")
+}
+
+// shellSafeWord matches a string that can appear unquoted in a shell command.
+//
+// The narrowness is the point. Package names, versions, and the file names apt
+// writes all fit; a space, a quote, a dollar or a semicolon does not. A string
+// that does not match is quoted by the caller or refused outright — a manifest
+// is data (I3), and data that reaches a shell has to be inert.
+var shellSafeWord = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._:~@%/-]*$`)
+
+// shellSafePath is shellSafeWord for an absolute path.
+//
+// It is a separate pattern because the two are used on different things and
+// one regex for both would have to allow a leading slash in a package name —
+// where a slash is not a package name at all.
+var shellSafePath = regexp.MustCompile(`^/[A-Za-z0-9][A-Za-z0-9+._:~@%/-]*$`)
+
+// aptArchiveRestore returns a shell fragment that restores the given packages'
+// files from their own archives, and a cleanup that removes the downloaded
+// archives. The fragment is "" when no restore is possible.
+//
+// # Why it exists
+//
+// Measured 2026-10-22, in a fresh ubuntu:24.04 container:
+//
+//	apt-get install -y --reinstall git-lfs
+//	dpkg: warning: old git-lfs package pre-removal script subprocess returned error exit status 1
+//	dpkg: trying script from the new package instead ...
+//	dpkg: error processing archive .../git-lfs_3.4.1-1ubuntu0.4_amd64.deb (--unpack):
+//	 new git-lfs package pre-removal script subprocess returned error exit status 1
+//	E: Sub-process /usr/bin/dpkg returned an error code (1)
+//
+// dpkg runs a package's maintainer scripts BEFORE it unpacks the new files.
+// git-lfs's pre-removal script is `git lfs uninstall --skip-repo --system`,
+// which needs the very binary the reinstall is restoring — so the binary has
+// to be on disk before dpkg starts, and the unpack aborts without it. The file
+// is never put back, and the repair reports success on a machine where the
+// tool is still broken.
+//
+// The fix is the package's own archive: put the file back first, then let dpkg
+// do the reinstall as usual. Measured, same container, same drift:
+//
+//	apt-get download git-lfs
+//	dpkg-deb --fsys-tarfile git-lfs_*.deb | tar -C / --skip-old-files -xf -
+//	apt-get install -y --reinstall git-lfs
+//	-> Unpacking git-lfs (3.4.1-1ubuntu0.4) over (3.4.1-1ubuntu0.4)
+//	-> Setting up git-lfs (3.4.1-1ubuntu0.4)
+//	-> git-lfs/3.4.1
+//
+// The archive is not in apt's cache to be found: apt removes it once the
+// transaction ends, and the failed transaction ends with the file still
+// absent from /var/cache/apt/archives. So it is fetched.
+//
+// # Why it restores only what is MISSING
+//
+// `--skip-old-files` is the whole point. dpkg's own reinstall re-extracts the
+// package's files but leaves a conffile the administrator edited alone, and a
+// repair that reverted /etc/bash.bashrc would be damage, not repair. Measured
+// conffiles among this catalog's apt packages: `git` owns
+// /etc/bash_completion.d/git-prompt and `bash` owns /etc/bash.bashrc and
+// three files under /etc/skel — so there is something to protect.
+//
+// The archive is streamed rather than extracted over the root for the same
+// reason: `dpkg-deb --extract` writes every file the package ships, including
+// the ones the administrator changed.
+//
+// "" is not a failure. The caller falls back to the plain reinstall, which is
+// what every other package tool needs. The restore exists for the packages
+// whose maintainer scripts need the file being restored, and a package whose
+// archive cannot be fetched is a package whose reinstall is already broken —
+// that failure is reported by the reinstall, with dpkg's own explanation.
+func (p *PackageInstaller) aptArchiveRestore(ctx context.Context, owners []string) (string, func()) {
+	noop := func() {}
+	if len(owners) == 0 {
+		return "", noop
+	}
+
+	// Every name that reaches a shell has to be safe to reach one.
+	for _, pkg := range owners {
+		if !shellSafeWord.MatchString(pkg) {
+			p.detail("not restoring %s from its archive: the package name is not shell-safe", pkg)
+			return "", noop
+		}
+	}
+
+	dir, err := os.MkdirTemp("", "aes-apt-restore-")
+	if err != nil {
+		return "", noop
+	}
+	cleanup := func() { os.RemoveAll(dir) }
+	if !shellSafePath.MatchString(dir) {
+		p.detail("not restoring from an archive: the temp directory is not shell-safe")
+		return "", cleanup
+	}
+
+	var b strings.Builder
+	for _, pkg := range owners {
+		// One directory per package, so the archive that lands in it is
+		// unambiguously that package's. A single shared directory would leave
+		// the mapping from file to package to be guessed from a file name.
+		into := filepath.Join(dir, pkg)
+		if err := os.MkdirAll(into, 0o700); err != nil {
+			continue
+		}
+		// The fetch is unprivileged and happens before the privilege decision:
+		// it only reads from the index and writes into a temp directory. The
+		// restore that follows is part of the privileged command.
+		cmd := "cd " + into + " && apt-get download " + pkg
+		res, err := p.unprivileged()(ctx, cmd)
+		if err != nil {
+			// The repair still has a chance: the plain reinstall is what the
+			// caller falls back to, and dpkg's own explanation of why it
+			// failed is more use than this one.
+			p.detail("could not fetch the archive for %s: %v%s", pkg, err, aptFailureDetail(res))
+			continue
+		}
+		for _, deb := range debArchives(into) {
+			b.WriteString("dpkg-deb --fsys-tarfile " + deb + " | tar -C / --skip-old-files -xf - && ")
+		}
+	}
+	if b.Len() == 0 {
+		p.detail("no package archive was fetched for a repair")
+		return "", cleanup
+	}
+	return b.String(), cleanup
+}
+
+// debArchives lists the .deb files in dir, in a stable order.
+//
+// A file whose name is not shell-safe is skipped rather than quoted: it is
+// the only thing in this path that came off a network, and a name that does
+// not fit the pattern is a reason to use no archive at all rather than a
+// reason to build a cleverer quoting rule.
+func debArchives(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".deb") {
+			continue
+		}
+		full := filepath.Join(dir, name)
+		if !shellSafePath.MatchString(full) {
+			continue
+		}
+		out = append(out, full)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // aptFailureDetail is dpkg's own explanation of a failed install.
