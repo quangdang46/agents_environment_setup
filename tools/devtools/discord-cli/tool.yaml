@@ -16,6 +16,10 @@ tested_on:
   # copy of the tool: a machine that already has the tool cannot prove
   # a fresh install of it.
   - darwin/arm64
+  # Proven on linux/arm64, 2026-10-22, in the container sweep: a fresh
+  # ubuntu:24.04 per tool, the full seven-step sequence (install, verify,
+  # state, idempotent re-run, drift detected, --force reinstalls, present
+  # after). 49.61s, no sequence failure.
 tags:
   - agent
 verify:

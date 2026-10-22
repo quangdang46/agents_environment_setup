@@ -16,6 +16,24 @@ tested_on:
   # copy of the tool: a machine that already has the tool cannot prove
   # a fresh install of it.
   - darwin/arm64
+  # NOT provable on linux/arm64, measured 2026-10-22, and the measurement is
+  # the evidence: the release publishes no linux/arm64 asset at v0.9.19
+  # (linux-x86_64, macos-x64, macos-aarch64 and windows-x64 only), so the
+  # manifest's linux target deliberately carries no arm64 asset entry. The
+  # product refuses correctly on that arch, in two layers:
+  #
+  #   aes setup --only hashline
+  #     -> "no tool in this selection can be installed on linux/arm64;
+  #         proven only on darwin/arm64, not on this host"
+  #
+  #   aes setup --only hashline --allow-unproven
+  #     -> "no asset for this architecture: install hashline has no asset
+  #         for arm64 (declared: amd64)", exit 6, in 0.0s
+  #
+  # The refusal is the proof that the absence is declared rather than
+  # missing: a tool that silently installed the wrong arch would be the bug.
+  # The linux/amd64 coordinate stays unproven until an amd64 container run
+  # proves it (see the bead for that proof).
 tags:
   - agent
 verify:
