@@ -112,9 +112,8 @@ func TestLayer2ContainerInstallsOnAFreshMachine(t *testing.T) {
 	layer2Enabled(t)
 
 	// The budget covers the whole sweep, and the sweep starts a container and
-	// prepares it for every tool. 40 minutes was enough for a ten-tool
-	// profile in a shared container; it is not enough for sixty-three fresh
-	// ones.
+	// prepares it for every tool. 40 minutes was enough for a ten-tool sweep
+	// in a shared container; it is not enough for sixty-three fresh ones.
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Hour)
 	defer cancel()
 
