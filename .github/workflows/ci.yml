@@ -78,8 +78,15 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         # Layer 1 fixtures verify tools already on the machine, so most skip
         # on a clean runner. Layer 2 installs real tools and is far too slow
-        # and mutating for a PR gate — it runs in release.yml's build job and
-        # is the reason the catalog's `tested:` flags exist at all.
+        # and mutating for a PR gate.
+        #
+        # It also runs NOWHERE else. This comment used to say it "runs in
+        # release.yml's build job", and no workflow runs it: release.yml
+        # builds and tests, and that is all it does. So the catalog's
+        # `tested:` flags are set by hand, from a local run, and nothing in
+        # CI would notice one of them going stale — which is the part worth
+        # knowing before believing a green build. See the bead for the
+        # macOS job that would close the gap.
         run: go test -race ./...
 
       - name: Bootstrap
