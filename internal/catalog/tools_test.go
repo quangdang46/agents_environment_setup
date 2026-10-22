@@ -229,9 +229,9 @@ var layer1Tools = map[string]bool{
 	"lazydocker": true, "lazygit": true, "ncdu": true, "pi": true,
 	"python": true, "rust": true, "toon": true, "tree": true, "uv": true,
 	"zsh": true,
-	// quangdang46's tools. `bvr` verifies as `bv` — the binary the release
-	// actually ships — and `discord-cli` as `discord`; the mismatch is the
-	// point of the fixture, not an error.
+	// quangdang46's tools. `discord-cli` verifies as `discord` — the binary
+	// the release actually ships — and the tool name is the repository's;
+	// the mismatch is the point of the fixture, not an error.
 	"br": true, "bvr": true, "discord-cli": true, "hashline": true,
 }
 

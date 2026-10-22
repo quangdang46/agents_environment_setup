@@ -5,12 +5,30 @@ tested: false
 tags:
   - agent
 verify:
-  # `bv` is the binary the release actually ships and what lands on PATH;
-  # the tool name stays `bvr` to match the repository. The two being
-  # different is exactly what verify.command exists for.
-  command: bv
+  # `bvr` is the binary the release actually ships, on every platform.
+  #
+  # This used to say `bv`, and the comment above it explained why: the
+  # release shipped a file called `bv` then, and the tool name stayed `bvr`
+  # to match the repository. The release moved on — v0.25.2 ships `bvr` in
+  # both its linux and its macos archive (measured 2026-10-22) — and the
+  # manifest's `binary:` map was updated with it, but the verify command was
+  # not.
+  #
+  # The leftover was not harmless. The name the release ships is the name
+  # the installer extracts, and the verify command is the name it is
+  # installed AS, so the two together decide what `aes verify bvr` looks
+  # for. On a machine with the current release installed, that is `bvr` —
+  # and asking for `bv` instead finds a stale leftover from an older
+  # release: measured on the developer's machine, `bv` was 0.16.4 while
+  # `bvr` was 0.25.2, so `aes verify bvr` reported the tool as stale on a
+  # machine carrying the version the manifest pins.
+  #
+  # The program still calls itself `bv` in its own --version output
+  # ("bv v0.25.2"), which is what made the old name look right. The file
+  # the release ships is `bvr`, and the file is what lands on PATH.
+  command: bvr
   version:
-    command: bv --version
+    command: bvr --version
     min: "0.25.2"
 install:
   darwin:
