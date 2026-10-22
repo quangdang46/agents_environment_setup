@@ -5,7 +5,7 @@ finishing it. Everything below is measured, not remembered; where a number is a
 claim rather than a measurement, it says so.
 
 - **Repo:** `github.com/quangdang46/agents_environment_setup`
-- **Branch:** `main` · **History:** 182 commits · **Tree:** clean at the commit
+- **Branch:** `main` · **History:** 186 commits · **Tree:** clean at the commit
   that carries this file
 - **Go:** 1.26.4+ · **Module:** `github.com/quangdang46/agents_environment_setup`
 
@@ -38,7 +38,7 @@ of them:
 | `tested: true` | **67**, each carrying a `tested_on` list |
 | `default: true` | **67** — the same 67 (see §3.3) |
 | Not verified | **1**: `pi` (see §4.2) |
-| Beads open | `9x0` (P3, publish — in progress; see §5.2) |
+| Beads open | `9x0` (P3, publish — in progress; see §5.2), `imp` (P2, macOS CI), `kn7` (P3, pi), `igf` (P3, hashline/amd64) |
 | Published | **v0.1.0** at `70e4cb8`; this session's commits are unreleased |
 
 ```bash
@@ -232,6 +232,33 @@ br 5.5s    bvr 5.8s    discord-cli 5.7s    hashline 5.4s
 `aes setup --dry-run` on this macOS now resolves to 4 tools where it resolved
 to none.
 
+**Three of the four are now also proven on linux/arm64**, each in the container
+sweep on 2026-10-22 — a fresh `ubuntu:24.04` per tool, the full seven-step
+sequence, no sequence failure:
+
+```
+br 45.47s    bvr 48.09s    discord-cli 49.61s
+```
+
+Their manifests now carry both coordinates in `tested_on`. `hashline` is the
+exception, and its evidence is the negative kind: the release publishes no
+linux/arm64 asset at any version, so the manifest deliberately carries none —
+and the product refuses correctly on that arch, in two layers:
+
+```
+aes setup --only hashline
+  -> "no tool in this selection can be installed on linux/arm64;
+      proven only on darwin/arm64, not on this host"
+
+aes setup --only hashline --allow-unproven
+  -> "no asset for this architecture: install hashline has no asset
+      for arm64 (declared: amd64)", exit 6, in 0.0s
+```
+
+The refusal is the proof that the absence is declared rather than missing. Its
+linux/amd64 coordinate stays unproven until an amd64 container run proves it
+(bead `igf`).
+
 ### 4.2 `pi` — still blocked, and the reason is the platform's
 
 Every published version of `@earendil-works/pi-coding-agent` declares
@@ -252,6 +279,22 @@ measurement.
 the run"* → *"git-lfs present inside the container at /usr/bin/git-lfs"*, with
 the full seven-step sequence (install → verify → state → idempotent → drift
 detected → force reinstall → present after) in a fresh `ubuntu:24.04`.
+
+The same sweep also proved, with zero sequence failures: the first 24 tools in
+catalog order (through `git-lfs`), plus `gnupg` (55.80s), `jq` (55.36s),
+`postgres18` (101.74s) and `vault` (101.23s) — the latter two exercising the
+owner-package reinstall rule from `12c60ce` and the third-party apt-source
+path. A dedicated sweep for the new archive-restore repair re-proved
+`git-lfs` (57.40s) after the fix, where the same sequence against the pre-fix
+binary failed at the repair step with exit code 100 and dpkg's pre-removal
+script error.
+
+Separately, a proof workflow (`.github/workflows/proof.yml`) now exists that
+actually runs this evidence on demand: the linux container sweep, the darwin
+host proof, and the apt-coordinates check. `workflow_dispatch` only — a
+ninety-minute proof that installs real software is not a pull-request gate.
+No workflow ran the Layer 2 proof before; ci.yml's comment claimed
+release.yml did, and it did not.
 
 ---
 
