@@ -119,6 +119,32 @@ var layer1Fixtures = []layer1Fixture{
 	// without it — their apt_source keys are armored and the conversion
 	// shells out to gpg.
 	{"gnupg", "gpg", "gpg --version", "2.2"},
+
+	// quangdang46's own tools. The binary column is the name the tool is
+	// INSTALLED as, which is the manifest's verify.command — the two differ
+	// from the archive member's name in one case, and the difference is the
+	// point of the fixture rather than an error in it:
+	//
+	//   discord-cli the release ships `discord`, and the tool is `discord-cli`
+	//
+	// Measured on this host, 2026-10-22:
+	//
+	//   br 0.2.2                          -> ok, above the 0.2.0 floor
+	//   hashline 0.9.20                   -> ok, above the 0.9.19 floor
+	//   bvr 0.25.2                        -> ok, at the floor
+	//   discord 0.1.0                     -> STALE, below the 0.1.2 floor
+	//
+	// The two stale ones are the developer's own older builds, not a broken
+	// fixture, and the rule above applies to them as it does to the psql on
+	// the ubuntu runners: a host build below the floor is the host's version.
+	{"br", "br", "br --version", "0.2.0"},
+	{"bvr", "bvr", "bvr --version", "0.25.2"},
+	{"discord-cli", "discord", "discord --version", "0.1.2"},
+	{"hashline", "hashline", "hashline --version", "0.9.19"},
+	// pi is not installed on this machine, so the fixture skips here and runs
+	// wherever the npm strategy put it. Its probe is measured to take 3.67s
+	// on an unloaded machine, which is why the version budget is 15s.
+	{"pi", "pi", "pi --version", "1.2.0"},
 }
 
 // presentOnThisMachine reports whether every binary a tool declares resolves
