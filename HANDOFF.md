@@ -36,9 +36,10 @@ of them:
 | Test suite | green, **421 test functions**, 16 packages, `-race` clean |
 | Catalog | **68 tools** — github-release 41, package/apt 20, npm 7 |
 | `tested: true` | **67**, each carrying a `tested_on` list |
+| Proven on darwin/arm64 | **54** — measured by the proof run, not by hand |
 | `default: true` | **67** — the same 67 (see §3.3) |
 | Not verified | **1**: `pi` (see §4.2) |
-| Beads open | `9x0` (P3, publish — in progress; see §5.2), `imp` (P2, macOS CI), `kn7` (P3, pi), `igf` (P3, hashline/amd64) |
+| Beads open | `9x0` (P3, publish — see §5.2), `kn7` (P3, pi), `igf` (P3, hashline/amd64) |
 | Published | **v0.1.0** at `70e4cb8`; this session's commits are unreleased |
 
 ```bash
@@ -369,6 +370,8 @@ than on anything AES can do.
 | `3b4b8ba` | The same file's hand-kept tool list named `gping`, which is not in the catalog. A second source of truth about the catalog, going stale silently. |
 | `b2d3915` | **The Layer 1 fixture table was missing five tools the catalog claimed were covered.** The catalog's map is "the mirror of the verifier's fixture table"; it was a mirror of nothing. |
 | `51f0037` | The Layer 2 sweep could only do all 63 tools at a time, so the handoff's own advice — re-run the affected tools — could not be followed. |
+| `9d8aa8e` | **`aes setup` put only `$AES_HOME/bin` on PATH**, so a tool installed by the `go` strategy landed in `$HOME/go/bin` and was reported "installed but verification says missing". Invisible on a developer's machine, where `~/go/bin` is already on PATH; the macOS CI runner found it. |
+| `cb7c328` | **`aes verify` had the same hole, one process later.** After the setup fix the install passed and verify still said missing, because verify reconstructed PATH from `$AES_HOME/bin` alone. Both now share one registry lookup. |
 
 ---
 
