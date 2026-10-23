@@ -91,12 +91,28 @@ detect_arch() {
 
 # ------------------------------------------------------------- 2. download
 
-# asset_url ASSET
-asset_url() {
+# release_base_url prints the directory the release's assets live in.
+#
+# The asset NAME is built separately, and the two are not the same string in
+# the `latest` case — which is exactly the bug this pairing exists to make
+# impossible to reintroduce.
+#
+# Measured 2026-10-23 against the published v0.1.0 release. The asset names
+# carry a concrete version (`aes-0.1.0-darwin-arm64.tar.gz`); there is no
+# `aes-latest-*` asset and there cannot be one, because the name is produced
+# at build time from the tag. The old code interpolated `$VERSION` into the
+# name, so `curl | sh` with no arguments asked for
+#
+#   releases/latest/download/aes-latest-darwin-arm64.tar.gz   -> 404
+#
+# while the file it meant was sitting next to it under its real name. The
+# default invocation of the bootstrap was broken, and the 404 arrived after
+# a successful platform detection and a checksum fetch, far from the cause.
+release_base_url() {
     if [ -n "$BASE_URL" ]; then
-        printf '%s/%s' "${BASE_URL%/}" "$1"
+        printf '%s' "${BASE_URL%/}"
     elif [ "$VERSION" = "latest" ] || [ "$VERSION" = "vlatest" ]; then
-        printf 'https://github.com/%s/releases/latest/download/%s' "$REPO" "$1"
+        printf 'https://github.com/%s/releases/latest/download' "$REPO"
     else
         # Release tags carry a leading v (`v0.1.0`) while the version segment
         # of the asset filename does not (`aes-0.1.0-...`). Keep the two forms
@@ -104,8 +120,43 @@ asset_url() {
         # — that asymmetry was a real 404: the URL path was built from the
         # unstripped `v0.1.0` while the asset name came from stripped `0.1.0`,
         # and conversely.
-        printf 'https://github.com/%s/releases/download/v%s/%s' "$REPO" "$VERSION" "$1"
+        printf 'https://github.com/%s/releases/download/v%s' "$REPO" "$VERSION"
     fi
+}
+
+# asset_url ASSET
+asset_url() {
+    printf '%s/%s' "$(release_base_url)" "$1"
+}
+
+# resolve_latest_version prints the concrete version a `latest` release
+# carries, read from the release's own checksums.txt.
+#
+# `latest` cannot be interpolated into an asset name; the name has to be
+# discovered. checksums.txt is the right source rather than the release API:
+# it is the same file the install verifies against a moment later, it needs no
+# jq, and it travels through the same redirect the assets do — so a proxy or a
+# mirror that serves the assets serves the answer too.
+#
+# The returned string is the version segment as it appears IN THE ASSET NAME,
+# which is the only form the checksum lookup matches.
+resolve_latest_version() {
+    _checksums=$1
+    _os=$2
+    _arch=$3
+    # The asset for this platform, if the release has one. Parsing the name
+    # rather than trusting an arbitrary line: the file lists every platform,
+    # and picking the first version-ish token would work only by luck.
+    awk -v suffix="-$_os-$_arch.tar.gz" '
+        $2 ~ /^aes-.*\.tar\.gz$/ && length($2) > length(suffix) \
+            && substr($2, length($2) - length(suffix) + 1) == suffix {
+            name = $2
+            sub(/^aes-/, "", name)
+            sub(/-[^-]*-[^-]*\.tar\.gz$/, "", name)
+            print name
+            exit
+        }
+    ' "$_checksums"
 }
 
 download() {
@@ -172,7 +223,6 @@ main() {
     ARCH=$(detect_arch)
     log "    $OS/$ARCH"
 
-    ASSET="aes-$VERSION-$OS-$ARCH.tar.gz"
     BIN_DIR="$PREFIX/bin"
     DEST="$BIN_DIR/aes"
 
@@ -181,13 +231,26 @@ main() {
     # verification leaves nothing behind for the next run to trip over.
     trap 'rm -rf "$TMP"' EXIT INT TERM
 
-    step "downloading $ASSET"
-    download "$(asset_url "$ASSET")" "$TMP/aes.tar.gz" \
-        || die "download failed: $ASSET (is version '$VERSION' published?)"
-
     step "fetching checksums.txt"
     download "$(asset_url "checksums.txt")" "$TMP/checksums.txt" \
         || die "download failed: checksums.txt"
+
+    # `latest` is a URL segment, never a filename. The assets are named after
+    # the tag they were built from — there is no aes-latest-*.tar.gz, and the
+    # name cannot be interpolated because it is chosen at build time. So the
+    # concrete version is read from the release itself, before the asset name
+    # that depends on it is built.
+    if [ "$VERSION" = "latest" ] || [ "$VERSION" = "vlatest" ]; then
+        VERSION=$(resolve_latest_version "$TMP/checksums.txt" "$OS" "$ARCH")
+        [ -n "$VERSION" ] || die "could not determine the latest version for $OS/$ARCH from checksums.txt"
+        log "    latest is $VERSION"
+    fi
+
+    ASSET="aes-$VERSION-$OS-$ARCH.tar.gz"
+
+    step "downloading $ASSET"
+    download "$(asset_url "$ASSET")" "$TMP/aes.tar.gz" \
+        || die "download failed: $ASSET (is version '$VERSION' published?)"
 
     step "verifying checksum"
     # Match on the asset filename, not on line order: checksums.txt covers
@@ -218,4 +281,14 @@ main() {
     log "then run:  aes setup"
 }
 
-main "$@"
+# Run only when executed, not when sourced for its functions.
+#
+# Detecting "was I sourced" portably is not worth the cleverness: dash, bash
+# and zsh disagree, and every version of the check I tried got the
+# `sh -c '. install.sh'` case wrong (there $0 is the -c script's name, which
+# is not the file). So the caller says so. The bootstrap's own test sets this
+# before sourcing; nothing in the `curl | sh` path can, because there is no
+# caller with a shell to set it.
+if [ "${AES_INSTALL_LIB_ONLY:-}" != "1" ]; then
+    main "$@"
+fi

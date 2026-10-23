@@ -85,6 +85,44 @@ for spec in "vtest vtest" "test test"; do
 done
 
 echo
+echo "0b. the DEFAULT invocation (no --version) resolves the asset"
+# This is the path `curl ... | sh` takes, and nothing above it covers it:
+# every other case passes --version, so all of them are the pinned branch.
+#
+# Measured 2026-10-23 against the published release: with no --version the
+# installer interpolated the word "latest" into the asset name
+#
+#   releases/latest/download/aes-latest-darwin-arm64.tar.gz   -> 404
+#
+# while the real asset next to it was aes-0.1.0-darwin-arm64.tar.gz. The
+# default invocation of the bootstrap was broken, and every test here passed
+# because every one of them named a version.
+#
+# The fixture's asset is aes-test-<os>-<arch>.tar.gz, so the version that has
+# to be recovered from checksums.txt is "test".
+# The fixture serves aes-test-<os>-<arch>.tar.gz; resolve_latest_version is
+# what must turn that into the name the installer asks for. Asserting on the
+# resolved VALUE keeps this a test of the logic rather than of the network —
+# the failing mutation above hung for minutes reaching GitHub instead of
+# reporting, which is a bad way to learn.
+RESOLVED=$(AES_INSTALL_LIB_ONLY=1 sh -c '. "$1"; resolve_latest_version "$2" "$3" "$4"' _ "$INSTALL_SH" \
+    "$SERVE/checksums.txt" "$OS" "$ARCH")
+if [ "$RESOLVED" = "test" ]; then
+    ok "checksums.txt yields the version the asset name carries"
+else
+    bad "checksums.txt yields the version the asset name carries" \
+        "resolved '$RESOLVED', want 'test'"
+fi
+
+PREFIX="$WORK/latest"
+OUT=$(sh "$INSTALL_SH" --base-url "file://$SERVE" --prefix "$PREFIX" 2>&1)
+if [ -x "$PREFIX/bin/aes" ] && "$PREFIX/bin/aes" --version >/dev/null 2>&1; then
+    ok "no --version resolved the asset and installed"
+else
+    bad "no --version resolved the asset and installed" "$OUT"
+fi
+
+echo
 echo "1. matching checksum -> binary placed and runs"
 PREFIX="$WORK/ok"
 OUT=$(run_install "$PREFIX" || true)
