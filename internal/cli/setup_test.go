@@ -744,3 +744,72 @@ func TestSuccessfulReinstallClearsTheRetainedBinary(t *testing.T) {
 			"indistinguishable from a current one to anyone reading the directory")
 	}
 }
+
+// A strategy's own bin directory must be on PATH for the run that installs
+// it, not only $AES_HOME/bin.
+//
+// Measured 2026-10-22 on srps, whose darwin target is `go install`: the
+// install succeeded — $HOME/go/bin/sysmoni was on disk, 5.8 MB — and the run
+// then reported "installed but verification says missing", because
+// runSetup prepended only $AES_HOME/bin and the verifier's LookPath could
+// not see the directory the go toolchain writes to.
+//
+// It is invisible on a developer's machine, where ~/go/bin is already on
+// PATH. It appears wherever HOME is not the developer's: a sandbox, a CI
+// runner, or anyone who redirects HOME. The macOS proof run found it; a
+// sweep on this desk would not have.
+//
+// The assertion is about what the verifier can SEE during setup, which is
+// the contract. Asserting on the installer's destination value instead
+// would pass for a run that never put it on PATH — the value was always
+// right; PATH was what was missing.
+func TestSetupSeesTheStrategysOwnBinDirDuringTheRun(t *testing.T) {
+	// A destination outside $AES_HOME/bin, which is what every ecosystem
+	// strategy has: go writes $GOPATH/bin, cargo ~/.cargo/bin, uv its own.
+	// The harness's default dest is inside binDir, so this has to be its
+	// own tree — a test that reused binDir would prove nothing about the
+	// strategies whose directory is elsewhere, which is all of them.
+	h := newSetupHarness(t,
+		toolSpec{name: "ecosys", category: "utility", provides: "ecosys", isDefault: true},
+	)
+
+	ecoBin := filepath.Join(t.TempDir(), "ecosystem", "bin")
+	h.app.Registry.Register(manifest.StrategyGo, installerFunc{
+		fn: func(_ context.Context, a installer.Action) error {
+			// Install where the real strategy installs, not where the
+			// harness's default fake does.
+			if err := os.MkdirAll(ecoBin, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(ecoBin, a.Tool),
+				[]byte("#!/bin/sh\necho "+a.Tool+" 9.9.9\n"), 0o755)
+		},
+		dest: ecoBin,
+	})
+
+	code, sum := h.run(t)
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, h.stdout.String(), h.stderr.String())
+	}
+	if sum == nil {
+		t.Fatalf("no summary:\n%s", h.stdout.String())
+	}
+	for _, r := range sum.Results {
+		if r.Name != "ecosys" {
+			continue
+		}
+		// The contract: a tool this run installed must not be reported as
+		// installed-but-missing. That combination is the exact defect —
+		// the binary existed and the run could not find it.
+		if r.Error != "" && strings.Contains(r.Error, "verification") {
+			t.Errorf("run reported %q for a tool it just installed.\n"+
+				"The strategy's bin directory (%s) has to be on PATH for the run, "+
+				"or a successful install is reported as a failure", r.Error, ecoBin)
+		}
+	}
+	if uploaded := h.stateEntries(t); uploaded["ecosys"].Strategy != manifest.StrategyGo {
+		t.Errorf("state entry = %+v, want the go strategy recorded.\n"+
+			"State is only written for a tool that verified, so a missing entry "+
+			"is the same defect seen from the other side", uploaded["ecosys"])
+	}
+}

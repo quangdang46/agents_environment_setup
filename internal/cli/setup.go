@@ -122,21 +122,6 @@ func (e *setupError) ExitCode() int { return e.code }
 // verification, and the pre-install verification is what makes a re-run
 // resume rather than restart.
 func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string) error {
-	// aes installs into $AES_HOME/bin, which is not on the user's PATH until
-	// they source env.sh. Without this, every install lands correctly and is
-	// then reported as "did not verify" — the verifier resolves through
-	// exec.LookPath, which cannot see a directory nobody has added yet. The
-	// install worked, the run claimed it failed, and state was never written.
-	//
-	// Scoped to setup, and deliberately not applied to every command: env.sh
-	// is the mechanism by which aes puts these directories on PATH, and
-	// silently amending the user's PATH from a program whose whole job is
-	// modifying a machine would be the wrong kind of helpful. This is narrower
-	// — the run knows where it just put things, so it looks there.
-	restore := withBinOnPath(filepath.Join(app.Home, "bin"))
-	defer restore()
-
-	// 1-3: detect, resolve the selection.
 	rc, err := app.resolve(f)
 	if err != nil {
 		// A catalog or manifest failure aborts immediately: nothing can
@@ -147,6 +132,42 @@ func runSetup(ctx context.Context, app *App, f *Flags, extra any, args []string)
 	if err != nil {
 		return err
 	}
+
+	// Every directory this run may install into goes on PATH, not only
+	// $AES_HOME/bin.
+	//
+	// $AES_HOME/bin is where the github-release strategy puts binaries, and
+	// prepending it is what made a release tool's install visible to the
+	// verifier in the same run. The other strategies write somewhere else —
+	// `go install` writes $GOBIN or $GOPATH/bin, cargo writes
+	// ~/.cargo/bin, uv and npm have their own — and none of those is on
+	// PATH until the user sources env.sh.
+	//
+	// Measured 2026-10-22 on srps, whose darwin target is `go install`: the
+	// install succeeded and the binary landed in $HOME/go/bin/sysmoni, and
+	// the run then reported "installed but verification says missing"
+	// because the verifier's LookPath could not see that directory. On a
+	// developer's machine the bug is invisible — ~/go/bin is already on
+	// their PATH — and it appears exactly where HOME is not the developer's:
+	// a sandbox, a CI runner, or anyone who points HOME elsewhere.
+	//
+	// The directories are asked of the registry rather than derived here
+	// again. Two computations of the same fact is the shape this project has
+	// paid for four times; envgen asks the same registry the same question
+	// when it writes env.sh, so the two cannot disagree about where a
+	// strategy puts its binaries.
+	//
+	// Scoped to setup, and deliberately not applied to every command: env.sh
+	// is the mechanism by which aes puts these directories on PATH, and
+	// silently amending the user's PATH from a program whose whole job is
+	// modifying a machine would be the wrong kind of helpful. This is narrower
+	// — the run knows where it just put things, so it looks there.
+	restores := binOnPathFor(app, actions)
+	defer func() {
+		for i := len(restores) - 1; i >= 0; i-- {
+			restores[i]()
+		}
+	}()
 
 	// A selection that resolves to nothing is a failure, not a quiet success.
 	//
@@ -1070,6 +1091,51 @@ func withBinOnPath(dir string) func() {
 		}
 		os.Unsetenv("PATH")
 	}
+}
+
+// binOnPathFor prepends every destination this run's strategies install into,
+// and returns the restore functions.
+//
+// The directories come from the registry — the same DestinationFor call
+// envgen makes when it writes env.sh — so "where does this strategy put its
+// binaries" has one answer in the codebase rather than a second, hand-written
+// one here.
+//
+// It is not only $AES_HOME/bin, and the difference is the whole point: a
+// `go install` tool lands in $GOBIN or $GOPATH/bin, cargo in ~/.cargo/bin,
+// and neither is on PATH before env.sh is sourced. Prepending only
+// $AES_HOME/bin made a successful go install report "installed but
+// verification says missing" whenever HOME was not the developer's.
+//
+// A directory is skipped when the registry reports it cannot be resolved
+// (npm without a reachable npm, say). An empty string on PATH is worse than a
+// missing one: it means the current directory to some shells, so a tool
+// "found" there is whatever the user happens to be standing in.
+func binOnPathFor(app *App, actions []resolver.Action) []func() {
+	if app.Registry == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []func()
+	add := func(dir string) {
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		out = append(out, withBinOnPath(dir))
+	}
+	// $AES_HOME/bin first, unconditionally: it is the directory the release
+	// strategy owns, and a run that installs nothing from that strategy still
+	// verifies tools that live there.
+	add(filepath.Join(app.Home, "bin"))
+	for _, a := range actions {
+		dir, ok := app.Registry.DestinationFor(context.Background(), a.Strategy)
+		if !ok {
+			continue
+		}
+		add(dir)
+	}
+	return out
 }
 
 // installNameOf is the filename a tool is installed as, read from the one place
