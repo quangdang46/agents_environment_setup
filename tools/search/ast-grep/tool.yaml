@@ -6,6 +6,7 @@ tested: true
 tested_on:
 - linux/arm64
 - linux/amd64
+- darwin/arm64
 tags:
 - search
 verify:

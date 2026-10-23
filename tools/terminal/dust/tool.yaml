@@ -9,6 +9,7 @@ tested_on:
   # ubuntu:24.04 container and `aes verify` reported StatusOK with a parsed
   # version (dust 1.2.6) on that machine afterwards (bead gj9).
   - linux/amd64
+  - darwin/arm64
 tags:
   - terminal
   - disk

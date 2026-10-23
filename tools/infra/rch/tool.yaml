@@ -29,6 +29,7 @@ tested: true
 # "tested: true".
 tested_on:
   - linux/amd64
+  - darwin/arm64
 tags:
   - infra
   - build

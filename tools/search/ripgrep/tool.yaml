@@ -16,6 +16,7 @@ tested_on:
   # reported StatusOK with a parsed version on that machine. Measured
   # 2026-09-28 during the full-catalog run.
   - linux/amd64
+  - darwin/arm64
 tags:
   - search
   - text

@@ -11,6 +11,7 @@ tested_on:
   # these install under ~/.aes/bin — which is where aes puts everything it
   # owns, and what `aes env --write` exists to put on PATH (bead gj9).
   - linux/amd64
+  - darwin/arm64
 tags:
   - terminal
 verify:

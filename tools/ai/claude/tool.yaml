@@ -18,6 +18,7 @@ tested_on:
   # (I15) — the run that gathers a platform's evidence has to be allowed to
   # install the tool whose evidence is missing.
   - linux/amd64
+  - darwin/arm64
 # claude-code is the shortcut a fresh shell gets for Claude Code. The value
 # is the whole command, declared here rather than in a hand-written zshrc,
 # because a generated file cannot disagree with what declared it.
