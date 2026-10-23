@@ -177,13 +177,6 @@ func (e *verifyFailure) Error() string {
 }
 
 func runVerify(ctx context.Context, app *App, f *Flags, extra any, args []string) error {
-	// aes installs into $AES_HOME/bin, which is not on PATH until env.sh is
-	// sourced. Without this, verify reports a tool aes just installed as
-	// missing — and `aes doctor` already flags the PATH separately, so the
-	// two would contradict each other.
-	restore := withBinOnPath(filepath.Join(app.Home, "bin"))
-	defer restore()
-
 	rc, err := app.resolve(f)
 	if err != nil {
 		return err
@@ -196,6 +189,26 @@ func runVerify(ctx context.Context, app *App, f *Flags, extra any, args []string
 	if err != nil {
 		return err
 	}
+
+	// Every directory the tools under test may have been installed into goes
+	// on PATH, not only $AES_HOME/bin.
+	//
+	// Verify is a separate process from the setup that installed the tool, so
+	// it cannot rely on that run's PATH. It has to reconstruct the question
+	// "where could this strategy have put the binary" from the strategies the
+	// tools declare — which is the same registry call envgen and setup make.
+	//
+	// Measured 2026-10-23 on the darwin proof: after setup learned to put a
+	// go-install tool's directory on PATH, install passed and verification of
+	// the same tool still reported "missing", because this line looked only
+	// in $AES_HOME/bin. Fixing half the pair moves a failure, it does not
+	// remove it.
+	restores := binOnPathForStrategies(app, strategiesOf(rc, tools))
+	defer func() {
+		for i := len(restores) - 1; i >= 0; i-- {
+			restores[i]()
+		}
+	}()
 
 	rows := make([]toolReport, 0, len(tools))
 	failure := &verifyFailure{}
@@ -503,6 +516,26 @@ func runEnv(ctx context.Context, app *App, f *Flags, extra any, args []string) e
 
 // strategyFor reports the strategy a tool would install with on this host,
 // which is what selects its PATH destination.
+// strategiesOf returns the distinct install strategies for a set of tools.
+//
+// Verify knows the tools but has no actions — it installs nothing — so it
+// asks the manifests, through the same host lookup the resolver uses, which
+// strategies are in play.
+func strategiesOf(rc *runContext, tools []*manifest.Tool) []string {
+	seen := make(map[string]bool, len(tools))
+	out := make([]string, 0, len(tools))
+	for _, t := range tools {
+		s := strategyFor(rc, t)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func strategyFor(rc *runContext, t *manifest.Tool) string {
 	target, ok := rc.Host.Target(t)
 	if !ok {

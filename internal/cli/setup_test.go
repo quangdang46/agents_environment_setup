@@ -813,3 +813,62 @@ func TestSetupSeesTheStrategysOwnBinDirDuringTheRun(t *testing.T) {
 			"is the same defect seen from the other side", uploaded["ecosys"])
 	}
 }
+
+// `aes verify` is a separate process from the setup that installed the tool,
+// so it has to reconstruct where each strategy put its binary. It used to look
+// only in $AES_HOME/bin, which meant a tool a previous `aes setup` had
+// installed through the go strategy verified as missing.
+//
+// Measured 2026-10-23 on the darwin proof run, and it is the second half of
+// the same defect: setup was taught to put every strategy's directory on PATH,
+// install passed, and verification of the very same tool still said missing.
+// Fixing one half moves the failure one step later rather than away.
+func TestVerifyFindsAToolInItsStrategysBinDir(t *testing.T) {
+	h := newSetupHarness(t,
+		toolSpec{name: "ecosys", category: "utility", provides: "ecosys", isDefault: true},
+	)
+
+	// Where the go strategy really installs, and NOT where the harness's fake
+	// does. The tool is placed by hand: this test is about verify's search
+	// path, not about installing.
+	ecoBin := filepath.Join(t.TempDir(), "ecosystem", "bin")
+	if err := os.MkdirAll(ecoBin, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ecoBin, "ecosys"),
+		[]byte("#!/bin/sh\necho ecosys 9.9.9\n"), 0o755); err != nil {
+		t.Fatalf("write binary: %v", err)
+	}
+	h.app.Registry.Register(manifest.StrategyGo, installerFunc{
+		fn:   func(context.Context, installer.Action) error { return nil },
+		dest: ecoBin,
+	})
+
+	// A clean PATH, so the only way verify can find it is through the
+	// strategy's directory. Leaving the ambient PATH in place would let the
+	// test pass on a machine that happens to have the tool — the reason the
+	// proof runs on a runner and not on a desk.
+	t.Setenv("PATH", "/usr/bin:/bin")
+	h.stdout.Reset()
+	h.stderr.Reset()
+	if code := h.app.Run([]string{"verify", "--json", "ecosys"}); code != ExitOK {
+		t.Fatalf("exit = %d, want 0\nstdout:\n%s\nstderr:\n%s",
+			code, h.stdout.String(), h.stderr.String())
+	}
+	var payload struct {
+		Tools []struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(h.stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unparseable verify output: %v\n%s", err, h.stdout.String())
+	}
+	for _, entry := range payload.Tools {
+		if entry.Name == "ecosys" && entry.Status != "ok" {
+			t.Errorf("verify says %q for a tool living in %s.\n"+
+				"Verify is a separate process from the install, so it has to ask each "+
+				"strategy's registry entry where its binaries go", entry.Status, ecoBin)
+		}
+	}
+}

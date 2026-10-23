@@ -1112,8 +1112,30 @@ func withBinOnPath(dir string) func() {
 // missing one: it means the current directory to some shells, so a tool
 // "found" there is whatever the user happens to be standing in.
 func binOnPathFor(app *App, actions []resolver.Action) []func() {
+	strategies := make([]string, 0, len(actions))
+	for _, a := range actions {
+		strategies = append(strategies, a.Strategy)
+	}
+	return binOnPathForStrategies(app, strategies)
+}
+
+// binOnPathForStrategies is binOnPathFor for callers that know the strategies
+// but not a resolved action list — `aes verify` has no actions, because it
+// installs nothing, and it still has to find what a previous run installed.
+//
+// The two callers exist because the same defect had two halves. `aes setup`
+// could not see a go-install tool for the length of its own run, and `aes
+// verify` — a separate process, verifying what that run left behind — could
+// not see it either. Fixing one and not the other moves the failure one step
+// later rather than away, which is what the darwin proof showed on its second
+// run: install passed, and verification of the same tool still reported
+// missing.
+func binOnPathForStrategies(app *App, strategies []string) []func() {
 	if app.Registry == nil {
-		return nil
+		// Still expose the AES bin directory: it needs no registry to name,
+		// and a caller with no registry is a test double, not a reason for
+		// verify to stop looking where aes installs.
+		return []func(){withBinOnPath(filepath.Join(app.Home, "bin"))}
 	}
 	seen := map[string]bool{}
 	var out []func()
@@ -1128,8 +1150,8 @@ func binOnPathFor(app *App, actions []resolver.Action) []func() {
 	// strategy owns, and a run that installs nothing from that strategy still
 	// verifies tools that live there.
 	add(filepath.Join(app.Home, "bin"))
-	for _, a := range actions {
-		dir, ok := app.Registry.DestinationFor(context.Background(), a.Strategy)
+	for _, strategy := range strategies {
+		dir, ok := app.Registry.DestinationFor(context.Background(), strategy)
 		if !ok {
 			continue
 		}
