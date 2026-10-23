@@ -5,7 +5,7 @@ finishing it. Everything below is measured, not remembered; where a number is a
 claim rather than a measurement, it says so.
 
 - **Repo:** `github.com/quangdang46/agents_environment_setup`
-- **Branch:** `main` · **History:** 186 commits · **Tree:** clean at the commit
+- **Branch:** `main` · **History:** 196 commits · **Tree:** clean at the commit
   that carries this file
 - **Go:** 1.26.4+ · **Module:** `github.com/quangdang46/agents_environment_setup`
 
@@ -33,14 +33,17 @@ of them:
 | | |
 |---|---|
 | Build + vet | green |
-| Test suite | green, **421 test functions**, 16 packages, `-race` clean |
+| Test suite | green, **424 test functions**, 16 packages, `-race` clean |
+| Bootstrap test | `sh scripts/install_test.sh` — **14 pass, 0 fail** (12 before this session) |
 | Catalog | **68 tools** — github-release 41, package/apt 20, npm 7 |
 | `tested: true` | **67**, each carrying a `tested_on` list |
-| Proven on darwin/arm64 | **54** — measured by the proof run, not by hand |
 | `default: true` | **67** — the same 67 (see §3.3) |
 | Not verified | **1**: `pi` (see §4.2) |
-| Beads open | `9x0` (P3, publish — see §5.2), `kn7` (P3, pi), `igf` (P3, hashline/amd64) |
-| Published | **v0.1.0** at `70e4cb8`; this session's commits are unreleased |
+| Proven `darwin/arm64` | **54** — measured by the proof run, not by hand |
+| Proven `linux/amd64` | **64** |
+| Proven `linux/arm64` | **38** |
+| Beads open | `kn7` (P3, pi), `igf` (P3, hashline/amd64), `9x0` (P3, publish — released, DoD not fully ticked) |
+| Published | **v0.1.1** on 2026-10-23 — 4 assets + `checksums.txt`, workflow green |
 
 ```bash
 go build ./... && go vet ./... && go test ./...   # the whole story for "is it healthy"
@@ -210,6 +213,70 @@ The two stale ones are the developer's own older builds, and the rule that
 already covers the ubuntu runners' psql covers them too: a host build below the
 floor is the host's version, not a broken fixture.
 
+### 3.5 `aes setup` and `aes verify` could not see where three strategies install
+
+Both commands prepended only `$AES_HOME/bin` to PATH, which is where the
+github-release strategy puts binaries. `go install` writes `$GOBIN` or
+`$GOPATH/bin`, cargo `~/.cargo/bin`, uv and npm their own — and none of those
+is on PATH until the user sources `env.sh`. So a successful install was
+reported `installed but verification says missing`, and state was never
+written, because state is only written for a tool that verified.
+
+Measured on `srps`, whose darwin target is `go install`:
+
+```
+$ aes setup --only srps --allow-unproven --non-interactive
+✖ srps failed: installed but verification says missing
+
+$ ls $HOME/go/bin/sysmoni
+-rwxr-xr-x  5.8M  sysmoni          <- the install worked
+```
+
+**It is invisible on a developer's machine**, where `~/go/bin` is already on
+PATH, and appears wherever `HOME` is not the developer's: a sandbox, a CI
+runner, or anyone who redirects `HOME`. The container sweeps missed it because
+the base image has no Go toolchain, so `srps` was proven on linux
+(github-release) and skipped on darwin.
+
+It had to be fixed twice, and the second time is the lesson: after `setup`
+learned to put the strategy's directory on PATH, the install passed and
+**verify still said missing** — verify is a separate process and had the same
+hard-coded line. Fixing one half moves a failure one step later rather than
+away. Both now share `binOnPathForStrategies`, which asks the installer
+registry the same question `envgen` asks when it writes `env.sh`.
+
+### 3.6 v0.1.1, and the bootstrap bug it was almost shipped with
+
+While preparing the release I ran the command a user actually runs:
+
+```
+$ sh install.sh
+==> downloading aes-latest-darwin-arm64.tar.gz
+curl: (56) The requested URL returned error: 404
+```
+
+`install.sh` interpolated `$VERSION` into the asset name, and the default
+`$VERSION` is the word "latest". Release assets are named after the tag they
+were built from, so `aes-latest-*` does not exist and cannot — it would have
+to be renamed on every release. **The default `curl | sh` invocation was
+broken**, while every other invocation worked, because `--version` pins a
+concrete number and every test in the suite passed one.
+
+The fix separates the base URL (which may say `latest`; GitHub redirects it to
+the newest release) from the asset *name* (which may not). The concrete
+version is read from the release's own `checksums.txt` — the file already
+being fetched and verified a moment later, so no API call and no `jq`, and it
+travels through the same redirect as the assets.
+
+`install_test.sh` gained case `0b`, which is the branch the defect lived in and
+which nothing covered. Proven both ways: with the fix removed the resolved
+value is `latest` and the install 404s; with it, `0b` passes and so does the
+real install.
+
+Verified after publishing, against the **public** release rather than a
+fixture: `install.sh` → `aes 0.1.1` → `aes list` shows all 68 tools →
+`aes setup --dry-run` resolves 54.
+
 ---
 
 ## 4. What the verification actually proved
@@ -297,66 +364,109 @@ ninety-minute proof that installs real software is not a pull-request gate.
 No workflow ran the Layer 2 proof before; ci.yml's comment claimed
 release.yml did, and it did not.
 
+### 4.4 The darwin proof, on a real macOS runner
+
+Run 39878020977, `workflow_dispatch` with `platform=darwin`:
+
+**54 tools PASS, 0 FAIL**, in 411s. That includes `srps` (20.84s), the tool
+whose failure exposed both PATH defects in §3.5 — the run before it failed on
+that one tool alone.
+
+Each of the 54 manifests now carries `darwin/arm64`, and the match was checked
+mechanically in both directions rather than by eye:
+
+```
+declared: 54 | declared-but-not-proven: 0 | proven-but-not-declared: 0
+```
+
+That second direction is the one that matters. A `tested_on` entry for a
+platform that has not run both layers is exactly what `AGENTS.md` calls "a
+claim that outruns the evidence": the resolver trusts the flag, so `aes` would
+install a tool nobody verified there and report the run as done.
+
+Fourteen tools were skipped because the runner already ships them (§5.4), and
+`pi` is not among the 54 for its own reason (§4.2).
+
+The effect a user sees: `aes setup` on that macOS resolves to 54 tools, where
+before this session it resolved to none.
+
 ---
 
 ## 5. Remaining work, in the order I would take it
 
-### 5.1 The darwin evidence, for the whole catalog
+v0.1.1 is published, so none of this blocks a release. It is ordered by what
+would change a user's experience first.
 
-`tested: true` carries a `tested_on` list of the GOOS/GOARCH pairs the tool was
-proven on, and the resolver **skips** a tool that is proven somewhere but not
-here. On a macOS that skip was total: every tool was proven on linux, so
-`aes setup` resolved to nothing and exited 1.
+### 5.1 `linux/arm64` evidence — the biggest gap, and the cheapest to close
 
-**The question the previous handoff left open — "is a `tested: true` flag
-allowed to be set from evidence the host asking cannot obtain?" — has an answer
-that is measurable rather than philosophical: the host CAN obtain the evidence,
-and the rule must not stop the run whose job is to gather it.**
+Measured on the shipped catalog: `linux/amd64` 64 tools, `darwin/arm64` 54,
+**`linux/arm64` 38**. Every container sweep in this session ran on an Apple
+Silicon host, so every linux proof it produced was `linux/arm64`, and the
+catalog's `linux/amd64` flags came from earlier sessions.
 
-The mechanism is `AllowUnproven`, and it already existed for the container
-sweep: a proof run has to be willing to install a tool that is unproven here,
-because a tool that can only be installed where it is already proven can never
-be proven anywhere new. The host Layer 2 run did not have it, and the
-consequence was a test that could not pass on the platform it existed to prove:
+An ARM Linux user therefore sees the resolver skip 30 tools that a Debian
+laptop gets, for a reason that is about where the runner happened to live.
+Nothing is broken; the evidence is just missing.
 
-```
-zellij: FAILED
-  [FAIL] install  exit=1 | aes: nothing to install: no tool in this selection
-  can be installed on darwin/arm64; proven only on linux/amd64, not on this host
-```
+The proof workflow already runs on `ubuntu-latest`, which is `amd64`, so
+`gh workflow run proof.yml -f platform=linux` closes this — roughly 90
+minutes, one fresh container per tool. **Do this before believing the
+catalog's linux coverage is uniform.**
 
-The product's own refusal was the test's failure message. With `AllowUnproven`
-the same run installs the tool, verifies it, and proves the darwin coordinate
-— which is how the four tools in §4.1 were proven.
-
-**The skip stands for a user's run, and the proof run opts past it.** What the
-darwin gap still needs is the missing measurements, and those need a machine
-where the tools are not already installed — a clean macOS runner, not a
-developer's desk. That is a CI job, and it is the same CI matrix the publish
-bead wants.
-
-### 5.2 `9x0` — publish
-
-Held deliberately, and it should stay held until §5.1 has produced the darwin
-evidence: the DoD wants a boot that works end to end, and on a stock macOS it
-does not yet.
-
-### 5.3 `hashline` on linux/amd64
+### 5.2 `hashline` on linux/amd64 — bead `igf`
 
 The release publishes no `linux/arm64` asset at any version (v0.9.19 and
-v0.9.20 both ship linux-x86_64, macos-x64, macos-aarch64 and windows-x86_64),
-so the manifest's absence is deliberate: on arm64 `aes` reports the tool as
-unsupported, which is the honest answer. The linux/amd64 coordinate is
-unproven, and proving it needs an amd64 container — on an Apple Silicon host
-that is an emulated one, and the harness's image arch follows the local image,
-so `docker pull --platform linux/amd64 ubuntu:24.04` is enough to make the
-sweep build and run an amd64 `aes` (restore the native image afterwards, or
-the next sweep runs emulated).
+v0.9.20 both ship linux-x86_64, macos-x64, macos-aarch64, windows-x86_64), so
+the manifest deliberately declares none, and on arm64 `aes` reports the tool
+as unsupported — the honest answer.
 
-### 5.4 The five unverified tools, reduced to one
+Its `linux/amd64` coordinate is still unproven. §5.1's ubuntu-latest sweep
+covers it in the same run; it is listed separately because the manifest's
+comment promises a proof that has not happened yet.
 
-`pi` (§4.2) is the only one left, and it is blocked on a platform fact rather
-than on anything AES can do.
+### 5.3 `pi` — bead `kn7`, and it is a product decision
+
+Every published version of `@earendil-works/pi-coding-agent` declares
+`engines: {node: ">=22.19.0"}` — 59 of 59, oldest to newest, so there is no
+older release to fall back to. `enableCompileCache` landed in node 22.19.0;
+Ubuntu 24.04's `apt install nodejs` is 18.19.1. The bytes install cleanly and
+the binary then dies on startup, which `aes setup` reports truthfully as
+"installed but verification says unknown" with the path named.
+
+The question is **whether the `node` tool owes its users a newer node than the
+distribution's.** If yes, the node strategy needs a second coordinate —
+nodejs.org publishes github-release-shaped tarballs, and the manifest's
+per-platform floor map already exists to carry a number that differs by
+platform. If no, `pi` stays in the catalog uninstallable on a stock Ubuntu,
+which is honest and leaves it out of the default set forever.
+
+Either answer is defensible; leaving the floor where it is while calling the
+tool unproven for a reason nobody chose is not.
+
+### 5.4 14 tools the darwin runner cannot prove
+
+`bash`, `gh`, `git`, `git-lfs`, `gnupg`, `go`, `jq`, `node`, `npm`, `python`,
+`rust`, `yq`, `zsh` skip the darwin proof because a stock `macos-latest`
+already ships them, and a machine that already has a tool cannot prove a fresh
+install of it. This is `requireAbsent` working, not a gap in the proof.
+
+They are not blocked on anything AES can do — only on a macOS machine that
+does not carry them. Their `linux` evidence is unaffected.
+
+### 5.5 `9x0` — publish, and what is left of its DoD
+
+The release itself is done: v0.1.1, four platform assets, `checksums.txt`, and
+the bootstrap verified end-to-end against the public release rather than a
+fixture. What remains unticked is measurement, not machinery:
+
+- *40–50 tool definitions, ≥10 tested on both layers* — 68 definitions, 67
+  tested, but "both layers" per platform is only fully true for the 54
+  darwin-proven and the sets in §5.1.
+- *`aes setup` bootstraps end to end in one command* — it does, and the
+  refusal on a machine with no proof is the correct answer rather than a bug.
+
+Close the bead when §5.1 has run, because that is the measurement its DoD is
+asking for.
 
 ---
 
@@ -372,6 +482,7 @@ than on anything AES can do.
 | `51f0037` | The Layer 2 sweep could only do all 63 tools at a time, so the handoff's own advice — re-run the affected tools — could not be followed. |
 | `9d8aa8e` | **`aes setup` put only `$AES_HOME/bin` on PATH**, so a tool installed by the `go` strategy landed in `$HOME/go/bin` and was reported "installed but verification says missing". Invisible on a developer's machine, where `~/go/bin` is already on PATH; the macOS CI runner found it. |
 | `cb7c328` | **`aes verify` had the same hole, one process later.** After the setup fix the install passed and verify still said missing, because verify reconstructed PATH from `$AES_HOME/bin` alone. Both now share one registry lookup. |
+| `5cb599e` | **The default `curl \| sh` bootstrap was broken.** install.sh built the asset name from the word "latest", so it asked for `aes-latest-darwin-arm64.tar.gz` and got a 404 — while every test passed, because every test passed `--version`. Found by running the command a user runs, minutes before tagging. |
 
 ---
 
@@ -439,10 +550,29 @@ From `AGENTS.md`, the ones most likely to bite in a *new* environment:
 
 ```bash
 git pull && go build ./... && go vet ./... && go test ./...   # expect green
+sh scripts/install_test.sh                                     # the bootstrap, 14 cases, no network for most
 docker version                                                  # needed for the gated tests
-AES_CATALOG_CHECK=1 go test -v -run TestAptCoordinates ./internal/sandbox/
-AES_LAYER2=1 go test -v -run TestLayer2Container ./internal/sandbox/       # ~90 min for the full sweep
-go run ./cmd/aes setup --dry-run                                 # read the refusal carefully
+AES_CATALOG_CHECK=1 go test -v -run TestAptCoordinatesMatchWhatAptOffers ./internal/sandbox/
+go run ./cmd/aes setup --dry-run                                # read the refusal carefully
 ```
 
-Then read §5.1, and make that decision rather than inheriting it.
+The full Layer 2 sweep is opt-in and slow; run it when you need evidence, not
+as a smoke test:
+
+```bash
+# the evidence CI produces, on the runner that produces it
+gh workflow run proof.yml -f platform=all
+# or locally, narrowed: a full sweep is ~90 min for 63 tools
+AES_LAYER2=1 AES_LAYER2_TOOL=git-lfs,bvr go test -v -run TestLayer2Container ./internal/sandbox/
+# the host proof (darwin), which is how the 54 darwin coordinates were measured
+AES_LAYER2=1 AES_LAYER2_TOOL=all go test -v -run TestLayer2RealInstall ./internal/sandbox/
+```
+
+**One thing to check before trusting a green build:** nothing in CI runs the
+Layer 2 proof on a push. `proof.yml` is `workflow_dispatch`, because a
+ninety-minute run that installs real software is not a pull-request gate. So a
+green check on a PR says the unit and contract tests pass — it says nothing
+about whether the catalog's `tested:` flags still match reality.
+
+Then read §5.1: the `linux/arm64` gap is the largest missing measurement and
+the cheapest to close.
