@@ -1,0 +1,70 @@
+# AES catalog. Hex is local voice dictation (anomalyco/hex, MIT).
+#
+# The two platforms need different strategies, and neither is a preference:
+#
+#   darwin  brew cask, tap-qualified. `brew install hex` is NOT this tool:
+#           homebrew/core carries an unrelated formula called `hex` (0.7.1),
+#           and a bare name prints "Treating hex as a formula" and installs
+#           that one — measured with `brew install --dry-run`, 2026-11-04.
+#           `anomalyco/tap/hex` resolves to this project's cask.
+#
+#   linux   github-release. Upstream publishes a bare ELF per arch (no
+#           archive, no tar), which the release installer detects from the
+#           file's magic bytes and installs directly.
+#
+# Measured on 2026-11-04, darwin/arm64:
+#
+#   * Hex.app/Contents/MacOS/hex prints exactly `hex 3.3.0` and exits 0, and
+#     `-v` is rejected ("unexpected argument '-v' found"), so the probe below
+#     is the only spelling that works.
+#   * The same bytes copied OUT of the bundle are SIGKILLed (exit 137). That
+#     is why darwin is not a github-release target: the macOS release zip
+#     (hex-3.3.0-macos-arm64.zip) contains only Hex.app, so extracting its
+#     member would install a binary that cannot start.
+#   * The cask's only artifact is `Hex.app (App)`: it installs
+#     /Applications/Hex.app and puts NOTHING on PATH. So `verify.command: hex`
+#     cannot resolve on macOS after a successful install, and this manifest
+#     does not pretend otherwise — see `tested` below.
+#
+# `tested: false` is the honest value, not a placeholder. The flag's contract
+# is "proven end to end on the platforms in tested_on", and neither platform
+# was: darwin has no `hex` on PATH to verify, and the linux install was never
+# run in a container here. pi sets the same precedent — in the catalog,
+# unproven, rather than excluded. `default: false` keeps it out of the
+# no-flag `aes setup` run.
+name: hex
+description: Local voice dictation for macOS, Windows and Linux
+category: utility
+default: false
+tested: false
+tags:
+  - dictation
+  - voice
+  - transcription
+provides:
+  - hex
+verify:
+  command: hex
+  version:
+    command: hex --version
+    min: "3.0"
+install:
+  darwin:
+    strategy: package
+    manager: brew
+    package: anomalyco/tap/hex
+  linux:
+    strategy: github-release
+    release_tag: v3.3.0
+    repository: anomalyco/hex
+    binary:
+      amd64: hex
+      arm64: hex
+    asset:
+      amd64: hex-3.3.0-linux-x64
+      arm64: hex-3.3.0-linux-arm64
+    sha256:
+      # Both digests are of the bytes as published, fetched from the v3.3.0
+      # release and hashed on 2026-11-04.
+      amd64: e8c7b3a2ebeb1d7da5d6276d5f25145891d52178e3636347cb3ac331f7662622
+      arm64: a8a28cb8bc922f8e11fd5996e090d88aa143a2c3a65b07f1962435d0b15a24d1

@@ -16,7 +16,7 @@
 
 **One command takes a machine from nothing to a complete AI coding environment — and exits 0 only when it actually is.**
 
-`aes setup` resolves a typed catalog into a dependency-ordered list of actions, verifies what is already on the box, installs only what is missing, verifies again, and refuses to call the run done until every action's binary is real and runnable. **v0.1.1: 68 tools in the catalog, 67 verified end to end.**
+`aes setup` resolves a typed catalog into a dependency-ordered list of actions, verifies what is already on the box, installs only what is missing, verifies again, and refuses to call the run done until every action's binary is real and runnable. **v0.1.1: 69 tools in the catalog, 67 verified end to end.**
 
 <div align="center">
 
@@ -485,10 +485,13 @@ This is an active, pre-1.0 project. Stated plainly:
   `checksums.txt`, published by the release workflow. `install.sh` downloads a
   checksum-verified binary; `aes setup` then installs and verifies the default
   set end to end.
-- **68 tools in the catalog, 67 `tested: true` and `default: true`.** The one
-  exception is `pi`: it installs from npm and then dies, because every
-  published version requires `node >= 22.19` and Ubuntu 24.04 ships 18.19.1.
-  It stays in the catalog at `tested: false` rather than being excluded.
+- **69 tools in the catalog, 67 `tested: true` and `default: true`.** The two
+  exceptions stay in the catalog at `tested: false` rather than being excluded:
+  `pi` installs from npm and then dies, because every published version
+  requires `node >= 22.19` and Ubuntu 24.04 ships 18.19.1; `hex`'s macOS cask
+  installs `Hex.app` and puts nothing on PATH, and its bundled binary is
+  killed when run outside the bundle, so there is nothing for `verify` to
+  check on darwin.
 - **The proof is per platform, and the scope is narrow.** Counted from the
   manifests: 54 tools proven on `darwin/arm64`, 63 on `linux/amd64`, 32 on
   `linux/arm64`, none on `darwin/amd64`. The release ships a `darwin/amd64`
