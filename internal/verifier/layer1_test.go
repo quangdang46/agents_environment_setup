@@ -141,6 +141,12 @@ var layer1Fixtures = []layer1Fixture{
 	{"bvr", "bvr", "bvr --version", "0.25.2"},
 	{"discord-cli", "discord", "discord --version", "0.1.2"},
 	{"hashline", "hashline", "hashline --version", "0.9.19"},
+	// hex is a macOS app bundle with no bin entry of its own; the manifest's
+	// `links:` puts /Applications/Hex.app/Contents/MacOS/hex in $AES_HOME/bin,
+	// and that is what this resolves. Measured 2026-11-04: the linked binary
+	// prints "hex 3.3.0" and exits 0, while `-v` is rejected. The fixture
+	// skips on a machine without the tool, which is every non-macOS host.
+	{"hex", "hex", "hex --version", "3.0"},
 	// pi is not installed on this machine, so the fixture skips here and runs
 	// wherever the npm strategy put it. Its probe is measured to take 3.67s
 	// on an unloaded machine, which is why the version budget is 15s.

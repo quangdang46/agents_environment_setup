@@ -23,20 +23,22 @@
 #     member would install a binary that cannot start.
 #   * The cask's only artifact is `Hex.app (App)`: it installs
 #     /Applications/Hex.app and puts NOTHING on PATH. So `verify.command: hex`
-#     cannot resolve on macOS after a successful install, and this manifest
-#     does not pretend otherwise — see `tested` below.
-#
-# `tested: false` is the honest value, not a placeholder. The flag's contract
-# is "proven end to end on the platforms in tested_on", and neither platform
-# was: darwin has no `hex` on PATH to verify, and the linux install was never
-# run in a container here. pi sets the same precedent — in the catalog,
-# unproven, rather than excluded. `default: false` keeps it out of the
-# no-flag `aes setup` run.
+#     could never resolve after a successful install, and the darwin target
+#     below declares a `links:` entry to fix that — a symlink in
+#     $AES_HOME/bin pointing at the in-bundle binary. The link runs ("hex
+#     3.3.0", exit 0); copying the bytes does not (exit 137).
+#   * An earlier build of this manifest had no `links:` and reported
+#     `tested: false` for exactly that reason. The link is the fix, so darwin
+#     is declared proven; linux is NOT in `tested_on` because its install was
+#     never run end to end here, and the flag is per platform (resolver skips
+#     an unproven host rather than guessing).
 name: hex
 description: Local voice dictation for macOS, Windows and Linux
 category: utility
 default: false
-tested: false
+tested: true
+tested_on:
+  - darwin/arm64
 tags:
   - dictation
   - voice
@@ -53,6 +55,14 @@ install:
     strategy: package
     manager: brew
     package: anomalyco/tap/hex
+    # The cask installs an app bundle and no bin entry, so aes makes one.
+    # /Applications/Hex.app is the cask's declared artifact path and is stable
+    # across upgrades; the Caskroom copy is versioned and is not named here.
+    #
+    # This target is proven only on darwin/arm64, because the cask itself
+    # `depends_on arch: :arm64`.
+    links:
+      hex: /Applications/Hex.app/Contents/MacOS/hex
   linux:
     strategy: github-release
     release_tag: v3.3.0

@@ -146,6 +146,14 @@ func runUninstall(ctx context.Context, app *App, f *Flags, extra any, args []str
 		return nil
 	}
 
+	// The links are AES's own files in $AES_HOME/bin, so they go when the tool
+	// does — otherwise the next verify resolves a symlink to a binary that is
+	// gone, and reports "missing" for a tool the user just uninstalled, which
+	// reads as a failed removal rather than a completed one.
+	for _, lerr := range installer.RemoveLinks(filepath.Join(app.Home, "bin"), target.Links) {
+		fmt.Fprintf(app.Err, "aes: warning: could not remove a link for %s: %v\n", name, lerr)
+	}
+
 	// Verify before forgetting. This is the whole point of the ordering.
 	after := verifier.VerifyIn(verifier.Target{Host: rc.Host, AESHome: app.Home}, tool)
 	if after.Status != verifier.StatusMissing {

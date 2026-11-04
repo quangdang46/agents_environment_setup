@@ -1131,3 +1131,112 @@ func TestAptSourceValidation(t *testing.T) {
 		}
 	})
 }
+
+// `links:` puts a binary that an install step placed somewhere unhelpful onto
+// PATH, as a symlink in AES's own bin directory.
+//
+// The measured case is the macOS `hex` cask: it installs /Applications/Hex.app
+// with no bin entry at all, so `verify.command: hex` reported the tool missing
+// immediately after a successful install (2026-11-04). A symlink to the
+// in-bundle path runs; the same bytes copied out are SIGKILLed.
+func TestLinksRules(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		// target is spliced into the darwin install block, already indented.
+		target string
+		want   string
+	}{
+		{
+			// The normal case: an absolute path to a file another installer
+			// placed. Absoluteness is REQUIRED here, unlike config:/settings:,
+			// because the target is a file AES did not create and does not own.
+			name:   "an absolute target is fine",
+			target: "    links:\n      hex: /Applications/Hex.app/Contents/MacOS/hex\n",
+			want:   "",
+		},
+		{
+			// A relative target resolves against whatever directory the
+			// caller happens to be in, so the same manifest means different
+			// things depending on where it runs.
+			name:   "a relative target is refused",
+			target: "    links:\n      hex: Hex.app/Contents/MacOS/hex\n",
+			want:   "must be an absolute path",
+		},
+		{
+			// The key becomes a filename in $AES_HOME/bin; a slash would put
+			// the link outside the directory AES owns.
+			name:   "a key with a slash is refused",
+			target: "    links:\n      sub/hex: /Applications/Hex.app/Contents/MacOS/hex\n",
+			want:   "not a valid command name",
+		},
+		{
+			name:   "an empty target is refused",
+			target: "    links:\n      hex: \"\"\n",
+			want:   "no target",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// The darwin block ends at the linux key; splice before it.
+			doc := strings.Replace(validTool,
+				"  darwin:\n    strategy: package\n    manager: brew\n    package: ripgrep\n",
+				"  darwin:\n    strategy: package\n    manager: brew\n    package: ripgrep\n"+tc.target, 1)
+			if doc == validTool {
+				t.Fatal("fixture did not contain the darwin block to splice into")
+			}
+			_, err := Parse([]byte(doc))
+			if tc.want == "" {
+				if err != nil {
+					t.Errorf("rejected a well-formed link: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("links accepted %q without complaint", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %q does not name %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// links is orthogonal to the strategy: it is not a field a strategy may claim
+// exclusively, because the problem it solves (the install worked but left
+// nothing on PATH) is independent of how the bytes arrived. This guards the
+// strategy matrix from growing a `links` entry on one strategy only.
+func TestLinksAreValidOnEveryStrategy(t *testing.T) {
+	t.Parallel()
+
+	// One target body per strategy, each carrying a `links:` block. The
+	// bodies are the minimum a strategy accepts, so a rejection names the
+	// links rule rather than a missing required field.
+	bodies := map[string]string{
+		"package": "    strategy: package\n    manager: brew\n    package: rg\n",
+		"github-release": "    strategy: github-release\n    repository: BurntSushi/ripgrep\n" +
+			"    release_tag: v15.2.0\n    asset:\n      arm64: rg.tar.gz\n    sha256:\n      arm64: " +
+			strings.Repeat("a", 64) + "\n",
+		"go":    "    strategy: go\n    go_package: example.com/rg@v1.0.0\n",
+		"npm":   "    strategy: npm\n    npm_package: rg@1.0.0\n",
+		"cargo": "    strategy: cargo\n    cargo_name: rg@1.0.0\n",
+		"uv":    "    strategy: uv\n    uv_package: rg@1.0.0\n",
+	}
+	for _, strategy := range ValidStrategies() {
+		body, ok := bodies[strategy]
+		if !ok {
+			t.Fatalf("no target body for strategy %q; add one so the matrix stays complete", strategy)
+		}
+		t.Run(strategy, func(t *testing.T) {
+			doc := "name: rg\ndescription: fixture\nprovides: [rg]\n" +
+				"install:\n  darwin:\n" + body + "    links:\n      rg: /opt/rg/bin/rg\n" +
+				"  linux:\n" + body
+			if _, err := Parse([]byte(doc)); err != nil {
+				t.Errorf("links rejected on a %s target: %v", strategy, err)
+			}
+		})
+	}
+}

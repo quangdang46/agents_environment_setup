@@ -49,6 +49,11 @@ type setupHarness struct {
 	// declared minimum, which is the OTHER wrong answer a rollback must not
 	// treat as broken.
 	installVersion string
+	// noBinaryTools are the tools whose install succeeds without writing a
+	// binary, which is what a cask installing an app bundle looks like from
+	// aes's side. Keyed by tool name so a spec's choice cannot leak into
+	// another tool in the same catalog.
+	noBinaryTools map[string]bool
 }
 
 // toolSpec describes one catalog entry.
@@ -66,6 +71,16 @@ type toolSpec struct {
 	isDefault bool
 	// strategyName overrides the install strategy, defaulting to go.
 	strategyName string
+	// noBinary makes the recording installer succeed WITHOUT writing the
+	// binary into binDir, which is what a cask that installs an app bundle
+	// looks like from aes's side: the strategy works, nothing lands on PATH.
+	// Without this the link tests would pass for the wrong reason — the
+	// installer would have put a binary there and the link would be idle.
+	noBinary bool
+	// linkTarget, when set, is an absolute path the target declares in
+	// `links:` under the tool's own name. The file is created by the harness,
+	// like an app bundle some other installer placed.
+	linkTarget string
 }
 
 func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
@@ -107,18 +122,34 @@ func newSetupHarness(t *testing.T, specs ...toolSpec) *setupHarness {
 		if s.isDefault {
 			content += "default: true\n"
 		}
-		content += "install:\n  darwin:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n" +
-			"  linux:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n"
+		if s.linkTarget != "" {
+			// Declared on BOTH platforms, because the harness must assert the
+			// same thing wherever the suite runs: a darwin-only declaration
+			// would make the test pass vacuously on the linux CI runners.
+			content += "install:\n  darwin:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n" +
+				"    links:\n      " + s.provides + ": " + s.linkTarget + "\n" +
+				"  linux:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n" +
+				"    links:\n      " + s.provides + ": " + s.linkTarget + "\n"
+		} else {
+			content += "install:\n  darwin:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n" +
+				"  linux:\n    strategy: go\n    go_package: example.com/" + s.name + "@v1.0.0\n"
+		}
 		if err := os.WriteFile(filepath.Join(dir, "tool.yaml"), []byte(content), 0o644); err != nil {
 			t.Fatalf("write tool.yaml: %v", err)
 		}
 	}
 
 	h := &setupHarness{
-		stdout: &bytes.Buffer{},
-		stderr: &bytes.Buffer{},
-		home:   filepath.Join(tmp, ".aes"),
-		binDir: binDir,
+		stdout:        &bytes.Buffer{},
+		stderr:        &bytes.Buffer{},
+		home:          filepath.Join(tmp, ".aes"),
+		binDir:        binDir,
+		noBinaryTools: map[string]bool{},
+	}
+	for _, s := range specs {
+		if s.noBinary {
+			h.noBinaryTools[s.name] = true
+		}
 	}
 	h.app = &App{
 		In:          strings.NewReader(""),
@@ -184,7 +215,14 @@ func (h *setupHarness) install(ctx context.Context, a installer.Action) error {
 	h.mu.Lock()
 	broken := h.breakInstall
 	h.breakInstall = false
+	skip := h.noBinaryTools[a.Tool]
 	h.mu.Unlock()
+	if skip {
+		// The strategy succeeded and left nothing on PATH, which is what a
+		// cask installing an app bundle does. The declared link is the only
+		// way verify can find this tool.
+		return nil
+	}
 	if broken {
 		return os.WriteFile(bin, []byte("#!/bin/sh\nexit 1\n"), 0o755)
 	}
@@ -870,5 +908,113 @@ func TestVerifyFindsAToolInItsStrategysBinDir(t *testing.T) {
 				"Verify is a separate process from the install, so it has to ask each "+
 				"strategy's registry entry where its binaries go", entry.Status, ecoBin)
 		}
+	}
+}
+
+// ---------------------------------------------------------------- links
+
+// A strategy can succeed and leave NOTHING the verifier can resolve. The
+// measured case is the macOS `hex` cask: it installs /Applications/Hex.app and
+// creates no bin entry, so `verify.command: hex` reported the tool missing
+// immediately after a successful install (2026-11-04).
+//
+// The fix is a declared symlink in $AES_HOME/bin, and the ORDER is the
+// contract: the link has to exist before the post-install verify, or the run
+// reports a working install as missing and refuses to record it.
+func TestSetupCreatesDeclaredLinksBeforeVerifying(t *testing.T) {
+	// The target lives where an app bundle would, outside the harness bin dir.
+	appBin := filepath.Join(t.TempDir(), "App.app", "Contents", "MacOS", "apptool")
+	if err := os.MkdirAll(filepath.Dir(appBin), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(appBin, []byte("#!/bin/sh\necho apptool 9.9.9\n"), 0o755); err != nil {
+		t.Fatalf("write bundle binary: %v", err)
+	}
+	h := newSetupHarness(t, toolSpec{
+		name:       "apptool",
+		category:   "utility",
+		provides:   "apptool",
+		noBinary:   true,
+		linkTarget: appBin,
+	})
+
+	code, sum := h.run(t, "--only", "apptool")
+	if code != ExitOK {
+		t.Fatalf("exit = %d, want 0\nstdout:\n%s\nstderr:\n%s",
+			code, h.stdout.String(), h.stderr.String())
+	}
+	if sum == nil || len(sum.Results) != 1 || sum.Results[0].Status != outcomeInstalled {
+		t.Fatalf("result = %+v, want one installed tool", sum)
+	}
+
+	link := filepath.Join(h.home, "bin", "apptool")
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatalf("%s is not a symlink: %v\n"+
+			"A target that declares links must have them created, or verify can never "+
+			"find a binary the strategy did not put on PATH", link, err)
+	}
+	if target != appBin {
+		t.Errorf("link points at %q, want %q", target, appBin)
+	}
+	// The link must be a symlink, never a copy: the measured hex binary is
+	// SIGKILLed when its bytes are relocated (exit 137), and only the link
+	// runs.
+	if info, err := os.Lstat(link); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		t.Error("the link is a regular file; relocating the bytes is what breaks a bundle binary")
+	}
+}
+
+// A link naming a file that the install never produced is a failure, not a
+// warning: the user's binary is as unusable as if the install had failed, and
+// a symlink to nothing is a broken command on PATH.
+func TestSetupFailsWhenALinkTargetIsMissing(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist", "apptool")
+	h := newSetupHarness(t, toolSpec{
+		name:       "apptool",
+		category:   "utility",
+		provides:   "apptool",
+		noBinary:   true,
+		linkTarget: missing,
+	})
+
+	code, sum := h.run(t, "--only", "apptool")
+	if code == ExitOK {
+		t.Fatalf("exit = 0, want a failure\nstdout:\n%s", h.stdout.String())
+	}
+	if sum != nil && len(sum.Results) == 1 {
+		if sum.Results[0].Status != outcomeFailed {
+			t.Errorf("status = %q, want %q", sum.Results[0].Status, outcomeFailed)
+		}
+		if !strings.Contains(sum.Results[0].Error, "link target does not exist") {
+			t.Errorf("error = %q, want it to name the missing link target", sum.Results[0].Error)
+		}
+	}
+	// Nothing must be recorded for a tool that cannot verify.
+	if _, tracked := h.stateEntries(t)["apptool"]; tracked {
+		t.Error("a tool whose link target is missing was recorded as installed")
+	}
+}
+
+// A dry run writes no links. The declared link is a filesystem change like any
+// other, and a preview that creates it is not a preview.
+func TestSetupDryRunCreatesNoLinks(t *testing.T) {
+	appBin := filepath.Join(t.TempDir(), "App.app", "Contents", "MacOS", "apptool")
+	if err := os.MkdirAll(filepath.Dir(appBin), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(appBin, []byte("#!/bin/sh\necho apptool 9.9.9\n"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	h := newSetupHarness(t, toolSpec{
+		name: "apptool", category: "utility", provides: "apptool",
+		noBinary: true, linkTarget: appBin,
+	})
+
+	if code, _ := h.run(t, "--only", "apptool", "--dry-run"); code != ExitOK {
+		t.Fatalf("exit = %d, want 0\n%s", code, h.stderr.String())
+	}
+	if _, err := os.Lstat(filepath.Join(h.home, "bin", "apptool")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("--dry-run created a link (err = %v)", err)
 	}
 }

@@ -233,6 +233,10 @@ var layer1Tools = map[string]bool{
 	// the release actually ships — and the tool name is the repository's;
 	// the mismatch is the point of the fixture, not an error.
 	"br": true, "bvr": true, "discord-cli": true, "hashline": true,
+	// hex installs as an app bundle on macOS and reaches PATH through the
+	// manifest's `links:` symlink; on linux the release is a bare ELF. The
+	// fixture verifies whichever the machine has, and skips otherwise.
+	"hex": true,
 }
 
 // The other direction, and the one that actually caught a bug: every tool the

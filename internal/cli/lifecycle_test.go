@@ -63,10 +63,16 @@ func newLifeHarness(t *testing.T, specs ...toolSpec) *lifeHarness {
 		if err != nil {
 			t.Fatalf("encode target: %v", err)
 		}
+		darwin := string(encoded)
+		if s.linkTarget != "" {
+			// Declared on both platforms so the assertion holds wherever the
+			// suite runs.
+			darwin = strings.TrimRight(darwin, "\n") + "\nlinks:\n  " + s.name + ": " + s.linkTarget + "\n"
+		}
 		content := "name: " + s.name + "\ndescription: fixture\ncategory: " + s.category +
 			"\nprovides: [" + s.name + "]\ninstall:\n  darwin:\n" +
-			indentYAML(string(encoded), "    ") +
-			"  linux:\n" + indentYAML(string(encoded), "    ")
+			indentYAML(darwin, "    ") +
+			"  linux:\n" + indentYAML(darwin, "    ")
 		if err := os.WriteFile(filepath.Join(dir, "tool.yaml"), []byte(content), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
@@ -392,5 +398,63 @@ func TestUninstallResolvesTheSameBinaryNameAsSetup(t *testing.T) {
 	if seen.Name == "" {
 		t.Error("uninstall built an Action with no Name; it will fall back to the " +
 			"archive member name, which is not what was installed")
+	}
+}
+
+// Uninstall removes the links AES created, so the next verify does not resolve
+// a symlink to a binary that is gone and report the tool as merely missing.
+//
+// This drives the real command, not the library: an earlier version of this
+// test called installer.RemoveLinks directly and kept passing with the call
+// deleted from runUninstall, which is the "test the wiring" failure the repo's
+// trap list warns about.
+func TestUninstallRemovesDeclaredLinks(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "App.app", "Contents", "MacOS", "apptool")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("#!/bin/sh\necho apptool 9.9.9\n"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	h := newLifeHarness(t, toolSpec{
+		name: "apptool", category: "utility", provides: "apptool",
+		linkTarget: target,
+	})
+	h.track(t, "apptool", manifest.StrategyGo)
+
+	// The link a previous setup created.
+	binDir := filepath.Join(h.home, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	link := filepath.Join(binDir, "apptool")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// The remover claims success and removes the BINARY, not the link, so the
+	// run reaches the link cleanup and the link's disappearance can only be
+	// aes's doing. A remover that also deleted the link made this test pass
+	// with the cleanup deleted, which is how it was caught.
+	if err := os.WriteFile(filepath.Join(h.binDir, "apptool"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("seed binary: %v", err)
+	}
+	h.app.Registry = lieRegistry(t, removerFunc(func(context.Context, installer.Action) (installer.Outcome, error) {
+		if err := os.Remove(filepath.Join(h.binDir, "apptool")); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove binary: %v", err)
+		}
+		return installer.Removed(), nil
+	}))
+
+	if code := h.run(t, "uninstall", "apptool", "--confirm"); code != ExitOK {
+		t.Fatalf("exit = %d, want 0\n%s", code, h.stderr.String())
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Errorf("the declared link survived uninstall (err = %v); the next verify would resolve a symlink to nothing", err)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Errorf("uninstall deleted the link target, which belongs to another installer: %v", err)
 	}
 }

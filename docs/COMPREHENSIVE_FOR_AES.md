@@ -568,6 +568,7 @@ type Target struct {
     GoPackage  string            `yaml:"go_package"`
     NPMPackage string            `yaml:"npm_package"`
     CargoName  string            `yaml:"cargo_name"`
+    Links      map[string]string `yaml:"links"`      // binary name → absolute path; symlinked into $AES_HOME/bin
 }
 
 type Verify struct {
@@ -598,6 +599,18 @@ fields belonging to *other* strategies are rejected as unknown:
 | `github-release` | `repository`, `asset`, `sha256` | `manager`, `package`, `go_package`, `npm_package`, `cargo_name` |
 | `package` + `brew` | `manager: brew`, `package` | `repository`, `asset`, `sha256`, `*_package` |
 | `package` + `apt` | `manager: apt`, `package` | same as brew |
+
+`links:` is not a strategy and is orthogonal to the matrix: it may be set on any
+target, because the problem it solves — the install succeeded but left nothing
+the verifier can resolve — is independent of how the bytes arrived. Keys are
+command names (they become filenames in `$AES_HOME/bin`); values are absolute
+paths, which is the opposite of `config:`/`settings:` on purpose: those write
+files AES owns, while a link's target is a file some other installer placed
+(the macOS `hex` cask's `/Applications/Hex.app/Contents/MacOS/hex`, where a copy
+is impossible because the binary is killed outside its bundle). The links are
+created after the strategy runs and **before** the post-install verify, or a
+working install would be reported missing; they are removed on uninstall, and
+only if they still point where the manifest said.
 | `package` | `manager`, `package` | `manager` other than brew/apt |
 | `go` | `go_package` | `manager`, `package`, `repository`, `asset`, `sha256` |
 | `npm` | `npm_package` | same as `go` |

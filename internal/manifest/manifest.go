@@ -197,6 +197,29 @@ type Target struct {
 	Asset  map[string]string `yaml:"asset,omitempty"`  // Go arch → asset filename
 	SHA256 map[string]string `yaml:"sha256,omitempty"` // Go arch → checksum
 
+	// Links puts a binary that an install step placed somewhere unhelpful onto
+	// PATH, as a symlink in AES's own bin directory.
+	//
+	// It exists because a strategy can succeed and still leave nothing the
+	// verifier can find. The macOS `hex` cask is the measured case: it installs
+	// /Applications/Hex.app and creates no bin entry at all, so
+	// `verify.command: hex` reported missing immediately after a successful
+	// install. Copying the bundle's binary out does not work either — the same
+	// bytes are SIGKILLed outside the bundle (exit 137, measured 2026-11-04) —
+	// while a SYMLINK to the in-bundle path runs correctly ("hex 3.3.0", exit
+	// 0). So the fix is a link, not a copy, and it belongs in the declaration
+	// rather than in a hardcoded switch in the CLI.
+	//
+	// Keyed by the name the link is created under, so the manifest states what
+	// the user will type. The value is an absolute path to an existing file.
+	//
+	// This is NOT a strategy: it adds nothing to the required field set and is
+	// valid alongside any of them, because the problem it solves is orthogonal
+	// to how the bytes arrived. It is also not `aliases:` — an alias is a shell
+	// shortcut and does nothing for a verifier that must resolve a binary, nor
+	// for any non-interactive caller.
+	Links map[string]string `yaml:"links,omitempty"`
+
 	// Ecosystem coordinates, one per strategy. Exactly the field matching
 	// the strategy may be set.
 	//
@@ -708,6 +731,44 @@ func (t Target) validate(osName string) error {
 	if field, ok := pinnedEcosystems[t.Strategy]; ok {
 		if err := t.validatePinned(where, field); err != nil {
 			return err
+		}
+	}
+	if err := t.validateLinks(where); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateLinks enforces that a declared link names a binary and an absolute
+// path, and nothing else.
+//
+// The absolute-path rule is the opposite of the one `config:` and `settings:`
+// enforce, deliberately. Those write files AES owns or edits, so a relative
+// path keeps them inside the user's home. A link's TARGET is a file the user
+// already has, placed by some other installer — /Applications/Hex.app/... is
+// the case this exists for — so demanding it be relative would make the field
+// useless for the problem it solves.
+//
+// What is bounded instead is the LINK NAME: it must be a bare command name,
+// the same contract `aliases:` uses, because it becomes a filename in
+// $AES_HOME/bin. A name containing a slash would escape that directory.
+func (t Target) validateLinks(where string) error {
+	for _, name := range sortedKeys(t.Links) {
+		target := t.Links[name]
+		if !aliasNameRe.MatchString(name) {
+			return fmt.Errorf("%s: links %q is not a valid command name (letters, digits, dash, underscore, dot)", where, name)
+		}
+		if strings.ContainsAny(name, `/\`) {
+			return fmt.Errorf("%s: links %q names a path; the key is the name the link is created under", where, name)
+		}
+		if strings.TrimSpace(target) == "" {
+			return fmt.Errorf("%s: links %q has no target; a link to nothing is a broken binary on PATH", where, name)
+		}
+		if !filepath.IsAbs(target) {
+			return fmt.Errorf("%s: links %q target %q must be an absolute path; a relative one resolves against whatever directory the caller happens to be in", where, name, target)
+		}
+		if strings.ContainsAny(target, "\n\r") {
+			return fmt.Errorf("%s: links %q target contains a newline", where, name)
 		}
 	}
 	return nil

@@ -584,7 +584,25 @@ func setupOneInner(ctx context.Context, app *App, rc *runContext, store *state.S
 		return res
 	}
 
-	// 6: verify AGAIN. This gates the state write: a tool that installed but
+	// 6: materialise any links the target declares, BEFORE the second verify.
+	//
+	// The order is the whole reason this step exists. A strategy can succeed
+	// and still leave nothing the verifier can resolve — the macOS `hex` cask
+	// installs Hex.app and creates no bin entry — so verifying before the link
+	// is created would report a working install as missing, and the run would
+	// then refuse to record it. Measured 2026-11-04.
+	//
+	// A failure here is a tool failure, not a warning: the install produced
+	// something the manifest says is unlinkable, and the user's binary is
+	// exactly as unusable as if the install had failed.
+	if len(target.Links) > 0 {
+		if _, lerr := installer.EnsureLinks(filepath.Join(app.Home, "bin"), target.Links); lerr != nil {
+			res.Status, res.Error = outcomeFailed, lerr.Error()
+			return res
+		}
+	}
+
+	// 7: verify AGAIN. This gates the state write: a tool that installed but
 	// does not verify gets no state entry, because a state entry claiming
 	// success is exactly the drift doctor exists to clean up.
 	after := verifier.VerifyIn(verifier.Target{Host: rc.Host, AESHome: app.Home}, tool)
